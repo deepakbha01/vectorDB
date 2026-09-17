@@ -8,6 +8,7 @@ import {
   extractErrorMessage,
   PlainLanguageSummary,
   Project,
+  SensitivityAnalysis,
 } from '../api/client';
 import { ExecutiveSummaryCard } from '../components/ExecutiveSummaryCard';
 import { PhaseNav } from '../components/PhaseNav';
@@ -23,6 +24,7 @@ const DEFAULT_FORM: DiscoveryAssessmentInput = {
   embeddingDimension: 768,
   qps: 20,
   peakQps: 60,
+  qpsScope: 'aggregate',
   concurrentUsers: 100,
   targetP95LatencyMs: 150,
   targetP99LatencyMs: 300,
@@ -49,11 +51,17 @@ const DEFAULT_FORM: DiscoveryAssessmentInput = {
   hasGpu: false,
   operationalCapability: 'part_time',
   requiresMultiRegion: false,
+  dataReplicationModel: 'none',
+  regionalFailoverRequired: false,
+  crossRegionReplicationRequired: false,
   tenancyModel: 'single_tenant',
   requiresAuthentication: true,
   requiresRbac: true,
   requiresEncryptionAtRest: true,
   requiresEncryptionInTransit: true,
+  requiresKeyManagement: false,
+  requiresTenantIsolation: false,
+  requiresAuditLogging: false,
   dataResidencyRequirement: '',
   containsPii: false,
   regulatoryRequirements: '',
@@ -118,6 +126,11 @@ const FIELD_META: Record<FieldKey, FieldMeta> = {
     label: 'Peak QPS',
     help: 'Highest burst queries per second you expect. The engine scores against the larger of sustained and peak QPS.',
     scored: true,
+  },
+  qpsScope: {
+    label: 'QPS scope',
+    help: 'What the QPS figures above actually measure. Not scored, but materially changes sizing once multi-region is in play - re-run the assessment if this does not match how you measure QPS.',
+    scored: false,
   },
   concurrentUsers: {
     label: 'Concurrent users',
@@ -199,6 +212,16 @@ const FIELD_META: Record<FieldKey, FieldMeta> = {
     help: 'Results are reranked (e.g. with a cross-encoder) after initial retrieval. Assumed to run at the application layer regardless of platform, so it does not change which platform wins.',
     scored: false,
   },
+  ndcgTarget: {
+    label: 'NDCG@K target (0-1)',
+    help: 'Target Normalized Discounted Cumulative Gain, if tracked. Recorded for the record only — this engine only models recall@K, so ranking-quality metrics are not independently scored.',
+    scored: false,
+  },
+  mrrTarget: {
+    label: 'MRR target (0-1)',
+    help: 'Target Mean Reciprocal Rank, if tracked. Recorded for the record only — not independently scored, for the same reason as NDCG@K.',
+    scored: false,
+  },
   hasExistingOracle: {
     label: 'Existing Oracle Database',
     help: 'You already operate an Oracle Database. Strongly favors Oracle 23ai (vector-enabled) in scoring, since reusing infrastructure is cheaper and lower-risk.',
@@ -256,7 +279,32 @@ const FIELD_META: Record<FieldKey, FieldMeta> = {
   },
   requiresMultiRegion: {
     label: 'Multi-region required',
-    help: 'The database must serve reads/writes from more than one geographic region. Not yet scored per platform — raises a risk instead, since this tool does not model per-platform cross-region replication capabilities.',
+    help: 'The database must serve reads/writes from more than one geographic region. This tool does not model per-platform cross-region replication capabilities, so every platform is marked "unverified" (not silently assumed eligible) rather than scored - the decision becomes conditional.',
+    scored: true,
+  },
+  deploymentRegionCount: {
+    label: 'Deployment regions',
+    help: 'Number of geographic regions the database must be deployed across, if multi-region is required.',
+    scored: false,
+  },
+  trafficDistributionPercent: {
+    label: 'Traffic distribution',
+    help: 'Approximate traffic split across regions, e.g. "50/30/20". Captured for context.',
+    scored: false,
+  },
+  dataReplicationModel: {
+    label: 'Data replication model',
+    help: 'How data is replicated across regions: none, active-passive, or active-active. Captured for context; not yet a scored factor.',
+    scored: false,
+  },
+  regionalFailoverRequired: {
+    label: 'Regional failover required',
+    help: 'The system must automatically fail over to another region if one becomes unavailable.',
+    scored: false,
+  },
+  crossRegionReplicationRequired: {
+    label: 'Cross-region replication required',
+    help: 'Data written in one region must be replicated to other regions.',
     scored: false,
   },
   tenancyModel: {
@@ -282,6 +330,21 @@ const FIELD_META: Record<FieldKey, FieldMeta> = {
   requiresEncryptionInTransit: {
     label: 'Encryption in transit',
     help: 'Data must be encrypted while moving over the network (e.g. TLS).',
+    scored: false,
+  },
+  requiresKeyManagement: {
+    label: 'Key management',
+    help: 'Customer-managed / bring-your-own-key encryption key management is required. Checked by the PII compliance gate below when the workload contains PII.',
+    scored: false,
+  },
+  requiresTenantIsolation: {
+    label: 'Tenant isolation',
+    help: "Data belonging to different tenants must be logically or physically isolated. Checked by the PII compliance gate below.",
+    scored: false,
+  },
+  requiresAuditLogging: {
+    label: 'Audit logging',
+    help: 'Access to the database must be captured in an audit log. Checked by the PII compliance gate below.',
     scored: false,
   },
   dataResidencyRequirement: {
@@ -501,7 +564,7 @@ function TextField({ id, form, setForm, activeField, setActiveField }: FieldProp
         value={(form[id] as string) ?? ''}
         onChange={(e) => setForm({ ...form, [id]: e.target.value })}
         onFocus={() => setActiveField(id)}
-        placeholder={id === 'dataResidencyRequirement' ? 'e.g. EU-only' : 'e.g. HIPAA, GDPR'}
+        placeholder={id === 'dataResidencyRequirement' ? 'e.g. EU-only' : id === 'trafficDistributionPercent' ? 'e.g. 50/30/20' : 'e.g. HIPAA, GDPR'}
       />
     </div>
   );
@@ -538,9 +601,11 @@ const VERDICT_TONE: Record<PlainLanguageSummary['verdict'], 'validated' | 'warni
 };
 
 function PlainLanguageCard({ summary }: { summary: PlainLanguageSummary }) {
+  const badgeText = summary.conditionalBadge ?? summary.verdict;
+  const badgeTone = summary.conditionalBadge ? (summary.conditionalBadge.includes('Tied') ? 'warning' : 'warning') : VERDICT_TONE[summary.verdict];
   return (
     <ExecutiveSummaryCard
-      badge={{ text: summary.verdict, tone: VERDICT_TONE[summary.verdict] }}
+      badge={{ text: badgeText, tone: badgeTone }}
       headline={summary.headline}
       scorecard={summary.scorecard}
       note={{ label: 'Cost & Operational Effort', value: summary.costAndEffort }}
@@ -550,7 +615,139 @@ function PlainLanguageCard({ summary }: { summary: PlainLanguageSummary }) {
   );
 }
 
-function AdrView({ adr }: { adr: ArchitectureDecisionRecord }) {
+const DECISION_STATUS_LABEL: Record<ArchitectureDecisionRecord['decisionStatus'], string> = {
+  single: 'Single recommendation',
+  tied: 'Tied - not an unambiguous winner',
+  conditional: 'Conditional recommendation',
+};
+
+function DecisionStatusCard({ adr }: { adr: ArchitectureDecisionRecord }) {
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-grid">
+        <div className="card">
+          <div className="metric-label">Decision status</div>
+          <div className="metric-value" style={{ fontSize: 18 }}>{DECISION_STATUS_LABEL[adr.decisionStatus]}</div>
+          {adr.decisionStatus === 'tied' && (
+            <p style={{ fontSize: 12, color: '#5a6472' }}>
+              Tied with: {adr.tiedPlatformIds.join(', ')}
+              {adr.tieBreakStage ? ` — ${adr.tieBreakStage}` : ''}
+            </p>
+          )}
+        </div>
+        <div className="card">
+          <div className="metric-label">Confidence</div>
+          <div className="metric-value" style={{ fontSize: 18, textTransform: 'capitalize' }}>{adr.confidence}</div>
+        </div>
+      </div>
+      {adr.openValidations.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div className="metric-label">Open before final selection</div>
+          <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13 }}>
+            {adr.openValidations.map((v) => (
+              <li key={v}>{v}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BudgetAndComplianceCard({ adr }: { adr: ArchitectureDecisionRecord }) {
+  if (!adr.budgetFeasibility && (!adr.complianceGate || !adr.complianceGate.applicable)) {
+    return null;
+  }
+  return (
+    <div className="card-grid" style={{ marginBottom: 16 }}>
+      {adr.budgetFeasibility && (
+        <div className="card">
+          <div className="metric-label">Budget feasibility</div>
+          <div className="metric-value" style={{ fontSize: 16 }}>${adr.budgetFeasibility.monthlyBudgetUsd}/mo stated</div>
+          <span className="status-pill">{adr.budgetFeasibility.status.replace(/_/g, ' ')}</span>
+          <p style={{ fontSize: 12, color: '#5a6472' }}>{adr.budgetFeasibility.note}</p>
+        </div>
+      )}
+      {adr.complianceGate && adr.complianceGate.applicable && (
+        <div className="card">
+          <div className="metric-label">PII compliance gate</div>
+          <span className="status-pill">{adr.complianceGate.status}</span>
+          <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12 }}>
+            {adr.complianceGate.checks.map((c) => (
+              <li key={c.control} style={{ color: c.satisfied ? 'inherit' : '#b3261e' }}>
+                {c.control}: {c.satisfied ? 'captured' : 'not captured'}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WhatIfAnalysisCard({ projectId }: { projectId: string }) {
+  const [analysis, setAnalysis] = useState<SensitivityAnalysis | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data } = await apiClient.get<SensitivityAnalysis>(`/projects/${projectId}/discovery/assessments/latest/sensitivity-analysis`);
+      setAnalysis(data);
+    } catch (err: any) {
+      setError(extractErrorMessage(err, 'Could not run sensitivity analysis.'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="metric-label" style={{ marginBottom: 6 }}>What-if analysis</div>
+      <p style={{ fontSize: 12, color: '#5a6472', margin: '0 0 10px' }}>
+        Re-runs the current assessment under a few common what-if scenarios (QPS x2, vector count x2, budget halved, multi-region
+        toggled, a stricter recall target) without submitting a new version, so you can see whether the decision is sensitive to
+        these inputs before committing to it.
+      </p>
+      <button type="button" className="primary-btn" onClick={run} disabled={loading}>
+        {loading ? 'Running...' : 'Run what-if analysis'}
+      </button>
+      {error && <p style={{ color: '#b3261e', fontSize: 13 }}>{error}</p>}
+      {analysis && (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 12 }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+              <th style={{ padding: '6px 8px' }}>Scenario</th>
+              <th style={{ padding: '6px 8px' }}>Decision</th>
+              <th style={{ padding: '6px 8px' }}>Changed?</th>
+              <th style={{ padding: '6px 8px' }}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style={{ borderBottom: '1px solid #eceff3', color: '#5a6472' }}>
+              <td style={{ padding: '6px 8px' }}>Baseline (current assessment)</td>
+              <td style={{ padding: '6px 8px' }}>{analysis.baselineDecision}</td>
+              <td style={{ padding: '6px 8px' }}>-</td>
+              <td style={{ padding: '6px 8px' }}>{analysis.baselineDecisionStatus}</td>
+            </tr>
+            {analysis.scenarios.map((s) => (
+              <tr key={s.scenario} style={{ borderBottom: '1px solid #eceff3', fontWeight: s.decisionChanged ? 600 : 400 }}>
+                <td style={{ padding: '6px 8px' }}>{s.scenario}</td>
+                <td style={{ padding: '6px 8px' }}>{s.decision}</td>
+                <td style={{ padding: '6px 8px' }}>{s.decisionChanged ? 'Yes' : 'No'}</td>
+                <td style={{ padding: '6px 8px' }}>{s.decisionStatus}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function AdrView({ adr, projectId }: { adr: ArchitectureDecisionRecord; projectId: string }) {
   const [showTechnical, setShowTechnical] = useState(!adr.plainLanguageSummary);
   return (
     <div>
@@ -563,6 +760,10 @@ function AdrView({ adr }: { adr: ArchitectureDecisionRecord }) {
           </p>
         </div>
       )}
+
+      {adr.decisionStatus !== undefined && <DecisionStatusCard adr={adr} />}
+      <BudgetAndComplianceCard adr={adr} />
+      <WhatIfAnalysisCard projectId={projectId} />
 
       <button
         type="button"
@@ -590,47 +791,77 @@ function AdrView({ adr }: { adr: ArchitectureDecisionRecord }) {
           Scored options
         </div>
         <p style={{ fontSize: 12, color: '#5a6472', margin: '0 0 10px' }}>
-          Each candidate is scored 0-1 on seven weighted criteria (vector-volume fit, query throughput, latency fit,
-          recall fit, existing-platform fit, operational complexity, and cost) using the thresholds and weights in
-          rules v{adr.rulesVersion}. Each criterion score is multiplied by its weight and the results are summed into
-          the total score. A platform that fails a required search capability (hybrid search, full-text search, or
-          metadata filtering) is marked ineligible below and cannot win regardless of score; among eligible
-          candidates, whichever totals highest wins.
+          Each candidate is scored 0-1 on seven weighted criteria
+          {adr.criteriaWeights
+            ? ` (vector volume ${(adr.criteriaWeights.vectorCount * 100).toFixed(0)}%, query throughput ${(adr.criteriaWeights.qps * 100).toFixed(0)}%, latency ${(adr.criteriaWeights.latency * 100).toFixed(0)}%, recall ${(adr.criteriaWeights.recall * 100).toFixed(0)}%, existing-platform fit ${(adr.criteriaWeights.existingPlatform * 100).toFixed(0)}%, operational simplicity ${(adr.criteriaWeights.operationalComplexity * 100).toFixed(0)}%, cost ${(adr.criteriaWeights.cost * 100).toFixed(0)}%)`
+            : ''}{' '}
+          using the thresholds and weights in rules v{adr.rulesVersion}. A platform that fails a required search capability is
+          "Ineligible" and cannot win regardless of score; one with an unmodeled requirement (e.g. multi-region) is "Unverified" -
+          still winnable, but the decision is then marked conditional. Among eligible/unverified candidates, the highest total
+          wins, with ties broken by a deterministic chain (see Decision status above).
         </p>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
               <th style={{ padding: '6px 8px' }}>Platform</th>
-              <th style={{ padding: '6px 8px' }}>Eligible</th>
+              <th style={{ padding: '6px 8px' }}>Eligibility</th>
               <th style={{ padding: '6px 8px' }}>Total</th>
               <th style={{ padding: '6px 8px' }}>Vector Count</th>
               <th style={{ padding: '6px 8px' }}>QPS</th>
               <th style={{ padding: '6px 8px' }}>Latency</th>
               <th style={{ padding: '6px 8px' }}>Recall</th>
               <th style={{ padding: '6px 8px' }}>Existing</th>
-              <th style={{ padding: '6px 8px' }}>Ops</th>
+              <th style={{ padding: '6px 8px' }}>Simplicity</th>
               <th style={{ padding: '6px 8px' }}>Cost</th>
             </tr>
           </thead>
           <tbody>
-            {adr.options.map((o) => (
-              <tr key={o.platformId} style={{ borderBottom: '1px solid #eceff3', fontWeight: o.platformId === adr.decision ? 600 : 400 }}>
-                <td style={{ padding: '6px 8px' }}>{o.label}</td>
-                <td style={{ padding: '6px 8px' }} title={o.ineligibleReasons.join(' ')}>
-                  {o.eligible ? 'Yes' : 'No'}
-                </td>
-                <td style={{ padding: '6px 8px' }}>{o.totalScore.toFixed(2)}</td>
-                <td style={{ padding: '6px 8px' }}>{o.criteriaScores.vectorCount.toFixed(2)}</td>
-                <td style={{ padding: '6px 8px' }}>{o.criteriaScores.qps.toFixed(2)}</td>
-                <td style={{ padding: '6px 8px' }}>{o.criteriaScores.latency.toFixed(2)}</td>
-                <td style={{ padding: '6px 8px' }}>{o.criteriaScores.recall.toFixed(2)}</td>
-                <td style={{ padding: '6px 8px' }}>{o.criteriaScores.existingPlatform.toFixed(2)}</td>
-                <td style={{ padding: '6px 8px' }}>{o.criteriaScores.operationalComplexity.toFixed(2)}</td>
-                <td style={{ padding: '6px 8px' }}>{o.criteriaScores.cost.toFixed(2)}</td>
-              </tr>
-            ))}
+            {adr.options
+              .filter((o) => o.eligibilityStatus !== 'ineligible')
+              .map((o) => (
+                <tr key={o.platformId} style={{ borderBottom: '1px solid #eceff3', fontWeight: o.platformId === adr.decision ? 600 : 400 }}>
+                  <td style={{ padding: '6px 8px' }}>{o.label}</td>
+                  <td style={{ padding: '6px 8px', textTransform: 'capitalize' }}>{o.eligibilityStatus}</td>
+                  <td style={{ padding: '6px 8px' }}>{o.totalScore.toFixed(2)}</td>
+                  <td style={{ padding: '6px 8px' }}>{o.criteriaScores.vectorCount.toFixed(2)}</td>
+                  <td style={{ padding: '6px 8px' }}>{o.criteriaScores.qps.toFixed(2)}</td>
+                  <td style={{ padding: '6px 8px' }}>{o.criteriaScores.latency.toFixed(2)}</td>
+                  <td style={{ padding: '6px 8px' }}>{o.criteriaScores.recall.toFixed(2)}</td>
+                  <td style={{ padding: '6px 8px' }}>{o.criteriaScores.existingPlatform.toFixed(2)}</td>
+                  <td style={{ padding: '6px 8px' }}>{o.criteriaScores.operationalComplexity.toFixed(2)}</td>
+                  <td style={{ padding: '6px 8px' }}>{o.criteriaScores.cost.toFixed(2)}</td>
+                </tr>
+              ))}
           </tbody>
         </table>
+
+        {adr.options.some((o) => o.eligibilityStatus === 'ineligible') && (
+          <div style={{ marginTop: 14 }}>
+            <div className="metric-label" style={{ marginBottom: 6 }}>
+              Ineligible (cannot win regardless of score)
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+                  <th style={{ padding: '6px 8px' }}>Platform</th>
+                  <th style={{ padding: '6px 8px' }}>Total</th>
+                  <th style={{ padding: '6px 8px' }}>Why ineligible</th>
+                </tr>
+              </thead>
+              <tbody>
+                {adr.options
+                  .filter((o) => o.eligibilityStatus === 'ineligible')
+                  .map((o) => (
+                    <tr key={o.platformId} style={{ borderBottom: '1px solid #eceff3', color: '#5a6472' }}>
+                      <td style={{ padding: '6px 8px' }}>{o.label}</td>
+                      <td style={{ padding: '6px 8px' }}>{o.totalScore.toFixed(2)}</td>
+                      <td style={{ padding: '6px 8px' }}>{o.eligibilityNotes.join(' ')}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         <div style={{ marginTop: 14 }}>
           {adr.options.map((o) => (
@@ -654,15 +885,15 @@ function AdrView({ adr }: { adr: ArchitectureDecisionRecord }) {
         <div className="card-grid" style={{ marginBottom: 14 }}>
           <div className="card">
             <div className="metric-label">Raw Vector Data</div>
-            <div className="metric-value">{adr.infrastructureEstimate.estimatedRawVectorGb} GB</div>
+            <div className="metric-value">{adr.infrastructureEstimate.estimatedRawVectorGb} GiB</div>
           </div>
           <div className="card">
             <div className="metric-label">Estimated Memory</div>
-            <div className="metric-value">{adr.infrastructureEstimate.estimatedMemoryGb} GB</div>
+            <div className="metric-value">{adr.infrastructureEstimate.estimatedMemoryGb} GiB</div>
           </div>
           <div className="card">
             <div className="metric-label">Estimated Storage</div>
-            <div className="metric-value">{adr.infrastructureEstimate.estimatedStorageGb} GB</div>
+            <div className="metric-value">{adr.infrastructureEstimate.estimatedStorageGb} GiB</div>
           </div>
           <div className="card">
             <div className="metric-label">Estimated CPU Cores</div>
@@ -681,15 +912,33 @@ function AdrView({ adr }: { adr: ArchitectureDecisionRecord }) {
       )}
 
       {showTechnical && (
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="metric-label" style={{ marginBottom: 6 }}>Alternatives</div>
+        {(
+          [
+            { bucket: 'tied' as const, title: 'Tied with the decision' },
+            { bucket: 'strong' as const, title: 'Strong alternatives' },
+            { bucket: 'lower_fit' as const, title: 'Lower fit for this workload' },
+            { bucket: 'capacity_constraint' as const, title: 'Capacity/capability constraint' },
+          ]
+        )
+          .map((group) => ({ ...group, items: adr.rejectedAlternatives.filter((r) => r.bucket === group.bucket) }))
+          .filter((group) => group.items.length > 0)
+          .map((group) => (
+            <div key={group.bucket} style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{group.title}</div>
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13 }}>
+                {group.items.map((r) => (
+                  <li key={r.platformId}>{r.reason}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+      </div>
+      )}
+
+      {showTechnical && (
       <div className="card-grid">
-        <div className="card">
-          <div className="metric-label">Rejected alternatives</div>
-          <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13 }}>
-            {adr.rejectedAlternatives.map((r) => (
-              <li key={r.platformId}>{r.reason}</li>
-            ))}
-          </ul>
-        </div>
         <div className="card">
           <div className="metric-label">Risks</div>
           <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13 }}>
@@ -785,7 +1034,7 @@ export function DiscoveryPage() {
           </div>
         )}
 
-        {outcome && !showForm && <AdrView adr={outcome.adr} />}
+        {outcome && !showForm && <AdrView adr={outcome.adr} projectId={project.id} />}
 
         {showForm && (
           <div className="discovery-layout">
@@ -817,6 +1066,19 @@ export function DiscoveryPage() {
                 <div className="field-grid">
                   <NumberField id="qps" {...fieldProps} step={0.1} />
                   <NumberField id="peakQps" {...fieldProps} step={0.1} />
+                  <div className={`field${activeField === 'qpsScope' ? ' field-active' : ''}`}>
+                    <label htmlFor="qpsScope">{FIELD_META.qpsScope.label}</label>
+                    <select
+                      id="qpsScope"
+                      value={form.qpsScope}
+                      onChange={(e) => setForm({ ...form, qpsScope: e.target.value as any })}
+                      onFocus={() => setActiveField('qpsScope')}
+                    >
+                      <option value="aggregate">Aggregate</option>
+                      <option value="per_region">Per-region</option>
+                      <option value="per_index">Per-index</option>
+                    </select>
+                  </div>
                   <NumberField id="concurrentUsers" {...fieldProps} />
                   <NumberField id="targetP95LatencyMs" {...fieldProps} />
                   <NumberField id="targetP99LatencyMs" {...fieldProps} />
@@ -845,6 +1107,8 @@ export function DiscoveryPage() {
                   <NumericSelectField id="topK" {...fieldProps} options={TOP_K_OPTIONS} />
                   <NumericSelectField id="recallTarget" {...fieldProps} options={RECALL_OPTIONS} />
                   <OptionalNumberField id="precisionTarget" {...fieldProps} step={0.01} min={0} max={1} />
+                  <OptionalNumberField id="ndcgTarget" {...fieldProps} step={0.01} min={0} max={1} />
+                  <OptionalNumberField id="mrrTarget" {...fieldProps} step={0.01} min={0} max={1} />
                 </div>
               </section>
 
@@ -863,6 +1127,31 @@ export function DiscoveryPage() {
                   <BoolField id="hasGpu" {...fieldProps} />
                   <BoolField id="requiresMultiRegion" {...fieldProps} />
                 </div>
+                {form.requiresMultiRegion && (
+                  <div className="field-grid" style={{ marginBottom: 14 }}>
+                    <OptionalNumberField id="deploymentRegionCount" {...fieldProps} step={1} min={1} />
+                    <TextField id="trafficDistributionPercent" {...fieldProps} />
+                    <div className={`field${activeField === 'dataReplicationModel' ? ' field-active' : ''}`}>
+                      <label htmlFor="dataReplicationModel">{FIELD_META.dataReplicationModel.label}</label>
+                      <select
+                        id="dataReplicationModel"
+                        value={form.dataReplicationModel}
+                        onChange={(e) => setForm({ ...form, dataReplicationModel: e.target.value as any })}
+                        onFocus={() => setActiveField('dataReplicationModel')}
+                      >
+                        <option value="none">None</option>
+                        <option value="active_passive">Active-passive</option>
+                        <option value="active_active">Active-active</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+                {form.requiresMultiRegion && (
+                  <div className="checkbox-grid" style={{ marginBottom: 14 }}>
+                    <BoolField id="regionalFailoverRequired" {...fieldProps} />
+                    <BoolField id="crossRegionReplicationRequired" {...fieldProps} />
+                  </div>
+                )}
                 <div className={`field${activeField === 'existingPlatforms' ? ' field-active' : ''}`} style={{ marginBottom: 14 }}>
                   <label>{FIELD_META.existingPlatforms.label}</label>
                   <div className="checkbox-grid">
@@ -964,8 +1253,18 @@ export function DiscoveryPage() {
                   <BoolField id="requiresRbac" {...fieldProps} />
                   <BoolField id="requiresEncryptionAtRest" {...fieldProps} />
                   <BoolField id="requiresEncryptionInTransit" {...fieldProps} />
+                  <BoolField id="requiresKeyManagement" {...fieldProps} />
+                  <BoolField id="requiresTenantIsolation" {...fieldProps} />
+                  <BoolField id="requiresAuditLogging" {...fieldProps} />
                   <BoolField id="containsPii" {...fieldProps} />
                 </div>
+                {form.containsPii && (
+                  <p className="discovery-section-sub" style={{ marginTop: -6 }}>
+                    Since this workload contains PII, every checkbox above (plus authentication/RBAC, retention, and RPO/RTO) is checked by
+                    the PII compliance gate on submission - any unmet control caps the result at "Conditionally eligible" rather than
+                    "Excellent Fit".
+                  </p>
+                )}
                 <div className="field-grid">
                   <TextField id="dataResidencyRequirement" {...fieldProps} />
                   <TextField id="regulatoryRequirements" {...fieldProps} />

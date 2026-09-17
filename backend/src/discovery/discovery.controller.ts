@@ -39,4 +39,9 @@ export class DiscoveryController {
     }
     return outcome;
   }
+
+  @Get('assessments/latest/sensitivity-analysis')
+  sensitivityAnalysis(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.discoveryService.runSensitivityAnalysis(projectId, user);
+  }
 }

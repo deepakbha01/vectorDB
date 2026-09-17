@@ -11,7 +11,14 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { DeploymentEnvironment, Environment, OperationalCapability, TenancyModel } from '../enums/discovery.enum';
+import {
+  DataReplicationModel,
+  DeploymentEnvironment,
+  Environment,
+  OperationalCapability,
+  QpsScope,
+  TenancyModel,
+} from '../enums/discovery.enum';
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 
 /**
@@ -65,6 +72,13 @@ export class CreateDiscoveryAssessmentDto {
   @IsNumber()
   @Min(0)
   peakQps: number;
+
+  @ApiProperty({
+    enum: QpsScope,
+    description: 'What the QPS figures above actually measure - aggregate, per-region, or per-index. Materially changes sizing once multi-region is in play.',
+  })
+  @IsEnum(QpsScope)
+  qpsScope: QpsScope;
 
   @ApiProperty()
   @IsInt()
@@ -144,6 +158,20 @@ export class CreateDiscoveryAssessmentDto {
   @IsBoolean()
   requiresReranking: boolean;
 
+  @ApiProperty({ required: false, description: 'Target NDCG@K, 0-1 - recorded for the record only; not independently scored' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  ndcgTarget?: number;
+
+  @ApiProperty({ required: false, description: 'Target Mean Reciprocal Rank, 0-1 - recorded for the record only; not independently scored' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  mrrTarget?: number;
+
   @ApiProperty()
   @IsBoolean()
   hasExistingOracle: boolean;
@@ -202,6 +230,30 @@ export class CreateDiscoveryAssessmentDto {
   @IsBoolean()
   requiresMultiRegion: boolean;
 
+  @ApiProperty({ required: false, description: 'Number of deployment regions, if multi-region is required' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  deploymentRegionCount?: number;
+
+  @ApiProperty({ required: false, description: 'e.g. "50/30/20" - approximate traffic split across regions' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  trafficDistributionPercent?: string;
+
+  @ApiProperty({ enum: DataReplicationModel })
+  @IsEnum(DataReplicationModel)
+  dataReplicationModel: DataReplicationModel;
+
+  @ApiProperty()
+  @IsBoolean()
+  regionalFailoverRequired: boolean;
+
+  @ApiProperty()
+  @IsBoolean()
+  crossRegionReplicationRequired: boolean;
+
   @ApiProperty({ enum: TenancyModel })
   @IsEnum(TenancyModel)
   tenancyModel: TenancyModel;
@@ -221,6 +273,18 @@ export class CreateDiscoveryAssessmentDto {
   @ApiProperty()
   @IsBoolean()
   requiresEncryptionInTransit: boolean;
+
+  @ApiProperty({ description: 'Customer-managed / bring-your-own-key encryption key management is required' })
+  @IsBoolean()
+  requiresKeyManagement: boolean;
+
+  @ApiProperty({ description: 'Data belonging to different tenants must be logically or physically isolated' })
+  @IsBoolean()
+  requiresTenantIsolation: boolean;
+
+  @ApiProperty({ description: 'Access to the database must be captured in an audit log' })
+  @IsBoolean()
+  requiresAuditLogging: boolean;
 
   @ApiProperty({ required: false })
   @IsOptional()

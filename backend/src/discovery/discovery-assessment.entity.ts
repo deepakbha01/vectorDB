@@ -1,7 +1,14 @@
 import { Column, CreateDateColumn, Entity, Index, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
-import { DeploymentEnvironment, Environment, OperationalCapability, TenancyModel } from './enums/discovery.enum';
+import {
+  DataReplicationModel,
+  DeploymentEnvironment,
+  Environment,
+  OperationalCapability,
+  QpsScope,
+  TenancyModel,
+} from './enums/discovery.enum';
 import { VectorPlatform } from '../projects/enums/platform.enum';
 
 /**
@@ -52,6 +59,9 @@ export class DiscoveryAssessment {
   @Column('float')
   peakQps: number;
 
+  @Column({ type: 'enum', enum: QpsScope, default: QpsScope.AGGREGATE })
+  qpsScope: QpsScope;
+
   @Column()
   concurrentUsers: number;
 
@@ -101,6 +111,12 @@ export class DiscoveryAssessment {
   @Column({ default: false })
   requiresReranking: boolean;
 
+  @Column('float', { nullable: true })
+  ndcgTarget?: number;
+
+  @Column('float', { nullable: true })
+  mrrTarget?: number;
+
   @Column()
   hasExistingOracle: boolean;
 
@@ -137,6 +153,21 @@ export class DiscoveryAssessment {
   @Column({ default: false })
   requiresMultiRegion: boolean;
 
+  @Column({ nullable: true })
+  deploymentRegionCount?: number;
+
+  @Column({ nullable: true })
+  trafficDistributionPercent?: string;
+
+  @Column({ type: 'enum', enum: DataReplicationModel, default: DataReplicationModel.NONE })
+  dataReplicationModel: DataReplicationModel;
+
+  @Column({ default: false })
+  regionalFailoverRequired: boolean;
+
+  @Column({ default: false })
+  crossRegionReplicationRequired: boolean;
+
   @Column({ type: 'enum', enum: TenancyModel, default: TenancyModel.SINGLE_TENANT })
   tenancyModel: TenancyModel;
 
@@ -151,6 +182,15 @@ export class DiscoveryAssessment {
 
   @Column()
   requiresEncryptionInTransit: boolean;
+
+  @Column({ default: false })
+  requiresKeyManagement: boolean;
+
+  @Column({ default: false })
+  requiresTenantIsolation: boolean;
+
+  @Column({ default: false })
+  requiresAuditLogging: boolean;
 
   @Column({ nullable: true })
   dataResidencyRequirement?: string;

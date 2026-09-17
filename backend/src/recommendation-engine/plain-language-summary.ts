@@ -1,4 +1,4 @@
-import { CriteriaScores, FitRating, PlainLanguageSummary } from './recommendation.types';
+import { CriteriaScores, DecisionStatus, FitRating, PlainLanguageSummary } from './recommendation.types';
 
 /**
  * Presentation-only bucketing for translating a 0-1 score into a traffic-light
@@ -65,7 +65,11 @@ const CRITERIA_META: Record<
     },
   },
   operationalComplexity: {
-    label: 'Operational Complexity',
+    // Displayed as "Operational Simplicity" - a high score means low burden, so the
+    // user-facing label reads in the same "higher is better" direction as every other
+    // criterion, even though the underlying field name (shared with the engine/report)
+    // stays `operationalComplexity` to avoid an unrelated data-model rename.
+    label: 'Operational Simplicity',
     phrase: 'operational simplicity',
     explanation: {
       great: 'Requires minimal ongoing operational effort.',
@@ -105,8 +109,16 @@ const RISK_REWRITES: Array<{ prefix: string; plain: string }> = [
     plain: 'The specified recall target may require larger search parameters during index tuning, which could modestly increase latency or memory utilization.',
   },
   {
+    prefix: 'A precision@K target',
+    plain: 'The specified precision target is at or near the maximum; please confirm this reflects an intentional near-exhaustive search requirement.',
+  },
+  {
     prefix: 'Strict P95 latency target is aggressive',
     plain: 'The specified latency target is ambitious at this scale; load-testing under realistic conditions is recommended before committing to this service-level target.',
+  },
+  {
+    prefix: 'Multi-region deployment was requested',
+    plain: 'Multi-region deployment was requested; this platform’s cross-region replication approach has not been independently verified and should be confirmed before committing.',
   },
   {
     prefix: 'Workload contains PII',
@@ -126,14 +138,50 @@ const RISK_REWRITES: Array<{ prefix: string; plain: string }> = [
 ];
 
 function simplifyRisk(risk: string): string {
-  return RISK_REWRITES.find((r) => risk.startsWith(r.prefix))?.plain ?? risk;
+  if (risk.includes('P99 target is tight')) {
+    return 'The tail-latency (P99) target is tight relative to the P95 target; this should be load-tested specifically, not inferred from P95 results.';
+  }
+  const match = RISK_REWRITES.find((r) => risk.startsWith(r.prefix));
+  return match?.plain ?? risk;
 }
 
-function verdictFor(totalScore: number): PlainLanguageSummary['verdict'] {
-  if (totalScore >= 0.85) return 'Excellent Fit';
-  if (totalScore >= 0.7) return 'Good Fit';
-  if (totalScore >= 0.55) return 'Workable Fit';
+function verdictFor(totalScore: number, bands: { excellentFitMin: number; goodFitMin: number; workableFitMin: number }): PlainLanguageSummary['verdict'] {
+  if (totalScore >= bands.excellentFitMin) return 'Excellent Fit';
+  if (totalScore >= bands.goodFitMin) return 'Good Fit';
+  if (totalScore >= bands.workableFitMin) return 'Workable Fit';
   return 'Weak Fit';
+}
+
+/**
+ * A raw score alone cannot be trusted as "Excellent Fit": it can land in the top band
+ * while an individual criterion is weak, or while real open validations (budget, multi-
+ * region, compliance) remain unresolved. This caps the badge honestly instead.
+ */
+function buildConditionalBadge(
+  verdict: PlainLanguageSummary['verdict'],
+  criteriaScores: CriteriaScores,
+  openValidations: string[],
+  decisionStatus: DecisionStatus,
+  tiedLabels: string[],
+): string | null {
+  if (decisionStatus === 'tied') {
+    return `Recommended platforms: ${tiedLabels.join(' / ')} — Tied`;
+  }
+  if (verdict !== 'Excellent Fit') {
+    return null;
+  }
+  const anyWeakCriterion = CRITERIA_ORDER.some((key) => rate(criteriaScores[key]) === 'weak');
+  if (!anyWeakCriterion && openValidations.length === 0) {
+    return null;
+  }
+  const categories: string[] = [];
+  if (openValidations.some((v) => v.toLowerCase().includes('cost') || v.toLowerCase().includes('budget'))) categories.push('Cost');
+  if (openValidations.some((v) => v.toLowerCase().includes('multi-region'))) categories.push('Multi-Region');
+  if (openValidations.some((v) => v.toLowerCase().includes('compliance'))) categories.push('Compliance');
+  if (openValidations.some((v) => v.toLowerCase().includes('qps'))) categories.push('QPS Definition');
+  if (categories.length === 0) categories.push('Further Validation');
+  const joined = categories.length === 1 ? categories[0] : `${categories.slice(0, -1).join(', ')} and ${categories[categories.length - 1]}`;
+  return `Strong Technical Fit — Subject to ${joined} Validation`;
 }
 
 export function buildPlainLanguageSummary(
@@ -141,6 +189,10 @@ export function buildPlainLanguageSummary(
   totalScore: number,
   criteriaScores: CriteriaScores,
   risks: string[],
+  verdictBands: { excellentFitMin: number; goodFitMin: number; workableFitMin: number },
+  openValidations: string[] = [],
+  decisionStatus: DecisionStatus = 'single',
+  tiedLabels: string[] = [],
 ): PlainLanguageSummary {
   const scorecard = CRITERIA_ORDER.map((key) => {
     const rating = rate(criteriaScores[key]);
@@ -158,14 +210,18 @@ export function buildPlainLanguageSummary(
 
   const costAndEffort = `${CRITERIA_META.operationalComplexity.explanation[rate(criteriaScores.operationalComplexity)]} ${CRITERIA_META.cost.explanation[rate(criteriaScores.cost)]}`;
 
-  const verdict = verdictFor(totalScore);
+  const verdict = verdictFor(totalScore, verdictBands);
+  const conditionalBadge = buildConditionalBadge(verdict, criteriaScores, openValidations, decisionStatus, tiedLabels);
   const bottomLine =
     verdict === 'Weak Fit'
       ? `${winnerLabel} is the strongest of the options evaluated, but does not represent a strong overall fit. We recommend revisiting the project requirements or considering a manual platform override.`
-      : `${winnerLabel} represents a sound platform choice for this project. We recommend reviewing the considerations noted above before proceeding to Phase 2 (Data Pipeline Design).`;
+      : conditionalBadge
+        ? `${winnerLabel} is a technically strong candidate, but the items above should be resolved (or the decision revisited via "Manually override this decision") before treating this as final.`
+        : `${winnerLabel} represents a sound platform choice for this project. We recommend reviewing the considerations noted above before proceeding to Phase 2 (Data Pipeline Design).`;
 
   return {
     verdict,
+    conditionalBadge,
     headline,
     scorecard,
     costAndEffort,

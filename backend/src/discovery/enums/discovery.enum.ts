@@ -23,3 +23,16 @@ export enum TenancyModel {
   SHARED_MULTI_TENANT = 'shared_multi_tenant',
   DEDICATED_PER_TENANT = 'dedicated_per_tenant',
 }
+
+export enum DataReplicationModel {
+  NONE = 'none',
+  ACTIVE_PASSIVE = 'active_passive',
+  ACTIVE_ACTIVE = 'active_active',
+}
+
+/** What a given QPS figure actually measures - materially changes both architecture and cost once multi-region is in play. */
+export enum QpsScope {
+  AGGREGATE = 'aggregate',
+  PER_REGION = 'per_region',
+  PER_INDEX = 'per_index',
+}

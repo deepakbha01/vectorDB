@@ -33,6 +33,7 @@ export class ReportBuilderService {
       sections.push({
         heading: 'Executive Summary',
         fields: [
+          { label: 'Badge', value: summary.conditionalBadge ?? summary.verdict },
           { label: 'Summary', value: summary.headline },
           { label: 'Cost & Operational Effort', value: summary.costAndEffort },
           { label: 'Recommendation', value: summary.bottomLine },
@@ -50,12 +51,54 @@ export class ReportBuilderService {
 
     sections.push(
         {
-          heading: 'Decision',
+          heading: 'Decision status & confidence',
           fields: [
-            { label: 'Recommended platform', value: adr.decision },
+            { label: 'Decision', value: adr.decision },
+            {
+              label: 'Decision status',
+              value:
+                adr.decisionStatus === 'tied'
+                  ? `Tied (${adr.tiedPlatformIds.join(', ')}) - selected via ${adr.tieBreakStage ?? 'tie-break'}`
+                  : adr.decisionStatus === 'conditional'
+                    ? 'Conditional recommendation - see open validations below'
+                    : 'Single recommendation',
+            },
+            { label: 'Confidence', value: adr.confidence },
             { label: 'Operational complexity', value: adr.operationalComplexity },
           ],
+          lists: adr.openValidations.length > 0 ? [{ title: 'Open before final selection', items: adr.openValidations }] : undefined,
           paragraphs: [adr.rationale],
+        },
+        {
+          heading: 'Budget feasibility',
+          fields: adr.budgetFeasibility
+            ? [
+                { label: 'Stated monthly budget', value: `$${adr.budgetFeasibility.monthlyBudgetUsd}` },
+                { label: 'Estimated monthly cost', value: adr.budgetFeasibility.estimatedMonthlyCostUsd === null ? 'Not yet estimated' : `$${adr.budgetFeasibility.estimatedMonthlyCostUsd}` },
+                { label: 'Budget status', value: adr.budgetFeasibility.status.replace(/_/g, ' ') },
+              ]
+            : [{ label: 'Status', value: 'No budget was specified - this section only applies when a monthly budget is provided.' }],
+          paragraphs: adr.budgetFeasibility ? [adr.budgetFeasibility.note] : undefined,
+        },
+        {
+          heading: 'PII compliance gate',
+          fields: [{ label: 'Status', value: adr.complianceGate ? adr.complianceGate.status.replace(/_/g, ' ') : 'Not available for this ADR version' }],
+          tables: adr.complianceGate?.applicable
+            ? [
+                {
+                  headers: ['Control', 'Captured as required'],
+                  rows: adr.complianceGate.checks.map((c) => [c.control, c.satisfied ? 'Yes' : 'No']),
+                },
+              ]
+            : undefined,
+          paragraphs: !adr.complianceGate
+            ? ['Not available for this design version - re-run "Re-run Assessment" to generate it.']
+            : adr.complianceGate.applicable
+              ? [
+                  'This checks whether each control was captured as a requirement in this assessment, not whether the target platform has ' +
+                    'been independently verified to enforce it - a platform is never labeled "Excellent Fit" while any control here is unmet.',
+                ]
+              : ['The workload was not flagged as containing PII, so this gate does not apply.'],
         },
         {
           heading: 'Requirements considered',
@@ -64,10 +107,17 @@ export class ReportBuilderService {
             { label: 'Estimated vector count', value: assessment.estimatedVectorCount.toLocaleString() },
             { label: 'Embedding dimension', value: String(assessment.embeddingDimension) },
             { label: 'QPS (sustained / peak)', value: `${assessment.qps} / ${assessment.peakQps}` },
+            { label: 'QPS scope', value: assessment.qpsScope },
             { label: 'Target P95 / P99 latency', value: `${assessment.targetP95LatencyMs}ms / ${assessment.targetP99LatencyMs}ms` },
             { label: 'Recall target', value: String(assessment.recallTarget) },
             ...(assessment.precisionTarget !== undefined && assessment.precisionTarget !== null
               ? [{ label: 'Precision target', value: String(assessment.precisionTarget) }]
+              : []),
+            ...(assessment.ndcgTarget !== undefined && assessment.ndcgTarget !== null
+              ? [{ label: 'NDCG@K target', value: String(assessment.ndcgTarget) }]
+              : []),
+            ...(assessment.mrrTarget !== undefined && assessment.mrrTarget !== null
+              ? [{ label: 'MRR target', value: String(assessment.mrrTarget) }]
               : []),
             { label: 'Reranking required', value: String(assessment.requiresReranking) },
             { label: 'Operational capability', value: assessment.operationalCapability },
@@ -75,6 +125,15 @@ export class ReportBuilderService {
               ? [{ label: 'Monthly budget', value: `$${assessment.monthlyBudgetUsd}` }]
               : []),
             { label: 'Multi-region required', value: String(assessment.requiresMultiRegion) },
+            ...(assessment.requiresMultiRegion
+              ? [
+                  { label: 'Deployment regions', value: assessment.deploymentRegionCount !== undefined && assessment.deploymentRegionCount !== null ? String(assessment.deploymentRegionCount) : 'Not specified' },
+                  { label: 'Traffic distribution', value: assessment.trafficDistributionPercent || 'Not specified' },
+                  { label: 'Data replication model', value: assessment.dataReplicationModel },
+                  { label: 'Regional failover required', value: String(assessment.regionalFailoverRequired) },
+                  { label: 'Cross-region replication required', value: String(assessment.crossRegionReplicationRequired) },
+                ]
+              : []),
             { label: 'Tenancy model', value: assessment.tenancyModel },
             { label: 'Availability target', value: `${assessment.availabilityTargetPercent}%` },
             { label: 'RPO / RTO', value: `${assessment.rpoMinutes}min / ${assessment.rtoMinutes}min` },
@@ -85,45 +144,66 @@ export class ReportBuilderService {
           fields: [
             {
               label: 'How this is calculated',
-              value:
-                'Each candidate is scored 0-1 on seven weighted criteria - vector-volume fit, query throughput, latency fit, recall fit, ' +
-                'existing-platform fit, operational complexity, and cost - using the thresholds and weights in rules v' +
-                adr.rulesVersion +
-                '. Each criterion score is multiplied by its weight and the results are summed into the total score below. A candidate ' +
-                'that fails a required search capability (hybrid search, full-text search, or metadata filtering) is marked ineligible ' +
-                'and cannot win regardless of score; among eligible candidates, the winner is whichever totals highest.',
+              value: adr.criteriaWeights
+                ? `Each candidate is scored 0-1 on seven criteria, each weighted per rules v${adr.rulesVersion}: ` +
+                  `vector volume (${formatWeightPercent(adr.criteriaWeights.vectorCount)}), ` +
+                  `query throughput (${formatWeightPercent(adr.criteriaWeights.qps)}), ` +
+                  `latency (${formatWeightPercent(adr.criteriaWeights.latency)}), ` +
+                  `recall (${formatWeightPercent(adr.criteriaWeights.recall)}), ` +
+                  `existing-platform fit (${formatWeightPercent(adr.criteriaWeights.existingPlatform)}), ` +
+                  `operational simplicity (${formatWeightPercent(adr.criteriaWeights.operationalComplexity)}), and ` +
+                  `cost (${formatWeightPercent(adr.criteriaWeights.cost)}). ` +
+                  'Total score = sum of (criterion score x criterion weight). A candidate that fails a required search capability is ' +
+                  '"Ineligible" and cannot win regardless of score; one with an unmodeled requirement (e.g. multi-region) is "Unverified" - ' +
+                  'still winnable, but never presented as unconditionally clean. Among eligible/unverified candidates, the highest total wins, ' +
+                  'with ties broken by a deterministic chain (see Decision status above).'
+                : `Each candidate is scored 0-1 on seven weighted criteria using the thresholds and weights in rules v${adr.rulesVersion}.`,
             },
           ],
           tables: [
             {
-              title: 'Total and per-criterion scores (0-1, higher is better)',
-              headers: ['Platform', 'Eligible', 'Total', 'Vector Count', 'QPS', 'Latency', 'Recall', 'Existing', 'Ops', 'Cost'],
-              rows: adr.options.map((o) => [
-                o.label,
-                o.eligible ? 'Yes' : 'No',
-                o.totalScore.toFixed(2),
-                o.criteriaScores.vectorCount.toFixed(2),
-                o.criteriaScores.qps.toFixed(2),
-                o.criteriaScores.latency.toFixed(2),
-                o.criteriaScores.recall.toFixed(2),
-                o.criteriaScores.existingPlatform.toFixed(2),
-                o.criteriaScores.operationalComplexity.toFixed(2),
-                o.criteriaScores.cost.toFixed(2),
-              ]),
+              title: 'Eligible / unverified candidates - total and per-criterion scores (0-1, higher is better)',
+              headers: ['Platform', 'Eligibility', 'Total', 'Vector Count', 'QPS', 'Latency', 'Recall', 'Existing', 'Simplicity', 'Cost'],
+              rows: adr.options
+                .filter((o) => o.eligibilityStatus !== 'ineligible')
+                .map((o) => [
+                  o.label,
+                  o.eligibilityStatus,
+                  o.totalScore.toFixed(2),
+                  o.criteriaScores.vectorCount.toFixed(2),
+                  o.criteriaScores.qps.toFixed(2),
+                  o.criteriaScores.latency.toFixed(2),
+                  o.criteriaScores.recall.toFixed(2),
+                  o.criteriaScores.existingPlatform.toFixed(2),
+                  o.criteriaScores.operationalComplexity.toFixed(2),
+                  o.criteriaScores.cost.toFixed(2),
+                ]),
+            },
+            {
+              title: 'Ineligible candidates (cannot win regardless of score)',
+              headers: ['Platform', 'Total', 'Why ineligible'],
+              rows: adr.options
+                .filter((o) => o.eligibilityStatus === 'ineligible')
+                .map((o) => [o.label, o.totalScore.toFixed(2), o.eligibilityNotes.join(' ')]),
             },
           ],
           lists: adr.options.map((o) => ({ title: `Why ${o.label} scored this way`, items: o.evidence })),
         },
         {
-          heading: 'Rejected alternatives',
-          lists: [{ items: adr.rejectedAlternatives.map((r) => `${r.platformId}: ${r.reason}`) }],
+          heading: 'Alternatives',
+          lists: [
+            { title: 'Tied with the decision', items: adr.rejectedAlternatives.filter((r) => r.bucket === 'tied').map((r) => `${r.platformId}: ${r.reason}`) },
+            { title: 'Strong alternatives', items: adr.rejectedAlternatives.filter((r) => r.bucket === 'strong').map((r) => `${r.platformId}: ${r.reason}`) },
+            { title: 'Lower fit for this workload', items: adr.rejectedAlternatives.filter((r) => r.bucket === 'lower_fit').map((r) => `${r.platformId}: ${r.reason}`) },
+            { title: 'Capacity/capability constraint', items: adr.rejectedAlternatives.filter((r) => r.bucket === 'capacity_constraint').map((r) => `${r.platformId}: ${r.reason}`) },
+          ].filter((l) => l.items.length > 0),
         },
         {
           heading: 'Infrastructure estimate',
           fields: [
-            { label: 'Raw vector data size', value: `${adr.infrastructureEstimate.estimatedRawVectorGb}GB` },
-            { label: 'Estimated memory', value: `${adr.infrastructureEstimate.estimatedMemoryGb}GB` },
-            { label: 'Estimated storage', value: `${adr.infrastructureEstimate.estimatedStorageGb}GB` },
+            { label: 'Raw vector data size', value: `${adr.infrastructureEstimate.estimatedRawVectorGb}GiB` },
+            { label: 'Estimated memory', value: `${adr.infrastructureEstimate.estimatedMemoryGb}GiB` },
+            { label: 'Estimated storage', value: `${adr.infrastructureEstimate.estimatedStorageGb}GiB` },
             { label: 'Estimated CPU cores', value: String(adr.infrastructureEstimate.estimatedCpuCores) },
           ],
           lists: [{ title: 'How these figures are calculated', items: adr.infrastructureEstimate.notes }],

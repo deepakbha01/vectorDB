@@ -119,6 +119,8 @@ export type Environment = 'development' | 'staging' | 'production';
 export type DeploymentEnvironment = 'cloud' | 'on_premises' | 'hybrid';
 export type OperationalCapability = 'none' | 'part_time' | 'dedicated_dba' | 'platform_team';
 export type TenancyModel = 'single_tenant' | 'shared_multi_tenant' | 'dedicated_per_tenant';
+export type DataReplicationModel = 'none' | 'active_passive' | 'active_active';
+export type QpsScope = 'aggregate' | 'per_region' | 'per_index';
 
 export interface DiscoveryAssessmentInput {
   environment: Environment;
@@ -130,6 +132,7 @@ export interface DiscoveryAssessmentInput {
   embeddingDimension: number;
   qps: number;
   peakQps: number;
+  qpsScope: QpsScope;
   concurrentUsers: number;
   targetP95LatencyMs: number;
   targetP99LatencyMs: number;
@@ -145,6 +148,8 @@ export interface DiscoveryAssessmentInput {
   topK: number;
   recallTarget: number;
   precisionTarget?: number;
+  ndcgTarget?: number;
+  mrrTarget?: number;
   requiresReranking: boolean;
   hasExistingOracle: boolean;
   hasExistingPostgres: boolean;
@@ -158,11 +163,19 @@ export interface DiscoveryAssessmentInput {
   operationalCapability: OperationalCapability;
   monthlyBudgetUsd?: number;
   requiresMultiRegion: boolean;
+  deploymentRegionCount?: number;
+  trafficDistributionPercent?: string;
+  dataReplicationModel: DataReplicationModel;
+  regionalFailoverRequired: boolean;
+  crossRegionReplicationRequired: boolean;
   tenancyModel: TenancyModel;
   requiresAuthentication: boolean;
   requiresRbac: boolean;
   requiresEncryptionAtRest: boolean;
   requiresEncryptionInTransit: boolean;
+  requiresKeyManagement: boolean;
+  requiresTenantIsolation: boolean;
+  requiresAuditLogging: boolean;
   dataResidencyRequirement?: string;
   containsPii: boolean;
   regulatoryRequirements?: string;
@@ -184,14 +197,45 @@ export interface CriteriaScores {
   cost: number;
 }
 
+export type EligibilityStatus = 'eligible' | 'unverified' | 'ineligible';
+
 export interface ScoredOption {
   platformId: string;
   label: string;
   totalScore: number;
   criteriaScores: CriteriaScores;
   evidence: string[];
-  eligible: boolean;
-  ineligibleReasons: string[];
+  eligibilityStatus: EligibilityStatus;
+  eligibilityNotes: string[];
+}
+
+export type AlternativeBucket = 'tied' | 'strong' | 'lower_fit' | 'capacity_constraint';
+
+export interface RankedAlternative {
+  platformId: string;
+  reason: string;
+  bucket: AlternativeBucket;
+}
+
+export type DecisionStatus = 'single' | 'tied' | 'conditional';
+export type ConfidenceLevel = 'high' | 'medium' | 'low';
+
+export interface BudgetFeasibility {
+  monthlyBudgetUsd: number;
+  status: 'within_budget' | 'exceeds_budget' | 'not_yet_estimated';
+  estimatedMonthlyCostUsd: number | null;
+  note: string;
+}
+
+export interface ComplianceCheck {
+  control: string;
+  satisfied: boolean;
+}
+
+export interface ComplianceGateResult {
+  applicable: boolean;
+  status: 'not_applicable' | 'passed' | 'unverified';
+  checks: ComplianceCheck[];
 }
 
 export interface InfrastructureEstimate {
@@ -212,6 +256,7 @@ export interface PlainLanguageScorecardRow {
 
 export interface PlainLanguageSummary {
   verdict: 'Excellent Fit' | 'Good Fit' | 'Workable Fit' | 'Weak Fit';
+  conditionalBadge: string | null;
   headline: string;
   scorecard: PlainLanguageScorecardRow[];
   costAndEffort: string;
@@ -225,18 +270,40 @@ export interface ArchitectureDecisionRecord {
   decision: string;
   rationale: string;
   options: ScoredOption[];
-  rejectedAlternatives: Array<{ platformId: string; reason: string }>;
+  rejectedAlternatives: RankedAlternative[];
   assumptions: string[];
   risks: string[];
   infrastructureEstimate: InfrastructureEstimate;
   operationalComplexity: string;
   plainLanguageSummary: PlainLanguageSummary | null;
+  criteriaWeights: CriteriaScores | null;
+  decisionStatus: DecisionStatus;
+  confidence: ConfidenceLevel;
+  tiedPlatformIds: string[];
+  tieBreakStage: string | null;
+  openValidations: string[];
+  budgetFeasibility: BudgetFeasibility | null;
+  complianceGate: ComplianceGateResult | null;
   createdAt: string;
 }
 
 export interface DiscoveryOutcome {
   assessment: DiscoveryAssessment;
   adr: ArchitectureDecisionRecord;
+}
+
+export interface SensitivityResult {
+  scenario: string;
+  decision: string;
+  decisionChanged: boolean;
+  totalScore: number;
+  decisionStatus: DecisionStatus;
+}
+
+export interface SensitivityAnalysis {
+  baselineDecision: string;
+  baselineDecisionStatus: DecisionStatus;
+  scenarios: SensitivityResult[];
 }
 
 export type ChunkingStrategy =

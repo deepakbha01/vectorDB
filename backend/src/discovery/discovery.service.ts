@@ -45,29 +45,11 @@ export class DiscoveryService {
       }),
     );
 
-    const result = this.recommendationEngine.evaluate({
-      estimatedVectorCount: dto.estimatedVectorCount,
-      embeddingDimension: dto.embeddingDimension,
-      qps: dto.qps,
-      peakQps: dto.peakQps,
-      targetP95LatencyMs: dto.targetP95LatencyMs,
-      targetP99LatencyMs: dto.targetP99LatencyMs,
-      recallTarget: dto.recallTarget,
-      precisionTarget: dto.precisionTarget,
-      requiresReranking: dto.requiresReranking,
-      hasExistingOracle: dto.hasExistingOracle,
-      hasExistingPostgres: dto.hasExistingPostgres,
-      hasExistingKubernetes: dto.hasExistingKubernetes,
-      existingPlatforms: dto.existingPlatforms,
-      containsPii: dto.containsPii,
-      requiresHybridSearch: dto.requiresHybridSearch,
-      requiresFullTextSearch: dto.requiresFullTextSearch,
-      requiresMetadataFiltering: dto.requiresMetadataFiltering,
-      operationalCapability: dto.operationalCapability,
-      monthlyBudgetUsd: dto.monthlyBudgetUsd,
-      requiresMultiRegion: dto.requiresMultiRegion,
-      tenancyModel: dto.tenancyModel,
-    });
+    // `dto` already carries every field `AssessmentInput` needs (plus a few Phase 1
+    // fields the engine doesn't use, like documentCount) - passing it directly keeps
+    // this mapping from silently dropping a field the engine actually needs, the way
+    // the old field-by-field list here once did for the search-capability flags.
+    const result = this.recommendationEngine.evaluate(dto);
 
     const adr = await this.adrs.save(
       this.adrs.create({
@@ -83,6 +65,14 @@ export class DiscoveryService {
         infrastructureEstimate: result.infrastructureEstimate,
         operationalComplexity: result.operationalComplexity,
         plainLanguageSummary: result.plainLanguageSummary,
+        criteriaWeights: result.criteriaWeights,
+        decisionStatus: result.decisionStatus,
+        confidence: result.confidence,
+        tiedPlatformIds: result.tiedPlatformIds,
+        tieBreakStage: result.tieBreakStage,
+        openValidations: result.openValidations,
+        budgetFeasibility: result.budgetFeasibility,
+        complianceGate: result.complianceGate,
       }),
     );
 
@@ -126,5 +116,37 @@ export class DiscoveryService {
       }
     }
     return outcomes;
+  }
+
+  /**
+   * Answers "what changes if QPS doubles / budget halves / multi-region becomes
+   * mandatory?" against the latest assessment, without submitting a new version -
+   * this is exploratory, not a persisted decision.
+   */
+  async runSensitivityAnalysis(projectId: string, requester: AuthenticatedUser) {
+    await this.projectsService.findOne(projectId, requester);
+    const assessment = await this.assessments.findOne({
+      where: { project: { id: projectId } },
+      order: { version: 'DESC' },
+    });
+    if (!assessment) {
+      throw new NotFoundException('No Discovery assessment has been submitted for this project yet.');
+    }
+
+    const scenarios = [
+      { name: `QPS x2 (${assessment.qps * 2} sustained / ${assessment.peakQps * 2} peak)`, overrides: { qps: assessment.qps * 2, peakQps: assessment.peakQps * 2 } },
+      { name: `Vector count x2 (${(assessment.estimatedVectorCount * 2).toLocaleString()})`, overrides: { estimatedVectorCount: assessment.estimatedVectorCount * 2 } },
+      ...(assessment.monthlyBudgetUsd !== undefined && assessment.monthlyBudgetUsd !== null
+        ? [{ name: `Budget halved ($${assessment.monthlyBudgetUsd / 2}/mo)`, overrides: { monthlyBudgetUsd: assessment.monthlyBudgetUsd / 2 } }]
+        : []),
+      ...(!assessment.requiresMultiRegion
+        ? [{ name: 'Multi-region becomes mandatory', overrides: { requiresMultiRegion: true } }]
+        : [{ name: 'Multi-region requirement dropped', overrides: { requiresMultiRegion: false } }]),
+      { name: 'Recall target raised to 0.99', overrides: { recallTarget: 0.99 } },
+    ];
+
+    const baseline = this.recommendationEngine.evaluate(assessment);
+    const results = this.recommendationEngine.runSensitivityAnalysis(assessment, scenarios);
+    return { baselineDecision: baseline.decision, baselineDecisionStatus: baseline.decisionStatus, scenarios: results };
   }
 }

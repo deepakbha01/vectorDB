@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { RecommendationEngineService } from './recommendation-engine.service';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 import { LIVE_INGESTION_SUPPORTED, VectorPlatform } from '../projects/enums/platform.enum';
-import { OperationalCapability, TenancyModel } from '../discovery/enums/discovery.enum';
+import { DataReplicationModel, OperationalCapability, QpsScope, TenancyModel } from '../discovery/enums/discovery.enum';
 import { AssessmentInput } from './recommendation.types';
 
 const thresholds = {
@@ -30,6 +30,11 @@ const thresholds = {
     existingPlatform: 0.15,
     operationalComplexity: 0.1,
     cost: 0.1,
+  },
+  decisionModel: {
+    tieEpsilon: 0.005,
+    strongAlternativeGap: 0.1,
+    verdict: { excellentFitMin: 0.85, goodFitMin: 0.7, workableFitMin: 0.55 },
   },
 };
 
@@ -69,6 +74,20 @@ function baseInput(overrides: Partial<AssessmentInput> = {}): AssessmentInput {
     operationalCapability: OperationalCapability.PART_TIME,
     requiresMultiRegion: false,
     tenancyModel: TenancyModel.SINGLE_TENANT,
+    dataReplicationModel: DataReplicationModel.NONE,
+    regionalFailoverRequired: false,
+    crossRegionReplicationRequired: false,
+    qpsScope: QpsScope.AGGREGATE,
+    requiresKeyManagement: false,
+    requiresTenantIsolation: false,
+    requiresAuditLogging: false,
+    requiresEncryptionAtRest: false,
+    requiresEncryptionInTransit: false,
+    requiresAuthentication: false,
+    requiresRbac: false,
+    rpoMinutes: 60,
+    rtoMinutes: 240,
+    retentionDays: 365,
     ...overrides,
   };
 }
@@ -200,9 +219,9 @@ describe('RecommendationEngineService', () => {
       const result = service.evaluate(baseInput({ estimatedVectorCount: 10_000, requiresHybridSearch: true }));
       const chroma = result.options.find((o) => o.platformId === VectorPlatform.CHROMA)!;
       const lancedb = result.options.find((o) => o.platformId === VectorPlatform.LANCEDB)!;
-      expect(chroma.eligible).toBe(false);
-      expect(lancedb.eligible).toBe(false);
-      expect(chroma.ineligibleReasons[0]).toContain('hybrid');
+      expect(chroma.eligibilityStatus).toBe('ineligible');
+      expect(lancedb.eligibilityStatus).toBe('ineligible');
+      expect(chroma.eligibilityNotes[0]).toContain('hybrid');
       expect(result.decision).not.toBe(VectorPlatform.CHROMA);
       expect(result.decision).not.toBe(VectorPlatform.LANCEDB);
     });
@@ -211,29 +230,41 @@ describe('RecommendationEngineService', () => {
       const result = service.evaluate(baseInput({ requiresHybridSearch: true }));
       const rejectedChroma = result.rejectedAlternatives.find((r) => r.platformId === VectorPlatform.CHROMA);
       expect(rejectedChroma?.reason).toContain('does not support hybrid');
+      expect(rejectedChroma?.bucket).toBe('capacity_constraint');
     });
 
     it('does not disqualify any platform when no search capability is required', () => {
       const result = service.evaluate(baseInput());
-      expect(result.options.every((o) => o.eligible)).toBe(true);
+      expect(result.options.every((o) => o.eligibilityStatus === 'eligible')).toBe(true);
     });
 
-    it('checkEligibility flags every required capability the catalog entry does not support', () => {
+    it('marks every platform "unverified" (not silently eligible) when multi-region is required', () => {
+      // existingPlatforms forces a clean Chroma win (otherwise Chroma/LanceDB tie under
+      // baseInput()'s defaults, which would make decisionStatus 'tied' rather than
+      // 'conditional' - a separate, correctly-higher-priority status tested elsewhere).
+      const result = service.evaluate(baseInput({ requiresMultiRegion: true, existingPlatforms: [VectorPlatform.CHROMA] }));
+      expect(result.options.every((o) => o.eligibilityStatus === 'unverified')).toBe(true);
+      expect(result.decisionStatus).toBe('conditional');
+    });
+
+    it('checkEligibility flags every required hard capability the catalog entry does not support', () => {
       const entry = { label: 'Test Platform', supportsHybridSearch: false, supportsMetadataFiltering: false };
-      const reasons: string[] = (service as any).checkEligibility(
+      const result = (service as any).checkEligibility(
         entry,
         baseInput({ requiresHybridSearch: true, requiresFullTextSearch: true, requiresMetadataFiltering: true }),
       );
-      expect(reasons).toHaveLength(3);
+      expect(result.status).toBe('ineligible');
+      expect(result.notes).toHaveLength(3);
     });
 
-    it('checkEligibility returns no reasons when the catalog entry supports everything required', () => {
+    it('checkEligibility returns eligible when the catalog entry supports everything required', () => {
       const entry = { label: 'Test Platform', supportsHybridSearch: true, supportsMetadataFiltering: true };
-      const reasons: string[] = (service as any).checkEligibility(
+      const result = (service as any).checkEligibility(
         entry,
         baseInput({ requiresHybridSearch: true, requiresFullTextSearch: true, requiresMetadataFiltering: true }),
       );
-      expect(reasons).toHaveLength(0);
+      expect(result.status).toBe('eligible');
+      expect(result.notes).toHaveLength(0);
     });
   });
 
@@ -289,6 +320,158 @@ describe('RecommendationEngineService', () => {
     it('flags a risk when multi-region deployment is required', () => {
       const result = service.evaluate(baseInput({ requiresMultiRegion: true }));
       expect(result.risks.some((r) => r.includes('Multi-region deployment was requested'))).toBe(true);
+    });
+  });
+
+  describe('tie detection and tie-break', () => {
+    it('detects and reports a genuine tie (Chroma/LanceDB score identically under baseInput() defaults)', () => {
+      const result = service.evaluate(baseInput());
+      expect(result.decisionStatus).toBe('tied');
+      expect(result.confidence).toBe('low');
+      expect(result.tiedPlatformIds).toEqual(expect.arrayContaining([VectorPlatform.CHROMA, VectorPlatform.LANCEDB]));
+      expect(result.tiedPlatformIds).toHaveLength(2);
+      expect([VectorPlatform.CHROMA, VectorPlatform.LANCEDB]).toContain(result.decision);
+    });
+
+    it('resolveWinner breaks a tie deterministically via raw cost score and reports which stage broke it', () => {
+      const makeOption = (platformId: VectorPlatform, totalScore: number, cost: number) => ({
+        platformId,
+        label: platformId,
+        totalScore,
+        criteriaScores: { vectorCount: 1, qps: 1, latency: 1, recall: 1, existingPlatform: 0.5, operationalComplexity: 1, cost },
+        evidence: [],
+        eligibilityStatus: 'eligible' as const,
+        eligibilityNotes: [],
+      });
+      const tied = [makeOption(VectorPlatform.CHROMA, 0.9, 0.85), makeOption(VectorPlatform.LANCEDB, 0.9, 0.95)];
+      const { winner, tieBreakStage } = (service as any).resolveWinner(tied, tied);
+      expect(winner.platformId).toBe(VectorPlatform.LANCEDB);
+      expect(tieBreakStage).toContain('cost');
+    });
+
+    it('does not report a tie once a real scoring difference (e.g. an existing-platform bonus) exceeds the tie epsilon', () => {
+      const result = service.evaluate(baseInput({ existingPlatforms: [VectorPlatform.LANCEDB] }));
+      expect(result.decision).toBe(VectorPlatform.LANCEDB);
+      expect(result.decisionStatus).toBe('single');
+      expect(result.tieBreakStage).toBeNull();
+    });
+
+    it('buckets the non-winning tied platform as "tied" in rejectedAlternatives, not a generic comparison', () => {
+      const result = service.evaluate(baseInput());
+      const loser = result.decision === VectorPlatform.CHROMA ? VectorPlatform.LANCEDB : VectorPlatform.CHROMA;
+      const alt = result.rejectedAlternatives.find((r) => r.platformId === loser);
+      expect(alt?.bucket).toBe('tied');
+      expect(alt?.reason).toContain('tied');
+    });
+
+    it('names both tied platforms in the rationale rather than implying a single unambiguous winner', () => {
+      const result = service.evaluate(baseInput());
+      expect(result.rationale).toContain('tied with');
+    });
+  });
+
+  describe('budget feasibility', () => {
+    it('returns null when no budget was specified', () => {
+      const result = service.evaluate(baseInput());
+      expect(result.budgetFeasibility).toBeNull();
+    });
+
+    it('never claims budget fit from the cost score alone - status is "not_yet_estimated" until a real quote exists', () => {
+      const result = service.evaluate(baseInput({ monthlyBudgetUsd: 1000 }));
+      expect(result.budgetFeasibility).not.toBeNull();
+      expect(result.budgetFeasibility!.status).toBe('not_yet_estimated');
+      expect(result.budgetFeasibility!.estimatedMonthlyCostUsd).toBeNull();
+      expect(result.openValidations.some((v) => v.includes('$1000'))).toBe(true);
+    });
+  });
+
+  describe('PII compliance gate', () => {
+    it('is not applicable when the workload has no PII', () => {
+      const result = service.evaluate(baseInput({ containsPii: false }));
+      expect(result.complianceGate.applicable).toBe(false);
+      expect(result.complianceGate.status).toBe('not_applicable');
+    });
+
+    it('is "unverified" (not silently passed) when PII is present but compliance controls were not all captured', () => {
+      const result = service.evaluate(baseInput({ containsPii: true, requiresEncryptionAtRest: false }));
+      expect(result.complianceGate.applicable).toBe(true);
+      expect(result.complianceGate.status).toBe('unverified');
+      expect(result.complianceGate.checks.find((c) => c.control === 'Encryption at rest')?.satisfied).toBe(false);
+      expect(result.decisionStatus === 'conditional' || result.decisionStatus === 'tied').toBe(true);
+    });
+
+    it('passes when PII is present and every compliance control was captured', () => {
+      const result = service.evaluate(
+        baseInput({
+          containsPii: true,
+          requiresEncryptionAtRest: true,
+          requiresEncryptionInTransit: true,
+          requiresAuthentication: true,
+          requiresRbac: true,
+          requiresKeyManagement: true,
+          requiresAuditLogging: true,
+          requiresTenantIsolation: true,
+          dataResidencyRequirement: 'EU-only',
+          existingPlatforms: [VectorPlatform.CHROMA],
+        }),
+      );
+      expect(result.complianceGate.status).toBe('passed');
+    });
+  });
+
+  describe('plain-language verdict honesty (does not overclaim "Excellent Fit")', () => {
+    it('caps the badge below "Excellent Fit" when a weak criterion exists even if the total score would otherwise qualify', () => {
+      // hasExistingKubernetes only (no PII/budget/multi-region open items) but Pinecone
+      // is a fully-managed SaaS - existingPlatform stays weak (0.5) even at huge scale.
+      const result = service.evaluate(
+        baseInput({
+          estimatedVectorCount: 20_000_000,
+          qps: 15_000,
+          peakQps: 15_000,
+          targetP95LatencyMs: 95,
+          recallTarget: 0.9,
+        }),
+      );
+      const winnerOption = result.options.find((o) => o.platformId === result.decision)!;
+      const anyWeak = Object.values(winnerOption.criteriaScores).some((s) => s < 0.5);
+      if (result.plainLanguageSummary.verdict === 'Excellent Fit' && (anyWeak || result.openValidations.length > 0)) {
+        expect(result.plainLanguageSummary.conditionalBadge).not.toBeNull();
+      }
+    });
+
+    it('replaces the badge with a tie announcement when the decision is tied', () => {
+      const result = service.evaluate(baseInput());
+      expect(result.decisionStatus).toBe('tied');
+      expect(result.plainLanguageSummary.conditionalBadge).toContain('Tied');
+    });
+  });
+
+  describe('unit labeling (GiB, not GB)', () => {
+    it('labels infrastructure estimate notes as GiB, matching the binary (1024^3) math used', () => {
+      const result = service.evaluate(baseInput());
+      expect(result.infrastructureEstimate.notes.some((n) => n.includes('GiB'))).toBe(true);
+      expect(result.infrastructureEstimate.notes.some((n) => / \d[\d.]*GB\b/.test(n))).toBe(false);
+    });
+  });
+
+  describe('sensitivity analysis', () => {
+    it('flags decisionChanged when a scenario flips the winner', () => {
+      // At tiny scale, Postgres beats Pinecone; a huge vector-count jump should flip it.
+      const base = baseInput({ estimatedVectorCount: 50_000, requiresHybridSearch: false, existingPlatforms: [] });
+      const results = service.runSensitivityAnalysis(base, [
+        { name: 'huge scale', overrides: { estimatedVectorCount: 200_000_000, qps: 5000, peakQps: 10_000 } },
+        { name: 'no-op', overrides: {} },
+      ]);
+      const hugeScale = results.find((r) => r.scenario === 'huge scale')!;
+      const noOp = results.find((r) => r.scenario === 'no-op')!;
+      expect(hugeScale.decisionChanged).toBe(true);
+      expect(noOp.decisionChanged).toBe(false);
+    });
+
+    it('reports the resulting decisionStatus per scenario, e.g. becoming conditional when multi-region is toggled on', () => {
+      const base = baseInput({ existingPlatforms: [VectorPlatform.CHROMA] }); // clean single winner
+      const results = service.runSensitivityAnalysis(base, [{ name: 'multi-region on', overrides: { requiresMultiRegion: true } }]);
+      expect(results[0].decisionStatus).toBe('conditional');
     });
   });
 });

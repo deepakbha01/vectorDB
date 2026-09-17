@@ -125,3 +125,19 @@ scoringWeights:
   existingPlatform: 0.15
   operationalComplexity: 0.1
   cost: 0.1
+
+# Phase 1 decision-presentation model: tie detection, alternative bucketing,
+# and the plain-language verdict bands. None of this changes scoring itself -
+# it only decides how already-computed scores are grouped/labeled/decided
+# between when the total score is a tie.
+decisionModel:
+  # Two eligible candidates within this of each other are treated as tied
+  # rather than one silently "winning" by a fractional rounding difference.
+  tieEpsilon: 0.005
+  # Rejected alternatives within this of the winner's score are bucketed as
+  # "strong alternative"; beyond it (but still eligible) as "lower fit".
+  strongAlternativeGap: 0.1
+  verdict:
+    excellentFitMin: 0.85
+    goodFitMin: 0.7
+    workableFitMin: 0.55

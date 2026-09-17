@@ -6,7 +6,14 @@ import { ArchitectureDecisionRecord } from './architecture-decision-record.entit
 import { ProjectsService } from '../projects/projects.service';
 import { RecommendationEngineService } from '../recommendation-engine/recommendation-engine.service';
 import { VectorPlatform } from '../projects/enums/platform.enum';
-import { Environment, DeploymentEnvironment, OperationalCapability, TenancyModel } from './enums/discovery.enum';
+import {
+  Environment,
+  DeploymentEnvironment,
+  OperationalCapability,
+  TenancyModel,
+  QpsScope,
+  DataReplicationModel,
+} from './enums/discovery.enum';
 import { CreateDiscoveryAssessmentDto } from './dto/create-discovery-assessment.dto';
 
 function buildDto(): CreateDiscoveryAssessmentDto {
@@ -20,6 +27,7 @@ function buildDto(): CreateDiscoveryAssessmentDto {
     embeddingDimension: 768,
     qps: 10,
     peakQps: 25,
+    qpsScope: QpsScope.AGGREGATE,
     concurrentUsers: 50,
     targetP95LatencyMs: 200,
     targetP99LatencyMs: 400,
@@ -35,6 +43,8 @@ function buildDto(): CreateDiscoveryAssessmentDto {
     topK: 10,
     recallTarget: 0.9,
     requiresReranking: false,
+    ndcgTarget: undefined,
+    mrrTarget: undefined,
     hasExistingOracle: false,
     hasExistingPostgres: true,
     hasExistingKubernetes: false,
@@ -46,11 +56,17 @@ function buildDto(): CreateDiscoveryAssessmentDto {
     hasGpu: false,
     operationalCapability: OperationalCapability.PART_TIME,
     requiresMultiRegion: false,
+    dataReplicationModel: DataReplicationModel.NONE,
+    regionalFailoverRequired: false,
+    crossRegionReplicationRequired: false,
     tenancyModel: TenancyModel.SINGLE_TENANT,
     requiresAuthentication: true,
     requiresRbac: true,
     requiresEncryptionAtRest: true,
     requiresEncryptionInTransit: true,
+    requiresKeyManagement: false,
+    requiresTenantIsolation: false,
+    requiresAuditLogging: false,
     containsPii: false,
   };
 }

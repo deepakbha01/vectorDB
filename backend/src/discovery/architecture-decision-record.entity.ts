@@ -2,7 +2,17 @@ import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, OneToOn
 import { Project } from '../projects/project.entity';
 import { DiscoveryAssessment } from './discovery-assessment.entity';
 import { VectorPlatform } from '../projects/enums/platform.enum';
-import { InfrastructureEstimate, PlainLanguageSummary, ScoredOption } from '../recommendation-engine/recommendation.types';
+import {
+  BudgetFeasibility,
+  ComplianceGateResult,
+  ConfidenceLevel,
+  CriteriaScores,
+  DecisionStatus,
+  InfrastructureEstimate,
+  PlainLanguageSummary,
+  RankedAlternative,
+  ScoredOption,
+} from '../recommendation-engine/recommendation.types';
 
 /**
  * Phase 1 deliverable: the Architecture Decision Record produced by the
@@ -36,7 +46,7 @@ export class ArchitectureDecisionRecord {
   options: ScoredOption[];
 
   @Column({ type: 'jsonb' })
-  rejectedAlternatives: Array<{ platformId: VectorPlatform; reason: string }>;
+  rejectedAlternatives: RankedAlternative[];
 
   @Column({ type: 'jsonb' })
   assumptions: string[];
@@ -53,6 +63,30 @@ export class ArchitectureDecisionRecord {
   // Nullable: ADRs created before this field existed have no value for it.
   @Column({ type: 'jsonb', nullable: true })
   plainLanguageSummary: PlainLanguageSummary | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  criteriaWeights: CriteriaScores | null;
+
+  @Column({ type: 'enum', enum: ['single', 'tied', 'conditional'], default: 'single' })
+  decisionStatus: DecisionStatus;
+
+  @Column({ type: 'enum', enum: ['high', 'medium', 'low'], default: 'high' })
+  confidence: ConfidenceLevel;
+
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  tiedPlatformIds: VectorPlatform[];
+
+  @Column({ type: 'text', nullable: true })
+  tieBreakStage: string | null;
+
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  openValidations: string[];
+
+  @Column({ type: 'jsonb', nullable: true })
+  budgetFeasibility: BudgetFeasibility | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  complianceGate: ComplianceGateResult | null;
 
   @CreateDateColumn()
   createdAt: Date;

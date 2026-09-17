@@ -12,11 +12,21 @@ import { buildComparativeReason, ramp } from '../common/scoring-utils';
 import { OperationalCapability } from '../discovery/enums/discovery.enum';
 import { buildPlainLanguageSummary } from './plain-language-summary';
 import {
+  AlternativeBucket,
   AssessmentInput,
+  BudgetFeasibility,
+  ComplianceCheck,
+  ComplianceGateResult,
+  ConfidenceLevel,
   CriteriaScores,
+  DecisionStatus,
+  EligibilityStatus,
   InfrastructureEstimate,
+  RankedAlternative,
   RecommendationResult,
   ScoredOption,
+  SensitivityResult,
+  SensitivityScenario,
 } from './recommendation.types';
 
 /**
@@ -27,6 +37,14 @@ import {
  * backend/config/thresholds.yaml - nothing here is a hard-coded numeric
  * cutoff; every threshold and weight is configurable per rule "Use
  * configurable thresholds. Do not hard-code simplistic limits."
+ *
+ * Pipeline: score every candidate -> gate eligibility (hard requirements
+ * disqualify; requirements this tool can't verify per-platform, like
+ * multi-region replication, mark "unverified" rather than silently assuming
+ * pass) -> pick a winner from eligible-or-unverified candidates, detecting
+ * and deterministically breaking ties -> run the budget and compliance
+ * validation gates -> assemble a decision status/confidence so the caller
+ * never has to infer "is this actually settled?" from the raw score alone.
  */
 @Injectable()
 export class RecommendationEngineService {
@@ -52,7 +70,7 @@ export class RecommendationEngineService {
         criteriaScores.existingPlatform * weights.existingPlatform +
         criteriaScores.operationalComplexity * weights.operationalComplexity +
         criteriaScores.cost * weights.cost;
-      const ineligibleReasons = this.checkEligibility(entry, input);
+      const { status: eligibilityStatus, notes: eligibilityNotes } = this.checkEligibility(entry, input);
       const evidence = this.buildEvidence(platformId, entry, input, thresholds, criteriaScores);
 
       return {
@@ -60,40 +78,87 @@ export class RecommendationEngineService {
         label: entry.label,
         totalScore: Number(totalScore.toFixed(4)),
         criteriaScores,
-        eligible: ineligibleReasons.length === 0,
-        ineligibleReasons,
-        evidence: ineligibleReasons.length > 0 ? [...ineligibleReasons, ...evidence] : evidence,
+        eligibilityStatus,
+        eligibilityNotes,
+        evidence: eligibilityNotes.length > 0 ? [...eligibilityNotes, ...evidence] : evidence,
       };
     });
 
     options.sort((a, b) => b.totalScore - a.totalScore);
-    // Eligibility gates who can win, independently of score: a platform that
-    // fails a hard search-capability requirement is never the recommendation,
-    // no matter how well it scores on everything else. Falls back to scoring
-    // all options only if literally nothing in the catalog qualifies.
-    const eligibleOptions = options.filter((o) => o.eligible);
+
+    // A hard-ineligible platform can never win, no matter its score. An
+    // "unverified" platform (e.g. every platform when multi-region is
+    // required, since none is modeled per-platform) can still win, but the
+    // decision is then marked "conditional" rather than "single" below.
+    const eligibleOptions = options.filter((o) => o.eligibilityStatus !== 'ineligible');
     const winnerPool = eligibleOptions.length > 0 ? eligibleOptions : options;
-    const winner = winnerPool[0];
-    const rejected = options
-      .filter((o) => o.platformId !== winner.platformId)
-      .map((o) => ({
-        platformId: o.platformId,
-        reason: o.eligible ? this.buildRejectionReason(o, winner) : o.ineligibleReasons.join(' '),
-      }));
+
+    const tieEpsilon = thresholds.decisionModel.tieEpsilon;
+    const topScore = winnerPool[0].totalScore;
+    const tied = winnerPool.filter((o) => topScore - o.totalScore <= tieEpsilon);
+
+    const { winner, tieBreakStage } = this.resolveWinner(tied, winnerPool);
+
+    const rejected = this.buildRankedAlternatives(options, winner, tied, thresholds);
+
+    const budgetFeasibility = this.buildBudgetFeasibility(winner.platformId, input);
+    const complianceGate = this.buildComplianceGate(input);
     const risks = this.buildRisks(winner.platformId, input, thresholds, eligibleOptions.length === 0);
+
+    const decisionStatus = this.buildDecisionStatus(tied, winner, complianceGate);
+    const openValidations = this.buildOpenValidations(input, budgetFeasibility, complianceGate, winner);
+    const confidence = this.buildConfidence(decisionStatus, openValidations.length, winner.eligibilityStatus);
 
     return {
       rulesVersion: this.platformConfig.getRulesVersion(),
       decision: winner.platformId,
-      rationale: this.buildRationale(winner, input),
+      rationale: this.buildRationale(winner, input, tied),
       options,
       rejectedAlternatives: rejected,
       assumptions: this.buildAssumptions(input),
       risks,
       infrastructureEstimate: this.estimateInfrastructure(input, thresholds),
       operationalComplexity: catalog.find((c) => c.id === winner.platformId)?.operationalComplexity ?? 'unknown',
-      plainLanguageSummary: buildPlainLanguageSummary(winner.label, winner.totalScore, winner.criteriaScores, risks),
+      plainLanguageSummary: buildPlainLanguageSummary(
+        winner.label,
+        winner.totalScore,
+        winner.criteriaScores,
+        risks,
+        thresholds.decisionModel.verdict,
+        openValidations,
+        decisionStatus,
+        tied.length > 1 ? tied.map((o) => o.label) : [],
+      ),
+      criteriaWeights: weights,
+      decisionStatus,
+      confidence,
+      tiedPlatformIds: tied.length > 1 ? tied.map((o) => o.platformId) : [],
+      tieBreakStage,
+      openValidations,
+      budgetFeasibility,
+      complianceGate,
     };
+  }
+
+  /**
+   * Re-runs `evaluate()` once per scenario with the given field overrides applied on top of
+   * `baseInput`, so a caller can answer "what changes if QPS doubles / budget halves / multi-
+   * region becomes mandatory?" without hand-rolling the comparison. Pure and stateless, like
+   * `evaluate()` itself - no scenario here is persisted.
+   */
+  runSensitivityAnalysis(baseInput: AssessmentInput, scenarios: SensitivityScenario[]): SensitivityResult[] {
+    const baseline = this.evaluate(baseInput);
+    return scenarios.map((scenario) => {
+      const result = this.evaluate({ ...baseInput, ...scenario.overrides });
+      const decisionOption = result.options.find((o) => o.platformId === result.decision)!;
+      return {
+        scenario: scenario.name,
+        decision: result.decision,
+        decisionChanged: result.decision !== baseline.decision,
+        totalScore: decisionOption.totalScore,
+        decisionStatus: result.decisionStatus,
+      };
+    });
   }
 
   private scoreCriteria(
@@ -258,29 +323,207 @@ export class RecommendationEngineService {
   }
 
   /**
-   * Hard eligibility gate, separate from scoring: `databases.yaml`'s
-   * `supportsHybridSearch`/`supportsMetadataFiltering` flags previously had
-   * no effect on the recommendation even when the assessment explicitly
-   * required that capability (e.g. Chroma/LanceDB are marked
-   * `supportsHybridSearch: false` but could still win outright). A platform
-   * that fails a required capability here can still be scored for
-   * transparency, but can never be the winning `decision`.
+   * Hard-vs-unverified-vs-clean eligibility gate, separate from scoring.
+   * `databases.yaml`'s `supportsHybridSearch`/`supportsMetadataFiltering` flags previously
+   * had no effect on the recommendation even when the assessment explicitly required that
+   * capability. A platform that fails a required capability here is `ineligible` and can
+   * never win. Multi-region is a different kind of gap: this tool does not model any
+   * platform's cross-region replication story, so instead of silently treating every
+   * platform as if it were single-region-capable, every platform is marked `unverified`
+   * when multi-region is required - still winnable, but never presented as unconditionally
+   * clean (see `buildDecisionStatus`).
    */
-  private checkEligibility(catalogEntry: Record<string, any>, input: AssessmentInput): string[] {
-    const reasons: string[] = [];
+  private checkEligibility(catalogEntry: Record<string, any>, input: AssessmentInput): { status: EligibilityStatus; notes: string[] } {
+    const hardFailures: string[] = [];
     if (input.requiresHybridSearch && !catalogEntry.supportsHybridSearch) {
-      reasons.push(`${catalogEntry.label} does not support hybrid (vector + keyword) search, which this workload requires.`);
+      hardFailures.push(`${catalogEntry.label} does not support hybrid (vector + keyword) search, which this workload requires.`);
     }
     // The catalog has no separate full-text-search flag; supportsHybridSearch is the closest
     // available signal, since every platform that supports hybrid search does so via a
     // built-in lexical/full-text engine (BM25 or equivalent).
     if (input.requiresFullTextSearch && !catalogEntry.supportsHybridSearch) {
-      reasons.push(`${catalogEntry.label} has no built-in full-text search capability, which this workload requires.`);
+      hardFailures.push(`${catalogEntry.label} has no built-in full-text search capability, which this workload requires.`);
     }
     if (input.requiresMetadataFiltering && !catalogEntry.supportsMetadataFiltering) {
-      reasons.push(`${catalogEntry.label} does not support metadata filtering, which this workload requires.`);
+      hardFailures.push(`${catalogEntry.label} does not support metadata filtering, which this workload requires.`);
     }
-    return reasons;
+    if (hardFailures.length > 0) {
+      return { status: 'ineligible', notes: hardFailures };
+    }
+
+    const unverifiedNotes: string[] = [];
+    if (input.requiresMultiRegion) {
+      unverifiedNotes.push(
+        `Multi-region deployment was required, but ${catalogEntry.label}'s cross-region replication capability is not modeled by this tool - eligibility is unverified, not assumed.`,
+      );
+    }
+    if (unverifiedNotes.length > 0) {
+      return { status: 'unverified', notes: unverifiedNotes };
+    }
+
+    return { status: 'eligible', notes: [] };
+  }
+
+  /**
+   * Deterministic tie-break chain, applied only when 2+ candidates are within the tie
+   * epsilon of the top score: prefer the raw (unweighted) cost score, then raw
+   * existing-platform score, then raw operational-complexity score, then finally catalog
+   * order (stable, so the same inputs always resolve the same winner). Each stage that
+   * actually distinguishes the tied set is reported in `tieBreakStage` for full
+   * transparency in the output, rather than silently picking one.
+   */
+  private resolveWinner(tied: ScoredOption[], winnerPool: ScoredOption[]): { winner: ScoredOption; tieBreakStage: string | null } {
+    if (tied.length <= 1) {
+      return { winner: winnerPool[0], tieBreakStage: null };
+    }
+
+    const stages: Array<{ name: string; key: keyof CriteriaScores }> = [
+      { name: 'cost / budget feasibility (raw cost fit)', key: 'cost' },
+      { name: 'existing-stack alignment (raw score)', key: 'existingPlatform' },
+      { name: 'operational model fit (raw score)', key: 'operationalComplexity' },
+    ];
+
+    for (const stage of stages) {
+      const best = Math.max(...tied.map((o) => o.criteriaScores[stage.key]));
+      const stillTied = tied.filter((o) => o.criteriaScores[stage.key] === best);
+      if (stillTied.length === 1) {
+        return { winner: stillTied[0], tieBreakStage: stage.name };
+      }
+      if (stillTied.length < tied.length) {
+        // Narrowed but not resolved - keep narrowing with the reduced set.
+        tied = stillTied;
+      }
+    }
+
+    return {
+      winner: tied[0],
+      tieBreakStage: 'catalog order (tied through every tie-break stage; route to architect review or use "Manually override this decision")',
+    };
+  }
+
+  private buildRankedAlternatives(
+    options: ScoredOption[],
+    winner: ScoredOption,
+    tied: ScoredOption[],
+    thresholds: Record<string, any>,
+  ): RankedAlternative[] {
+    const tiedIds = new Set(tied.length > 1 ? tied.map((o) => o.platformId) : []);
+    const strongAlternativeGap = thresholds.decisionModel.strongAlternativeGap;
+
+    return options
+      .filter((o) => o.platformId !== winner.platformId)
+      .map((o) => {
+        if (o.eligibilityStatus === 'ineligible') {
+          return { platformId: o.platformId, reason: o.eligibilityNotes.join(' '), bucket: 'capacity_constraint' as AlternativeBucket };
+        }
+        if (tiedIds.has(o.platformId)) {
+          return {
+            platformId: o.platformId,
+            reason: `${o.label} tied ${winner.label} at ${o.totalScore.toFixed(2)} under the current scoring model; not differentiated by the tie-break chain applied.`,
+            bucket: 'tied' as AlternativeBucket,
+          };
+        }
+        const gap = winner.totalScore - o.totalScore;
+        const bucket: AlternativeBucket = gap <= strongAlternativeGap ? 'strong' : 'lower_fit';
+        const reason = buildComparativeReason(
+          winner.label,
+          winner.totalScore,
+          winner.criteriaScores as unknown as Record<string, number>,
+          o.label,
+          o.totalScore,
+          o.criteriaScores as unknown as Record<string, number>,
+        );
+        return { platformId: o.platformId, reason, bucket };
+      });
+  }
+
+  /**
+   * This tool has no verified vendor pricing model, so it never fabricates a dollar
+   * figure - the fix is to stop implying budget fit from the 0-1 cost score, not to
+   * invent a number. Only emitted when a budget was actually specified.
+   */
+  private buildBudgetFeasibility(decision: VectorPlatform, input: AssessmentInput): BudgetFeasibility | null {
+    if (input.monthlyBudgetUsd === undefined) {
+      return null;
+    }
+    return {
+      monthlyBudgetUsd: input.monthlyBudgetUsd,
+      status: 'not_yet_estimated',
+      estimatedMonthlyCostUsd: null,
+      note:
+        `A monthly budget of $${input.monthlyBudgetUsd} was specified. This tool's cost criterion (used in scoring above) is a ` +
+        'directional 0-1 fitness score, not a dollar estimate, so it cannot yet be compared against the budget - get an actual ' +
+        "vendor/cloud quote before treating this decision as budget-confirmed.",
+    };
+  }
+
+  /**
+   * Runs only when the workload contains PII. Checks the compliance-relevant inputs the
+   * assessment actually captures; "satisfied" here means the requirement was captured as
+   * needed by the user, not that this tool has verified the target platform enforces it -
+   * that distinction is exactly why the gate caps the badge at "Conditionally eligible"
+   * rather than "Excellent Fit" when anything is missing.
+   */
+  private buildComplianceGate(input: AssessmentInput): ComplianceGateResult {
+    if (!input.containsPii) {
+      return { applicable: false, status: 'not_applicable', checks: [] };
+    }
+    const checks: ComplianceCheck[] = [
+      { control: 'Encryption at rest', satisfied: input.requiresEncryptionAtRest ?? false },
+      { control: 'Encryption in transit', satisfied: input.requiresEncryptionInTransit ?? false },
+      { control: 'Data residency', satisfied: !!input.dataResidencyRequirement },
+      { control: 'Key management', satisfied: input.requiresKeyManagement },
+      { control: 'Access control', satisfied: (input.requiresAuthentication ?? false) && (input.requiresRbac ?? false) },
+      { control: 'Audit logging', satisfied: input.requiresAuditLogging },
+      { control: 'Tenant isolation', satisfied: input.requiresTenantIsolation },
+      { control: 'Backup protection', satisfied: input.rpoMinutes !== undefined && input.rtoMinutes !== undefined },
+      { control: 'Retention / deletion policy', satisfied: (input.retentionDays ?? 0) > 0 },
+    ];
+    const status = checks.every((c) => c.satisfied) ? 'passed' : 'unverified';
+    return { applicable: true, status, checks };
+  }
+
+  private buildDecisionStatus(tied: ScoredOption[], winner: ScoredOption, complianceGate: ComplianceGateResult): DecisionStatus {
+    if (tied.length > 1) {
+      return 'tied';
+    }
+    if (winner.eligibilityStatus === 'unverified' || complianceGate.status === 'unverified') {
+      return 'conditional';
+    }
+    return 'single';
+  }
+
+  private buildOpenValidations(
+    input: AssessmentInput,
+    budgetFeasibility: BudgetFeasibility | null,
+    complianceGate: ComplianceGateResult,
+    winner: ScoredOption,
+  ): string[] {
+    const items: string[] = [];
+    if (budgetFeasibility && budgetFeasibility.status === 'not_yet_estimated') {
+      items.push(`Actual monthly cost vs. the $${budgetFeasibility.monthlyBudgetUsd} stated budget (currently a directional score, not a quote)`);
+    }
+    if (winner.eligibilityStatus === 'unverified') {
+      items.push("Multi-region deployment and replication model for the recommended platform (not yet scored per platform)");
+    }
+    if (complianceGate.status === 'unverified') {
+      const missing = complianceGate.checks.filter((c) => !c.satisfied).map((c) => c.control);
+      items.push(`Compliance controls for PII not yet captured: ${missing.join(', ')}`);
+    }
+    if (input.qpsScope === undefined) {
+      items.push('Aggregate vs. per-region vs. per-index QPS definition');
+    }
+    return items;
+  }
+
+  private buildConfidence(decisionStatus: DecisionStatus, openValidationCount: number, eligibilityStatus: EligibilityStatus): ConfidenceLevel {
+    if (decisionStatus === 'tied') {
+      return 'low';
+    }
+    if (decisionStatus === 'conditional' || openValidationCount >= 2 || eligibilityStatus === 'unverified') {
+      return 'medium';
+    }
+    return 'high';
   }
 
   private buildEvidence(
@@ -301,31 +544,28 @@ export class RecommendationEngineService {
       `Existing-platform fit scored ${scores.existingPlatform} ` +
         `(existingOracle=${input.hasExistingOracle}, existingPostgres=${input.hasExistingPostgres}, existingKubernetes=${input.hasExistingKubernetes}, ` +
         `already running ${catalogEntry.label}=${input.existingPlatforms.includes(platformId)}).`,
-      `Operational complexity ('${catalogEntry.operationalComplexity}') scored ${scores.operationalComplexity} ` +
+      `Operational simplicity ('${catalogEntry.operationalComplexity}' complexity) scored ${scores.operationalComplexity} ` +
         `given a '${input.operationalCapability}' operational capability.`,
       `Cost fit scored ${scores.cost}.`,
     ];
     return evidence;
   }
 
-  private buildRationale(winner: ScoredOption, input: AssessmentInput): string {
-    return (
+  private buildRationale(winner: ScoredOption, input: AssessmentInput, tied: ScoredOption[]): string {
+    const base =
       `${winner.label} scored highest overall (${winner.totalScore.toFixed(2)}) for an estimated ` +
       `${input.estimatedVectorCount.toLocaleString()} vectors at ${input.embeddingDimension} dimensions, ` +
       `${Math.max(input.qps, input.peakQps)} peak QPS, a ${input.targetP95LatencyMs}ms P95 latency target, and a ` +
       `${input.recallTarget} recall target, weighted across vector volume, QPS, latency, recall, existing-platform ` +
-      `fit, operational complexity, and cost.`
-    );
-  }
-
-  private buildRejectionReason(option: ScoredOption, winner: ScoredOption): string {
-    return buildComparativeReason(
-      winner.label,
-      winner.totalScore,
-      winner.criteriaScores as unknown as Record<string, number>,
-      option.label,
-      option.totalScore,
-      option.criteriaScores as unknown as Record<string, number>,
+      `fit, operational complexity, and cost.`;
+    if (tied.length <= 1) {
+      return base;
+    }
+    const others = tied.filter((o) => o.platformId !== winner.platformId).map((o) => o.label);
+    return (
+      `${winner.label} tied with ${others.join(', ')} at ${winner.totalScore.toFixed(2)} under the current scoring model; ` +
+      `${winner.label} was selected via the deterministic tie-break chain. ` +
+      base
     );
   }
 
@@ -334,7 +574,7 @@ export class RecommendationEngineService {
       'Vector dimension and count are stable estimates provided at Discovery time; re-run the assessment if they change materially.',
       `Sizing assumes float32 embeddings (${input.embeddingDimension} dimensions) with a single HNSW-style ANN index per collection.`,
       'Cost scoring is directional (favors reuse of existing infrastructure); it is not a substitute for a vendor quote.',
-      'QPS figures are assumed to be per-instance; multi-region or multi-tenant fan-out is not yet modeled beyond the risk noted below (see Phase 7 - Scaling & Sharding).',
+      `QPS figures are treated as '${input.qpsScope}'; if that does not match how you actually measure QPS, re-run the assessment with the correct scope, since it materially changes sizing once multi-region is in play.`,
     ];
     if (input.precisionTarget !== undefined) {
       assumptions.push(
@@ -342,16 +582,16 @@ export class RecommendationEngineService {
           'precision, which is typically governed by downstream result filtering/reranking rather than the index itself - it is recorded but not scored.',
       );
     }
+    if (input.ndcgTarget !== undefined || input.mrrTarget !== undefined) {
+      assumptions.push(
+        'NDCG@K / MRR targets, if specified, are recorded for the record only - this engine\'s rules only model recall@K, so ranking-quality ' +
+          'metrics are not independently scored.',
+      );
+    }
     if (input.requiresReranking) {
       assumptions.push(
         'Reranking is assumed to run at the application layer over the top-K candidates any of these platforms return; it does not change ' +
           'platform selection, since it is not platform-specific.',
-      );
-    }
-    if (input.monthlyBudgetUsd !== undefined) {
-      assumptions.push(
-        `A monthly budget of $${input.monthlyBudgetUsd} was specified; the cost criterion above is a directional 0-1 fitness score, not a ` +
-          'dollar estimate - validate against actual vendor/cloud pricing before committing.',
       );
     }
     return assumptions;
@@ -382,6 +622,12 @@ export class RecommendationEngineService {
     }
     if (input.recallTarget >= thresholds.recall.highRecallTarget) {
       risks.push('High recall target may require larger ef/nprobe search parameters, increasing latency and memory - validate during Phase 3 index tuning.');
+    }
+    if (input.precisionTarget !== undefined && input.precisionTarget >= 0.99) {
+      risks.push(
+        `A precision@K target of ${input.precisionTarget} is at or near the ceiling; confirm this is intentional (e.g. "near-exhaustive search ` +
+          'required") rather than a proxy for "very high precision" entered as literal 100%, since the two imply very different index designs.',
+      );
     }
     if (input.targetP95LatencyMs <= thresholds.latencyMs.strictP95) {
       risks.push('Strict P95 latency target is aggressive for the estimated scale; load-test before committing to production SLAs.');
@@ -427,12 +673,14 @@ export class RecommendationEngineService {
       estimatedStorageGb: Number(storageGb.toFixed(3)),
       estimatedCpuCores: Number(cpuCores.toFixed(2)),
       notes: [
+        // Binary units (1024^3), so labeled GiB rather than the decimal-GB figure that
+        // number would imply - a real unit-labeling mismatch a prior review caught.
         `Raw vector data: ${input.estimatedVectorCount.toLocaleString()} vectors x ${input.embeddingDimension} dimensions x ` +
-          `${bytesPerDimension} bytes/dimension = ${rawGb.toFixed(3)}GB.`,
-        `Estimated memory: ${rawGb.toFixed(3)}GB raw x ${indexOverheadFactor} (index overhead) x ${ramSafetyFactor} ` +
-          `(safety factor) = ${memoryGb.toFixed(3)}GB.`,
-        `Estimated storage: ${rawGb.toFixed(3)}GB raw x ${indexOverheadFactor} (index overhead) x ${replicationFactor} ` +
-          `(replication for HA) = ${storageGb.toFixed(3)}GB.`,
+          `${bytesPerDimension} bytes/dimension = ${rawGb.toFixed(3)}GiB.`,
+        `Estimated memory: ${rawGb.toFixed(3)}GiB raw x ${indexOverheadFactor} (index overhead) x ${ramSafetyFactor} ` +
+          `(safety factor) = ${memoryGb.toFixed(3)}GiB.`,
+        `Estimated storage: ${rawGb.toFixed(3)}GiB raw x ${indexOverheadFactor} (index overhead) x ${replicationFactor} ` +
+          `(replication for HA) = ${storageGb.toFixed(3)}GiB.`,
         `Estimated CPU cores: the greater of a 2-core floor or ${millionVectors.toFixed(2)}M vectors x ` +
           `${baselineCpuCoresPerMillionVectors} cores/million = ${cpuCores.toFixed(2)} cores.`,
       ],

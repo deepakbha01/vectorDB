@@ -50,21 +50,29 @@ describe('ReportBuilderService', () => {
             cost: 0.95,
           },
           evidence: ['Estimated vector count scored 1.00 against thresholds.'],
-          eligible: true,
-          ineligibleReasons: [],
+          eligibilityStatus: 'eligible',
+          eligibilityNotes: [],
         },
       ],
-      rejectedAlternatives: [{ platformId: VectorPlatform.MILVUS, reason: 'overkill' }],
+      rejectedAlternatives: [{ platformId: VectorPlatform.MILVUS, reason: 'overkill', bucket: 'lower_fit' }],
       assumptions: ['assumption 1'],
       risks: ['risk 1'],
-      infrastructureEstimate: { estimatedMemoryGb: 2, estimatedStorageGb: 4, estimatedCpuCores: 2 },
+      infrastructureEstimate: { estimatedMemoryGb: 2, estimatedStorageGb: 4, estimatedCpuCores: 2, notes: [] },
+      criteriaWeights: { vectorCount: 0.2, qps: 0.2, latency: 0.15, recall: 0.1, existingPlatform: 0.15, operationalComplexity: 0.1, cost: 0.1 },
+      decisionStatus: 'single',
+      confidence: 'high',
+      tiedPlatformIds: [],
+      tieBreakStage: null,
+      openValidations: [],
+      budgetFeasibility: null,
+      complianceGate: { applicable: false, status: 'not_applicable', checks: [] },
     };
 
     const doc = service.buildDiscoveryReport(assessment, adr);
 
     expect(doc.title).toBe('Architecture Decision Record');
     expect(doc.subtitle).toContain('version 2');
-    expect(doc.sections.map((s) => s.heading)).toContain('Decision');
+    expect(doc.sections.map((s) => s.heading)).toContain('Decision status & confidence');
     expect(doc.sections.find((s) => s.heading === 'Risks')?.lists?.[0].items).toEqual(['risk 1']);
   });
 
