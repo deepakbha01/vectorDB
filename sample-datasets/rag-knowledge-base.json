@@ -1,0 +1,42 @@
+[
+  {
+    "id": "doc-vector-db-intro",
+    "text": "Vector databases store high-dimensional embeddings produced by machine learning models and support approximate nearest-neighbor (ANN) search over them. They underpin retrieval-augmented generation (RAG), semantic search, recommendation systems, and anomaly detection. Unlike traditional relational indexes, ANN indexes trade a small amount of recall for large gains in query latency and memory efficiency at scale.",
+    "metadata": { "source_url": "https://example.com/docs/vector-db-intro", "category": "concepts" }
+  },
+  {
+    "id": "doc-hnsw",
+    "text": "HNSW (Hierarchical Navigable Small World) builds a multi-layer graph where each vector is a node connected to its approximate nearest neighbors. Search starts at a sparse top layer and descends, refining the candidate set at each level. HNSW typically offers the best recall-per-millisecond of any widely used ANN index, at the cost of a larger memory footprint than quantized alternatives.",
+    "metadata": { "source_url": "https://example.com/docs/hnsw", "category": "indexing" }
+  },
+  {
+    "id": "doc-ivf-flat",
+    "text": "IVF-Flat partitions the vector space into a fixed number of coarse clusters (an inverted file), then restricts search to only the nprobe clusters nearest the query vector. It uses substantially less memory than HNSW for the same corpus, at the cost of needing more clusters searched (higher nprobe) to reach comparable recall, which increases latency.",
+    "metadata": { "source_url": "https://example.com/docs/ivf-flat", "category": "indexing" }
+  },
+  {
+    "id": "doc-product-quantization",
+    "text": "Product Quantization (PQ) compresses each vector by splitting it into subvectors and replacing each with the ID of its nearest centroid in a small codebook. This can shrink memory usage by an order of magnitude, but caps achievable recall because distance calculations operate on compressed approximations rather than the original vectors.",
+    "metadata": { "source_url": "https://example.com/docs/product-quantization", "category": "indexing" }
+  },
+  {
+    "id": "doc-chunking-strategies",
+    "text": "Chunking strategy materially affects retrieval quality. Fixed-size chunking is simple but can split sentences mid-thought. Sentence- and paragraph-based chunking preserve semantic units at the cost of variable chunk sizes. Recursive chunking falls back through paragraph, sentence, and fixed-size splitting so no chunk exceeds a maximum size while still respecting natural boundaries where possible.",
+    "metadata": { "source_url": "https://example.com/docs/chunking", "category": "data-pipeline" }
+  },
+  {
+    "id": "doc-embedding-dimension",
+    "text": "Embedding dimension is a trade-off between representational capacity and cost: higher-dimensional embeddings can capture more nuance but consume proportionally more memory and storage, and increase per-query distance-computation cost. A schema's vector column dimension must exactly match the embedding model that produced the stored vectors, or every insert and query will fail.",
+    "metadata": { "source_url": "https://example.com/docs/embedding-dimension", "category": "data-pipeline" }
+  },
+  {
+    "id": "doc-recall-vs-latency",
+    "text": "Recall@K and query latency are usually in direct tension for approximate search: increasing an index's search-time parameter (efSearch for HNSW, nprobe for IVF-based indexes) improves recall by examining more candidates, but does so at the cost of higher latency and CPU usage per query. Tuning is about finding the point on that curve that satisfies both the application's SLA and its search-quality bar.",
+    "metadata": { "source_url": "https://example.com/docs/recall-vs-latency", "category": "operations" }
+  },
+  {
+    "id": "doc-capacity-planning",
+    "text": "Capacity planning for a vector database should project vector count, query throughput, memory, storage, and CPU forward using the workload's actual growth rate, not a flat assumption. Scaling triggers - thresholds at which more memory, compute, replicas, or shards are needed - should be defined ahead of time so a team is not deciding infrastructure changes reactively during an incident.",
+    "metadata": { "source_url": "https://example.com/docs/capacity-planning", "category": "operations" }
+  }
+]

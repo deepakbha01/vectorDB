@@ -1,0 +1,82 @@
+# Vector index catalog and tuning defaults used by the Phase 3 Index Design
+# engine (backend/src/index-recommendation-engine). Nothing about parameter
+# defaults/bounds or update-frequency friendliness is hard-coded in code -
+# it all comes from this file.
+indexes:
+  - id: hnsw
+    label: "HNSW (Hierarchical Navigable Small World)"
+    bestFor: "High recall at low latency with a moderate memory budget; append-heavy workloads with infrequent full rebuilds."
+    parameters:
+      M:
+        default: 16
+        min: 4
+        max: 64
+        description: "Graph connectivity per node. Higher = better recall/latency, more memory and slower builds."
+      efConstruction:
+        default: 200
+        min: 40
+        max: 800
+        description: "Search width used while building the graph. Higher = better graph quality, slower ingestion."
+      efSearch:
+        default: 100
+        min: 10
+        max: 1000
+        description: "Search width used at query time. Higher = better recall, higher query latency."
+    memoryOverheadFactor: 1.7   # multiplier over raw (vectorCount * dim * 4 bytes)
+    updateFriendliness:
+      static: 1.0
+      low: 0.95
+      moderate: 0.8
+      high: 0.55
+
+  - id: ivf_flat
+    label: "IVF-Flat (Inverted File, flat quantization)"
+    bestFor: "Large datasets where a full HNSW graph is too memory-hungry; frequent inserts into existing clusters."
+    parameters:
+      nlist:
+        default: 1024
+        min: 16
+        max: 65536
+        description: "Number of coarse clusters (Voronoi cells) the vector space is partitioned into."
+      nprobe:
+        default: 16
+        min: 1
+        max: 4096
+        description: "Number of clusters searched per query. Higher = better recall, higher latency."
+    memoryOverheadFactor: 1.1
+    updateFriendliness:
+      static: 0.9
+      low: 0.95
+      moderate: 0.9
+      high: 0.75
+
+  - id: pq
+    label: "Product Quantization (PQ, IVF+PQ)"
+    bestFor: "Very large datasets where memory is the primary constraint and some recall loss is acceptable."
+    parameters:
+      m:
+        default: 8
+        min: 1
+        max: 64
+        description: "Number of subquantizer segments the vector is split into (should evenly divide the dimension)."
+      nbits:
+        default: 8
+        min: 4
+        max: 12
+        description: "Bits per subquantizer code (8 bits = 256 centroids per segment)."
+      nlist:
+        default: 1024
+        min: 16
+        max: 65536
+        description: "Coarse quantizer clusters, same role as IVF-Flat's nlist."
+      nprobe:
+        default: 16
+        min: 1
+        max: 4096
+        description: "Clusters searched per query, same role as IVF-Flat's nprobe."
+    compressionRatio: 8   # approximate size reduction vs. raw float32 vectors
+    updateFriendliness:
+      static: 0.9
+      low: 0.9
+      moderate: 0.8
+      high: 0.65

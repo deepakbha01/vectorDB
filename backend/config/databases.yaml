@@ -1,0 +1,94 @@
+# Supported target vector database platforms.
+# The Recommendation Engine (Phase 1) reads this list rather than hard-coding platform names.
+
+platforms:
+  - id: oracle
+    label: "Oracle Database (Vector)"
+    requiresExisting: false
+    supportsHybridSearch: true
+    supportsMetadataFiltering: true
+    operationalComplexity: medium
+
+  - id: postgres_pgvector
+    label: "PostgreSQL + pgvector"
+    requiresExisting: false
+    supportsHybridSearch: true
+    supportsMetadataFiltering: true
+    operationalComplexity: low
+
+  - id: milvus
+    label: "Milvus (Kubernetes)"
+    requiresExisting: false
+    supportsHybridSearch: true
+    supportsMetadataFiltering: true
+    operationalComplexity: high
+    requiresKubernetes: true
+
+  # The following are scored and recommendable by Phase 1 Discovery, but do
+  # not yet have Phase 2-5/7 implementation support (schema generation, index
+  # design artifacts, deployment/Terraform, ingestion adapters, capacity
+  # planning) - see IMPLEMENTED_BEYOND_DISCOVERY in platform.enum.ts. Selecting
+  # one of these surfaces a clear "not yet implemented" message at that phase
+  # rather than incorrect output.
+  - id: pinecone
+    label: "Pinecone"
+    requiresExisting: false
+    supportsHybridSearch: true
+    supportsMetadataFiltering: true
+    operationalComplexity: low
+
+  - id: qdrant
+    label: "Qdrant"
+    requiresExisting: false
+    supportsHybridSearch: true
+    supportsMetadataFiltering: true
+    operationalComplexity: medium
+
+  - id: weaviate
+    label: "Weaviate"
+    requiresExisting: false
+    supportsHybridSearch: true
+    supportsMetadataFiltering: true
+    operationalComplexity: medium
+
+  - id: chroma
+    label: "Chroma"
+    requiresExisting: false
+    supportsHybridSearch: false
+    supportsMetadataFiltering: true
+    operationalComplexity: low
+
+  - id: elasticsearch
+    label: "Elasticsearch / OpenSearch"
+    requiresExisting: false
+    supportsHybridSearch: true
+    supportsMetadataFiltering: true
+    operationalComplexity: high
+
+  - id: redis
+    label: "Redis"
+    requiresExisting: false
+    supportsHybridSearch: true
+    supportsMetadataFiltering: true
+    operationalComplexity: medium
+
+  - id: mongodb_atlas
+    label: "MongoDB Atlas Vector Search"
+    requiresExisting: false
+    supportsHybridSearch: true
+    supportsMetadataFiltering: true
+    operationalComplexity: low
+
+  - id: lancedb
+    label: "LanceDB"
+    requiresExisting: false
+    supportsHybridSearch: false
+    supportsMetadataFiltering: true
+    operationalComplexity: low
+
+  - id: actian
+    label: "Actian Vector"
+    requiresExisting: false
+    supportsHybridSearch: true
+    supportsMetadataFiltering: true
+    operationalComplexity: medium

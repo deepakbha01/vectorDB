@@ -1,0 +1,2 @@
+Migrations go here, generated via `npm run migration:generate -- src/migrations/<Name>` against a
+real running database (see src/data-source.ts and PRODUCTION_READINESS.md for why none exist yet).

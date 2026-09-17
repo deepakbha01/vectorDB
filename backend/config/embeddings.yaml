@@ -1,0 +1,76 @@
+# Embedding provider/model catalog used by the Design Engine (Phase 2).
+# Dimensions and max input sizes reflect each vendor's published specs;
+# costPerMillionTokens is an approximate list price - verify against the
+# vendor's current pricing page before using it for a real cost estimate.
+providers:
+  - id: openai
+    label: "OpenAI"
+    models:
+      - id: text-embedding-3-small
+        label: "text-embedding-3-small"
+        dimension: 1536
+        maxInputTokens: 8191
+        costPerMillionTokens: 0.02
+        languageSupport: ["en", "multilingual-partial"]
+        qualityTier: high
+        modelVersion: "3-small"
+      - id: text-embedding-3-large
+        label: "text-embedding-3-large"
+        dimension: 3072
+        maxInputTokens: 8191
+        costPerMillionTokens: 0.13
+        languageSupport: ["en", "multilingual-partial"]
+        qualityTier: highest
+        modelVersion: "3-large"
+
+  - id: cohere
+    label: "Cohere"
+    models:
+      - id: embed-english-v3.0
+        label: "embed-english-v3.0"
+        dimension: 1024
+        maxInputTokens: 512
+        costPerMillionTokens: 0.10
+        languageSupport: ["en"]
+        qualityTier: high
+        modelVersion: "v3.0"
+      - id: embed-multilingual-v3.0
+        label: "embed-multilingual-v3.0"
+        dimension: 1024
+        maxInputTokens: 512
+        costPerMillionTokens: 0.10
+        languageSupport: ["multilingual"]
+        qualityTier: high
+        modelVersion: "v3.0"
+
+  - id: google
+    label: "Google Vertex AI"
+    models:
+      - id: text-embedding-004
+        label: "text-embedding-004"
+        dimension: 768
+        maxInputTokens: 2048
+        costPerMillionTokens: 0.025
+        languageSupport: ["multilingual"]
+        qualityTier: high
+        modelVersion: "004"
+
+  - id: open_source
+    label: "Open Source (self-hosted)"
+    models:
+      - id: all-MiniLM-L6-v2
+        label: "all-MiniLM-L6-v2 (sentence-transformers)"
+        dimension: 384
+        maxInputTokens: 256
+        costPerMillionTokens: 0
+        languageSupport: ["en"]
+        qualityTier: medium
+        modelVersion: "1.0"
+      - id: bge-large-en-v1.5
+        label: "bge-large-en-v1.5 (BAAI)"
+        dimension: 1024
+        maxInputTokens: 512
+        costPerMillionTokens: 0
+        languageSupport: ["en"]
+        qualityTier: high
+        modelVersion: "1.5"

@@ -1,0 +1,127 @@
+# Thresholds used by the Recommendation Engine (Phase 1+).
+# Nothing in the engine should hard-code these numbers - they are loaded at runtime.
+# Values here are sane defaults; override per-environment via THRESHOLDS_CONFIG_PATH.
+#
+# `rulesVersion` is stamped onto every Architecture Decision Record so a past
+# recommendation can be reproduced/audited even after this file changes later.
+rulesVersion: "1.0.0"
+
+vectorCount:
+  embeddedMax: 5000000       # below this, embedded (Oracle/pgvector) is comfortable
+  dedicatedRecommendedMin: 20000000   # above this, a dedicated vector DB (Milvus) is preferred
+  dedicatedFloor: 1000000    # below this, Milvus is overkill even if otherwise eligible
+
+qps:
+  embeddedMax: 200
+  dedicatedRecommendedMin: 500
+
+latencyMs:
+  strictP95: 50
+  moderateP95: 150
+
+recall:
+  highRecallTarget: 0.95
+
+availability:
+  highAvailabilityThreshold: 99.9
+
+operationalComplexity:
+  kubernetesRequiredForMilvus: true
+  # Score assigned per catalog operationalComplexity label (databases.yaml)
+  levelScores:
+    low: 1.0
+    medium: 0.7
+    high: 0.4
+
+# Rough sizing assumptions used to produce the ADR's infrastructure estimate.
+# These are NOT a substitute for the Phase 4/8 sizing engines - just enough to
+# put an order-of-magnitude number in front of the decision at Discovery time.
+infrastructureEstimation:
+  bytesPerDimension: 4          # float32 vector component
+  indexOverheadFactor: 1.5      # HNSW/graph overhead over raw vector bytes
+  ramSafetyFactor: 1.3          # headroom over the working-set estimate
+  replicationFactor: 2          # for HA storage sizing
+  baselineCpuCoresPerMillionVectors: 0.5
+
+# Defaults for the Phase 2 Data Pipeline Design's error-handling stage
+# (Source -> Extract -> Clean -> Chunk -> Embed -> Validate -> Store -> Index).
+# The executable ingestion pipeline (Phase 5/Sprint 6) reads the same values.
+pipelineDefaults:
+  retryCount: 3
+  retryBackoffMs: 2000
+  deadLetterEnabled: true
+  batchSize: 100
+  # Sprint 6 ingestion-pipeline concurrency/throughput controls (all configurable,
+  # never hard-coded in the ingestion service itself).
+  embeddingConcurrency: 5
+  rateLimitPerSecond: 20
+
+# Phase 3 - Index Design scoring weights. Reuses `latencyMs` above so latency
+# expectations stay consistent across the Discovery and Index Design phases.
+indexSelection:
+  scoringWeights:
+    recall: 0.25
+    latency: 0.2
+    memory: 0.2
+    throughput: 0.2
+    updateFriendliness: 0.15
+  # Fraction of available memory an index's estimated footprint may consume
+  # before its memory score starts to fall off.
+  comfortableMemoryUtilization: 0.6
+  # The memory score keeps falling (rather than flatlining at 0 exactly at
+  # availableMemoryGb) out to this multiple of available memory, so two
+  # over-budget options are still ranked by how far over they are instead of
+  # tying at zero.
+  severeMemoryOvershootMultiplier: 3
+
+# Phase 6 - Optimization benchmark defaults (Sprint 7). The benchmark harness
+# generates a synthetic dataset of `sampleSize` vectors at the project's
+# embedding dimension, queries it `queryCount` times per search-parameter
+# variant, and compares latency/recall/memory/cost - see backend/src/benchmark.
+benchmarkDefaults:
+  sampleSize: 2000
+  queryCount: 100
+  topK: 10
+  costPerGbHourUsd: 0.05   # directional cloud-memory cost estimate, not a real bill
+  hnsw:
+    searchParamName: efSearch
+    variants: [50, 100, 200]
+  ivf_flat:
+    searchParamName: nprobe
+    variants: [8, 16, 32]
+  pq:
+    searchParamName: nprobe
+    variants: [8, 16, 32]
+
+# Phase 7 - Scaling & Sharding capacity planning (Sprint 8). Growth is
+# projected from the Discovery assessment's documentGrowthPercentPerMonth,
+# compounded monthly, over each forecast horizon.
+capacityPlanning:
+  forecastHorizonsMonths: [6, 12, 24]
+  # A forecasted utilization above these percentages (of currently available
+  # memory/CPU/storage/QPS capacity) trips a scaling trigger for that horizon.
+  scalingTriggers:
+    memoryUtilizationPercent: 75
+    cpuUtilizationPercent: 70
+    storageUtilizationPercent: 80
+    qpsUtilizationPercent: 80
+  # Extra CPU headroom for concurrent query processing, beyond the flat
+  # per-million-vectors baseline in infrastructureEstimation.
+  cpuCoresPerThousandQps: 0.5
+  milvus:
+    queryNodeCapacityVectors: 20000000   # per query node, before another is recommended
+    dataNodeCapacityVectors: 50000000
+    replicaFactorForHa: 2
+  embedded:   # Oracle / PostgreSQL
+    readReplicaQpsThreshold: 400         # sustained QPS above this favors a read replica over further vertical scaling
+    verticalScalingMaxCores: 64          # beyond this, recommend sharding/partitioning instead of scaling up further
+    partitioningVectorCountThreshold: 10000000
+
+scoringWeights:
+  vectorCount: 0.2
+  qps: 0.2
+  latency: 0.15
+  recall: 0.1
+  existingPlatform: 0.15
+  operationalComplexity: 0.1
+  cost: 0.1

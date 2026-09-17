@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  app-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vector_platform
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: vector_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - app-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vector_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      APP_DB_HOST: app-db
+      APP_DB_PORT: 5432
+      APP_DB_USER: vector_platform
+      APP_DB_PASSWORD: change-me
+      APP_DB_NAME: vector_platform
+      JWT_SECRET: change-me-to-a-long-random-value
+      NODE_ENV: development
+      FRONTEND_ORIGIN: http://localhost:5173
+    ports:
+      - "3000:3000"
+    depends_on:
+      app-db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  app-db-data:
