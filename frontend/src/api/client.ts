@@ -117,6 +117,8 @@ export interface DashboardSummary {
 
 export type Environment = 'development' | 'staging' | 'production';
 export type DeploymentEnvironment = 'cloud' | 'on_premises' | 'hybrid';
+export type OperationalCapability = 'none' | 'part_time' | 'dedicated_dba' | 'platform_team';
+export type TenancyModel = 'single_tenant' | 'shared_multi_tenant' | 'dedicated_per_tenant';
 
 export interface DiscoveryAssessmentInput {
   environment: Environment;
@@ -130,6 +132,7 @@ export interface DiscoveryAssessmentInput {
   peakQps: number;
   concurrentUsers: number;
   targetP95LatencyMs: number;
+  targetP99LatencyMs: number;
   availabilityTargetPercent: number;
   rpoMinutes: number;
   rtoMinutes: number;
@@ -141,14 +144,21 @@ export interface DiscoveryAssessmentInput {
   requiresFullTextSearch: boolean;
   topK: number;
   recallTarget: number;
+  precisionTarget?: number;
+  requiresReranking: boolean;
   hasExistingOracle: boolean;
   hasExistingPostgres: boolean;
   hasExistingKubernetes: boolean;
+  existingPlatforms: string[];
   deploymentEnvironment: DeploymentEnvironment;
   availableCpuCores: number;
   availableRamGb: number;
   availableStorageGb: number;
   hasGpu: boolean;
+  operationalCapability: OperationalCapability;
+  monthlyBudgetUsd?: number;
+  requiresMultiRegion: boolean;
+  tenancyModel: TenancyModel;
   requiresAuthentication: boolean;
   requiresRbac: boolean;
   requiresEncryptionAtRest: boolean;

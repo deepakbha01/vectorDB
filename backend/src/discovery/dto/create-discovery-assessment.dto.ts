@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
+  IsArray,
   IsBoolean,
   IsEnum,
   IsInt,
@@ -10,7 +11,8 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { DeploymentEnvironment, Environment } from '../enums/discovery.enum';
+import { DeploymentEnvironment, Environment, OperationalCapability, TenancyModel } from '../enums/discovery.enum';
+import { VectorPlatform } from '../../projects/enums/platform.enum';
 
 /**
  * Phase 1 - Discovery: Use Case & Scale Assessment intake.
@@ -74,6 +76,11 @@ export class CreateDiscoveryAssessmentDto {
   @Min(1)
   targetP95LatencyMs: number;
 
+  @ApiProperty({ description: 'Target P99 query latency in milliseconds' })
+  @IsNumber()
+  @Min(1)
+  targetP99LatencyMs: number;
+
   @ApiProperty({ description: 'Target availability, percent (e.g. 99.9)' })
   @IsNumber()
   @Min(0)
@@ -126,6 +133,17 @@ export class CreateDiscoveryAssessmentDto {
   @Max(1)
   recallTarget: number;
 
+  @ApiProperty({ required: false, description: 'Target precision@K, 0-1 - distinct from recall@K; not scored directly (see help text)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  precisionTarget?: number;
+
+  @ApiProperty({ description: 'Results are reranked (e.g. with a cross-encoder) after initial retrieval' })
+  @IsBoolean()
+  requiresReranking: boolean;
+
   @ApiProperty()
   @IsBoolean()
   hasExistingOracle: boolean;
@@ -137,6 +155,15 @@ export class CreateDiscoveryAssessmentDto {
   @ApiProperty()
   @IsBoolean()
   hasExistingKubernetes: boolean;
+
+  @ApiProperty({
+    enum: VectorPlatform,
+    isArray: true,
+    description: 'Vector database platforms (other than Oracle/PostgreSQL, which have their own flags above) already operated in production',
+  })
+  @IsArray()
+  @IsEnum(VectorPlatform, { each: true })
+  existingPlatforms: VectorPlatform[];
 
   @ApiProperty({ enum: DeploymentEnvironment })
   @IsEnum(DeploymentEnvironment)
@@ -160,6 +187,24 @@ export class CreateDiscoveryAssessmentDto {
   @ApiProperty()
   @IsBoolean()
   hasGpu: boolean;
+
+  @ApiProperty({ enum: OperationalCapability, description: 'Team capacity to operate the database day-to-day' })
+  @IsEnum(OperationalCapability)
+  operationalCapability: OperationalCapability;
+
+  @ApiProperty({ required: false, description: 'Approximate monthly infrastructure budget in USD, if known' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  monthlyBudgetUsd?: number;
+
+  @ApiProperty({ description: 'The database must serve reads/writes from more than one geographic region' })
+  @IsBoolean()
+  requiresMultiRegion: boolean;
+
+  @ApiProperty({ enum: TenancyModel })
+  @IsEnum(TenancyModel)
+  tenancyModel: TenancyModel;
 
   @ApiProperty()
   @IsBoolean()

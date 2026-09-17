@@ -9,6 +9,7 @@ import {
   VectorPlatform,
 } from '../projects/enums/platform.enum';
 import { buildComparativeReason, ramp } from '../common/scoring-utils';
+import { OperationalCapability } from '../discovery/enums/discovery.enum';
 import { buildPlainLanguageSummary } from './plain-language-summary';
 import {
   AssessmentInput,
@@ -170,6 +171,12 @@ export class RecommendationEngineService {
     if (platformId === VectorPlatform.POSTGRES_PGVECTOR) {
       return input.hasExistingPostgres ? 1.0 : 0.5;
     }
+    // Already running this exact platform is the strongest possible fit - stronger even than
+    // the generic "have a Kubernetes cluster" signal below, since there is zero migration cost.
+    const alreadyRunningThisPlatform = input.existingPlatforms.includes(platformId);
+    if (alreadyRunningThisPlatform) {
+      return 1.0;
+    }
     if (K8S_SELF_HOSTABLE_PLATFORMS.includes(platformId)) {
       if (input.hasExistingKubernetes) {
         return platformId === VectorPlatform.MILVUS ? 0.8 : 0.7;
@@ -195,12 +202,34 @@ export class RecommendationEngineService {
     if (catalogEntry.requiresKubernetes && !input.hasExistingKubernetes) {
       score *= 0.6; // stand-up-a-cluster penalty
     }
-    return Number(score.toFixed(4));
+    score *= this.operationalCapabilityMultiplier(catalogEntry.operationalComplexity, input.operationalCapability);
+    return Number(Math.min(1, score).toFixed(4));
+  }
+
+  /**
+   * A team with little day-to-day database capacity should be steered away from
+   * operationally demanding platforms; a dedicated DBA or platform team can absorb that
+   * overhead, so the complexity penalty is relaxed (or the fit slightly boosted) for them.
+   * Low-complexity platforms are assumed manageable at any capability level.
+   */
+  private operationalCapabilityMultiplier(complexityLevel: string, capability: OperationalCapability): number {
+    if (complexityLevel === 'high') {
+      if (capability === OperationalCapability.NONE) return 0.5;
+      if (capability === OperationalCapability.PART_TIME) return 0.75;
+      if (capability === OperationalCapability.PLATFORM_TEAM) return 1.15;
+      return 1.0; // dedicated_dba
+    }
+    if (complexityLevel === 'medium') {
+      if (capability === OperationalCapability.NONE) return 0.85;
+      return 1.0;
+    }
+    return 1.0;
   }
 
   private scoreCost(platformId: VectorPlatform, input: AssessmentInput, thresholds: Record<string, any>): number {
     // Reusing existing infrastructure is materially cheaper than provisioning new
     // compute/storage; a dedicated cluster only pays for itself at scale.
+    const alreadyRunningThisPlatform = input.existingPlatforms.includes(platformId);
     if (platformId === VectorPlatform.ORACLE) {
       return input.hasExistingOracle ? 0.9 : 0.4;
     }
@@ -210,18 +239,22 @@ export class RecommendationEngineService {
     if (K8S_SELF_HOSTABLE_PLATFORMS.includes(platformId)) {
       const { embeddedMax, dedicatedRecommendedMin } = thresholds.vectorCount;
       const scaleFactor = ramp(input.estimatedVectorCount, embeddedMax, dedicatedRecommendedMin);
-      const base = input.hasExistingKubernetes ? 0.6 : 0.25;
-      return Number((base + scaleFactor * 0.3).toFixed(4));
+      const base = alreadyRunningThisPlatform ? 0.75 : input.hasExistingKubernetes ? 0.6 : 0.25;
+      return Number(Math.min(1, base + scaleFactor * 0.3).toFixed(4));
     }
     if (platformId === VectorPlatform.PINECONE || platformId === VectorPlatform.MONGODB_ATLAS) {
-      // Fully managed SaaS: no self-host escape valve, so no existing-infrastructure discount applies.
-      return 0.45;
+      // Fully managed SaaS: no self-host escape valve, but an already-running account/index
+      // still avoids migration cost and unfamiliar-tooling ramp-up.
+      return alreadyRunningThisPlatform ? 0.7 : 0.45;
     }
     if (EMBEDDED_LIBRARY_PLATFORMS.includes(platformId)) {
       // Embedded/in-process: no server to provision or pay for at this scale.
-      return 0.85;
+      return alreadyRunningThisPlatform ? 0.95 : 0.85;
     }
-    return 0.5;
+    // Actian and any other bolt-on SQL platform without a dedicated branch above: same
+    // reuse-is-cheaper logic as Oracle, since it is provisioned the same way (an existing
+    // instance vs. standing up a new one).
+    return alreadyRunningThisPlatform ? 0.9 : 0.4;
   }
 
   /**
@@ -266,8 +299,10 @@ export class RecommendationEngineService {
         `(strict=${thresholds.latencyMs.strictP95}ms, moderate=${thresholds.latencyMs.moderateP95}ms).`,
       `Recall target ${input.recallTarget} scored ${scores.recall}.`,
       `Existing-platform fit scored ${scores.existingPlatform} ` +
-        `(existingOracle=${input.hasExistingOracle}, existingPostgres=${input.hasExistingPostgres}, existingKubernetes=${input.hasExistingKubernetes}).`,
-      `Operational complexity ('${catalogEntry.operationalComplexity}') scored ${scores.operationalComplexity}.`,
+        `(existingOracle=${input.hasExistingOracle}, existingPostgres=${input.hasExistingPostgres}, existingKubernetes=${input.hasExistingKubernetes}, ` +
+        `already running ${catalogEntry.label}=${input.existingPlatforms.includes(platformId)}).`,
+      `Operational complexity ('${catalogEntry.operationalComplexity}') scored ${scores.operationalComplexity} ` +
+        `given a '${input.operationalCapability}' operational capability.`,
       `Cost fit scored ${scores.cost}.`,
     ];
     return evidence;
@@ -295,12 +330,31 @@ export class RecommendationEngineService {
   }
 
   private buildAssumptions(input: AssessmentInput): string[] {
-    return [
+    const assumptions = [
       'Vector dimension and count are stable estimates provided at Discovery time; re-run the assessment if they change materially.',
       `Sizing assumes float32 embeddings (${input.embeddingDimension} dimensions) with a single HNSW-style ANN index per collection.`,
       'Cost scoring is directional (favors reuse of existing infrastructure); it is not a substitute for a vendor quote.',
-      'QPS figures are assumed to be per-instance; multi-region or multi-tenant fan-out is not yet modeled (see Phase 7 - Scaling & Sharding).',
+      'QPS figures are assumed to be per-instance; multi-region or multi-tenant fan-out is not yet modeled beyond the risk noted below (see Phase 7 - Scaling & Sharding).',
     ];
+    if (input.precisionTarget !== undefined) {
+      assumptions.push(
+        `A precision@K target of ${input.precisionTarget} was also specified; ANN index tuning (ef/nprobe) primarily controls recall, not ` +
+          'precision, which is typically governed by downstream result filtering/reranking rather than the index itself - it is recorded but not scored.',
+      );
+    }
+    if (input.requiresReranking) {
+      assumptions.push(
+        'Reranking is assumed to run at the application layer over the top-K candidates any of these platforms return; it does not change ' +
+          'platform selection, since it is not platform-specific.',
+      );
+    }
+    if (input.monthlyBudgetUsd !== undefined) {
+      assumptions.push(
+        `A monthly budget of $${input.monthlyBudgetUsd} was specified; the cost criterion above is a directional 0-1 fitness score, not a ` +
+          'dollar estimate - validate against actual vendor/cloud pricing before committing.',
+      );
+    }
+    return assumptions;
   }
 
   private buildRisks(
@@ -331,6 +385,20 @@ export class RecommendationEngineService {
     }
     if (input.targetP95LatencyMs <= thresholds.latencyMs.strictP95) {
       risks.push('Strict P95 latency target is aggressive for the estimated scale; load-test before committing to production SLAs.');
+    }
+    // A P99 target within ~30% of the P95 target is a tight tail relative to typical ANN
+    // query-latency variance under load; a target that loose (or looser) is normal and not flagged.
+    if (input.targetP99LatencyMs > 0 && input.targetP99LatencyMs < input.targetP95LatencyMs * 1.3) {
+      risks.push(
+        `A ${input.targetP99LatencyMs}ms P99 target is tight relative to the ${input.targetP95LatencyMs}ms P95 target; tail latency ` +
+          'under load typically exceeds P95 by more than this margin - load-test the P99 specifically, not just P95, before committing.',
+      );
+    }
+    if (input.requiresMultiRegion) {
+      risks.push(
+        'Multi-region deployment was requested; this tool does not yet model per-platform cross-region replication capabilities - ' +
+          "validate the recommended platform's multi-region story manually (Phase 7 - Capacity Planning covers single-region sharding only).",
+      );
     }
     if (input.containsPii) {
       risks.push('Workload contains PII - confirm encryption at rest/in transit and data residency requirements are enforced end-to-end.');

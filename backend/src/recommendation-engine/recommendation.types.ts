@@ -1,4 +1,5 @@
 import { VectorPlatform } from '../projects/enums/platform.enum';
+import { OperationalCapability, TenancyModel } from '../discovery/enums/discovery.enum';
 import { FitRating, PlainLanguageScorecardRow } from '../common/plain-language.types';
 
 export { FitRating, PlainLanguageScorecardRow } from '../common/plain-language.types';
@@ -14,14 +15,23 @@ export interface AssessmentInput {
   qps: number;
   peakQps: number;
   targetP95LatencyMs: number;
+  targetP99LatencyMs: number;
   recallTarget: number;
+  precisionTarget?: number;
+  requiresReranking: boolean;
   hasExistingOracle: boolean;
   hasExistingPostgres: boolean;
   hasExistingKubernetes: boolean;
+  /** Platforms (other than Oracle/PostgreSQL, which have their own dedicated flags above) already operated in production. */
+  existingPlatforms: VectorPlatform[];
   containsPii: boolean;
   requiresHybridSearch: boolean;
   requiresFullTextSearch: boolean;
   requiresMetadataFiltering: boolean;
+  operationalCapability: OperationalCapability;
+  monthlyBudgetUsd?: number;
+  requiresMultiRegion: boolean;
+  tenancyModel: TenancyModel;
 }
 
 export interface CriteriaScores {

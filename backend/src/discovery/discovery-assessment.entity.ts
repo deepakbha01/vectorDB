@@ -1,7 +1,8 @@
 import { Column, CreateDateColumn, Entity, Index, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
-import { DeploymentEnvironment, Environment } from './enums/discovery.enum';
+import { DeploymentEnvironment, Environment, OperationalCapability, TenancyModel } from './enums/discovery.enum';
+import { VectorPlatform } from '../projects/enums/platform.enum';
 
 /**
  * A single, immutable Phase 1 Discovery submission. Projects may accumulate many
@@ -57,6 +58,10 @@ export class DiscoveryAssessment {
   @Column('float')
   targetP95LatencyMs: number;
 
+  /** Defaults to 0 ("not recorded") for assessments submitted before this field existed. */
+  @Column('float', { default: 0 })
+  targetP99LatencyMs: number;
+
   @Column('float')
   availabilityTargetPercent: number;
 
@@ -90,6 +95,12 @@ export class DiscoveryAssessment {
   @Column('float')
   recallTarget: number;
 
+  @Column('float', { nullable: true })
+  precisionTarget?: number;
+
+  @Column({ default: false })
+  requiresReranking: boolean;
+
   @Column()
   hasExistingOracle: boolean;
 
@@ -98,6 +109,9 @@ export class DiscoveryAssessment {
 
   @Column()
   hasExistingKubernetes: boolean;
+
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  existingPlatforms: VectorPlatform[];
 
   @Column({ type: 'enum', enum: DeploymentEnvironment })
   deploymentEnvironment: DeploymentEnvironment;
@@ -113,6 +127,18 @@ export class DiscoveryAssessment {
 
   @Column()
   hasGpu: boolean;
+
+  @Column({ type: 'enum', enum: OperationalCapability, default: OperationalCapability.NONE })
+  operationalCapability: OperationalCapability;
+
+  @Column('float', { nullable: true })
+  monthlyBudgetUsd?: number;
+
+  @Column({ default: false })
+  requiresMultiRegion: boolean;
+
+  @Column({ type: 'enum', enum: TenancyModel, default: TenancyModel.SINGLE_TENANT })
+  tenancyModel: TenancyModel;
 
   @Column()
   requiresAuthentication: boolean;

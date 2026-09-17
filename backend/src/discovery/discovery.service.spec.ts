@@ -6,7 +6,7 @@ import { ArchitectureDecisionRecord } from './architecture-decision-record.entit
 import { ProjectsService } from '../projects/projects.service';
 import { RecommendationEngineService } from '../recommendation-engine/recommendation-engine.service';
 import { VectorPlatform } from '../projects/enums/platform.enum';
-import { Environment, DeploymentEnvironment } from './enums/discovery.enum';
+import { Environment, DeploymentEnvironment, OperationalCapability, TenancyModel } from './enums/discovery.enum';
 import { CreateDiscoveryAssessmentDto } from './dto/create-discovery-assessment.dto';
 
 function buildDto(): CreateDiscoveryAssessmentDto {
@@ -22,6 +22,7 @@ function buildDto(): CreateDiscoveryAssessmentDto {
     peakQps: 25,
     concurrentUsers: 50,
     targetP95LatencyMs: 200,
+    targetP99LatencyMs: 400,
     availabilityTargetPercent: 99.5,
     rpoMinutes: 60,
     rtoMinutes: 120,
@@ -33,14 +34,19 @@ function buildDto(): CreateDiscoveryAssessmentDto {
     requiresFullTextSearch: false,
     topK: 10,
     recallTarget: 0.9,
+    requiresReranking: false,
     hasExistingOracle: false,
     hasExistingPostgres: true,
     hasExistingKubernetes: false,
+    existingPlatforms: [],
     deploymentEnvironment: DeploymentEnvironment.CLOUD,
     availableCpuCores: 8,
     availableRamGb: 32,
     availableStorageGb: 500,
     hasGpu: false,
+    operationalCapability: OperationalCapability.PART_TIME,
+    requiresMultiRegion: false,
+    tenancyModel: TenancyModel.SINGLE_TENANT,
     requiresAuthentication: true,
     requiresRbac: true,
     requiresEncryptionAtRest: true,

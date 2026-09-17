@@ -64,8 +64,18 @@ export class ReportBuilderService {
             { label: 'Estimated vector count', value: assessment.estimatedVectorCount.toLocaleString() },
             { label: 'Embedding dimension', value: String(assessment.embeddingDimension) },
             { label: 'QPS (sustained / peak)', value: `${assessment.qps} / ${assessment.peakQps}` },
-            { label: 'Target P95 latency', value: `${assessment.targetP95LatencyMs}ms` },
+            { label: 'Target P95 / P99 latency', value: `${assessment.targetP95LatencyMs}ms / ${assessment.targetP99LatencyMs}ms` },
             { label: 'Recall target', value: String(assessment.recallTarget) },
+            ...(assessment.precisionTarget !== undefined && assessment.precisionTarget !== null
+              ? [{ label: 'Precision target', value: String(assessment.precisionTarget) }]
+              : []),
+            { label: 'Reranking required', value: String(assessment.requiresReranking) },
+            { label: 'Operational capability', value: assessment.operationalCapability },
+            ...(assessment.monthlyBudgetUsd !== undefined && assessment.monthlyBudgetUsd !== null
+              ? [{ label: 'Monthly budget', value: `$${assessment.monthlyBudgetUsd}` }]
+              : []),
+            { label: 'Multi-region required', value: String(assessment.requiresMultiRegion) },
+            { label: 'Tenancy model', value: assessment.tenancyModel },
             { label: 'Availability target', value: `${assessment.availabilityTargetPercent}%` },
             { label: 'RPO / RTO', value: `${assessment.rpoMinutes}min / ${assessment.rtoMinutes}min` },
           ],

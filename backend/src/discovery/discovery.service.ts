@@ -51,14 +51,22 @@ export class DiscoveryService {
       qps: dto.qps,
       peakQps: dto.peakQps,
       targetP95LatencyMs: dto.targetP95LatencyMs,
+      targetP99LatencyMs: dto.targetP99LatencyMs,
       recallTarget: dto.recallTarget,
+      precisionTarget: dto.precisionTarget,
+      requiresReranking: dto.requiresReranking,
       hasExistingOracle: dto.hasExistingOracle,
       hasExistingPostgres: dto.hasExistingPostgres,
       hasExistingKubernetes: dto.hasExistingKubernetes,
+      existingPlatforms: dto.existingPlatforms,
       containsPii: dto.containsPii,
       requiresHybridSearch: dto.requiresHybridSearch,
       requiresFullTextSearch: dto.requiresFullTextSearch,
       requiresMetadataFiltering: dto.requiresMetadataFiltering,
+      operationalCapability: dto.operationalCapability,
+      monthlyBudgetUsd: dto.monthlyBudgetUsd,
+      requiresMultiRegion: dto.requiresMultiRegion,
+      tenancyModel: dto.tenancyModel,
     });
 
     const adr = await this.adrs.save(

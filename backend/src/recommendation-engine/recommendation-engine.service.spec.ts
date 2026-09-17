@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { RecommendationEngineService } from './recommendation-engine.service';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 import { LIVE_INGESTION_SUPPORTED, VectorPlatform } from '../projects/enums/platform.enum';
+import { OperationalCapability, TenancyModel } from '../discovery/enums/discovery.enum';
 import { AssessmentInput } from './recommendation.types';
 
 const thresholds = {
@@ -54,14 +55,20 @@ function baseInput(overrides: Partial<AssessmentInput> = {}): AssessmentInput {
     qps: 20,
     peakQps: 40,
     targetP95LatencyMs: 200,
+    targetP99LatencyMs: 400,
     recallTarget: 0.9,
+    requiresReranking: false,
     hasExistingOracle: false,
     hasExistingPostgres: false,
     hasExistingKubernetes: false,
+    existingPlatforms: [],
     containsPii: false,
     requiresHybridSearch: false,
     requiresFullTextSearch: false,
     requiresMetadataFiltering: false,
+    operationalCapability: OperationalCapability.PART_TIME,
+    requiresMultiRegion: false,
+    tenancyModel: TenancyModel.SINGLE_TENANT,
     ...overrides,
   };
 }
@@ -227,6 +234,61 @@ describe('RecommendationEngineService', () => {
         baseInput({ requiresHybridSearch: true, requiresFullTextSearch: true, requiresMetadataFiltering: true }),
       );
       expect(reasons).toHaveLength(0);
+    });
+  });
+
+  describe('existing-platform reuse (all 12 platforms)', () => {
+    it('scores already running the exact platform as a stronger fit than only having a Kubernetes cluster', () => {
+      const withCluster = service.evaluate(baseInput({ hasExistingKubernetes: true })).options.find((o) => o.platformId === VectorPlatform.QDRANT)!;
+      const alreadyRunning = service
+        .evaluate(baseInput({ hasExistingKubernetes: true, existingPlatforms: [VectorPlatform.QDRANT] }))
+        .options.find((o) => o.platformId === VectorPlatform.QDRANT)!;
+      expect(alreadyRunning.criteriaScores.existingPlatform).toBeGreaterThan(withCluster.criteriaScores.existingPlatform);
+      expect(alreadyRunning.criteriaScores.existingPlatform).toBe(1.0);
+    });
+
+    it('gives a fully-managed SaaS platform a cost discount when already in use', () => {
+      const fresh = service.evaluate(baseInput()).options.find((o) => o.platformId === VectorPlatform.PINECONE)!;
+      const existing = service.evaluate(baseInput({ existingPlatforms: [VectorPlatform.PINECONE] })).options.find((o) => o.platformId === VectorPlatform.PINECONE)!;
+      expect(existing.criteriaScores.cost).toBeGreaterThan(fresh.criteriaScores.cost);
+    });
+
+    it('gives Actian the same existing-platform/cost treatment as Oracle when already running it', () => {
+      const fresh = service.evaluate(baseInput()).options.find((o) => o.platformId === VectorPlatform.ACTIAN)!;
+      const existing = service.evaluate(baseInput({ existingPlatforms: [VectorPlatform.ACTIAN] })).options.find((o) => o.platformId === VectorPlatform.ACTIAN)!;
+      expect(existing.criteriaScores.existingPlatform).toBe(1.0);
+      expect(existing.criteriaScores.cost).toBeGreaterThan(fresh.criteriaScores.cost);
+    });
+  });
+
+  describe('operational capability', () => {
+    it('penalizes a high-operational-complexity platform further when the team has no operational capability', () => {
+      const capable = service.evaluate(baseInput({ operationalCapability: OperationalCapability.PLATFORM_TEAM })).options.find((o) => o.platformId === VectorPlatform.ELASTICSEARCH)!;
+      const none = service.evaluate(baseInput({ operationalCapability: OperationalCapability.NONE })).options.find((o) => o.platformId === VectorPlatform.ELASTICSEARCH)!;
+      expect(none.criteriaScores.operationalComplexity).toBeLessThan(capable.criteriaScores.operationalComplexity);
+    });
+
+    it('does not penalize a low-operational-complexity platform regardless of capability', () => {
+      const none = service.evaluate(baseInput({ operationalCapability: OperationalCapability.NONE })).options.find((o) => o.platformId === VectorPlatform.POSTGRES_PGVECTOR)!;
+      const team = service.evaluate(baseInput({ operationalCapability: OperationalCapability.PLATFORM_TEAM })).options.find((o) => o.platformId === VectorPlatform.POSTGRES_PGVECTOR)!;
+      expect(none.criteriaScores.operationalComplexity).toBe(team.criteriaScores.operationalComplexity);
+    });
+  });
+
+  describe('additional captured parameters (P99, multi-region)', () => {
+    it('flags a risk when the P99 target is tight relative to the P95 target', () => {
+      const result = service.evaluate(baseInput({ targetP95LatencyMs: 200, targetP99LatencyMs: 220 }));
+      expect(result.risks.some((r) => r.includes('P99 target is tight'))).toBe(true);
+    });
+
+    it('does not flag the P99 risk for a normally-proportioned tail-latency target', () => {
+      const result = service.evaluate(baseInput({ targetP95LatencyMs: 200, targetP99LatencyMs: 400 }));
+      expect(result.risks.some((r) => r.includes('P99 target is tight'))).toBe(false);
+    });
+
+    it('flags a risk when multi-region deployment is required', () => {
+      const result = service.evaluate(baseInput({ requiresMultiRegion: true }));
+      expect(result.risks.some((r) => r.includes('Multi-region deployment was requested'))).toBe(true);
     });
   });
 });

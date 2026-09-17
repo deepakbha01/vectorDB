@@ -25,6 +25,7 @@ const DEFAULT_FORM: DiscoveryAssessmentInput = {
   peakQps: 60,
   concurrentUsers: 100,
   targetP95LatencyMs: 150,
+  targetP99LatencyMs: 300,
   availabilityTargetPercent: 99.9,
   rpoMinutes: 60,
   rtoMinutes: 240,
@@ -36,14 +37,19 @@ const DEFAULT_FORM: DiscoveryAssessmentInput = {
   requiresFullTextSearch: false,
   topK: 10,
   recallTarget: 0.9,
+  requiresReranking: false,
   hasExistingOracle: false,
   hasExistingPostgres: false,
   hasExistingKubernetes: false,
+  existingPlatforms: [],
   deploymentEnvironment: 'cloud',
   availableCpuCores: 8,
   availableRamGb: 32,
   availableStorageGb: 500,
   hasGpu: false,
+  operationalCapability: 'part_time',
+  requiresMultiRegion: false,
+  tenancyModel: 'single_tenant',
   requiresAuthentication: true,
   requiresRbac: true,
   requiresEncryptionAtRest: true,
@@ -123,6 +129,11 @@ const FIELD_META: Record<FieldKey, FieldMeta> = {
     help: 'Your 95th-percentile query latency SLA. Stricter (lower) targets penalize lightweight/embedded platforms in scoring.',
     scored: true,
   },
+  targetP99LatencyMs: {
+    label: 'Target P99 latency (ms)',
+    help: 'Your 99th-percentile (tail) query latency SLA. Not itself scored, but flagged as a risk if it is unusually tight relative to the P95 target.',
+    scored: false,
+  },
   availabilityTargetPercent: {
     label: 'Availability target (%)',
     help: 'Uptime SLA, chosen from the standard industry "nines" tiers (cannot exceed 100%). Captured for the ADR and later operational planning; not yet a scored factor.',
@@ -155,18 +166,18 @@ const FIELD_META: Record<FieldKey, FieldMeta> = {
   },
   requiresHybridSearch: {
     label: 'Hybrid search',
-    help: 'Combining vector similarity with keyword/lexical search in a single query is required.',
-    scored: false,
+    help: 'Combining vector similarity with keyword/lexical search in a single query is required. Platforms that cannot do this (e.g. Chroma, LanceDB) are disqualified from winning, regardless of how well they otherwise score.',
+    scored: true,
   },
   requiresMetadataFiltering: {
     label: 'Metadata filtering',
-    help: 'Queries need to filter by structured metadata (e.g. tenant, date, tags) alongside the vector search.',
-    scored: false,
+    help: 'Queries need to filter by structured metadata (e.g. tenant, date, tags) alongside the vector search. A platform that cannot do this is disqualified from winning.',
+    scored: true,
   },
   requiresFullTextSearch: {
     label: 'Full-text + vector search',
-    help: 'Traditional full-text search needs to run alongside vector search against the same data.',
-    scored: false,
+    help: 'Traditional full-text search needs to run alongside vector search against the same data. Uses the same eligibility check as hybrid search, since there is no separate full-text capability flag in the platform catalog.',
+    scored: true,
   },
   topK: {
     label: 'Top-K',
@@ -177,6 +188,16 @@ const FIELD_META: Record<FieldKey, FieldMeta> = {
     label: 'Recall target (0-1)',
     help: 'Target recall@K — the fraction of true nearest neighbors your index must actually return, chosen from standard industry tiers. High targets (e.g. ≥ 0.95) are scored and also raise a risk about larger HNSW ef / IVF nprobe search parameters.',
     scored: true,
+  },
+  precisionTarget: {
+    label: 'Precision target (0-1)',
+    help: 'Target precision@K, if you track it separately from recall. Recorded for the record only — ANN index tuning primarily controls recall, not precision, so this is not scored.',
+    scored: false,
+  },
+  requiresReranking: {
+    label: 'Reranking',
+    help: 'Results are reranked (e.g. with a cross-encoder) after initial retrieval. Assumed to run at the application layer regardless of platform, so it does not change which platform wins.',
+    scored: false,
   },
   hasExistingOracle: {
     label: 'Existing Oracle Database',
@@ -191,6 +212,11 @@ const FIELD_META: Record<FieldKey, FieldMeta> = {
   hasExistingKubernetes: {
     label: 'Existing Kubernetes',
     help: 'You already operate a Kubernetes cluster. Strongly favors Milvus in scoring; without it, Milvus is penalized because a cluster would need to be stood up first.',
+    scored: true,
+  },
+  existingPlatforms: {
+    label: 'Other existing platforms',
+    help: 'Vector database platforms (other than Oracle/PostgreSQL, which have their own checkboxes above) you already operate in production. Already running the exact platform is the strongest possible existing-platform and cost fit for it.',
     scored: true,
   },
   deploymentEnvironment: {
@@ -216,6 +242,26 @@ const FIELD_META: Record<FieldKey, FieldMeta> = {
   hasGpu: {
     label: 'GPU available',
     help: 'Whether a GPU is available. Relevant to embedding generation and index-build performance in later phases.',
+    scored: false,
+  },
+  operationalCapability: {
+    label: 'Operational capability',
+    help: 'Your team’s day-to-day capacity to run a database. A high-operational-complexity platform is penalized further with little/no capability, and gets a slight boost with a dedicated platform team.',
+    scored: true,
+  },
+  monthlyBudgetUsd: {
+    label: 'Monthly budget (USD)',
+    help: 'Approximate monthly infrastructure budget, if known. Recorded for the record only — the cost criterion is a directional 0-1 fitness score, not a dollar estimate, so this is not scored directly.',
+    scored: false,
+  },
+  requiresMultiRegion: {
+    label: 'Multi-region required',
+    help: 'The database must serve reads/writes from more than one geographic region. Not yet scored per platform — raises a risk instead, since this tool does not model per-platform cross-region replication capabilities.',
+    scored: false,
+  },
+  tenancyModel: {
+    label: 'Tenancy model',
+    help: 'How tenants share the database: a single tenant, a shared schema across tenants, or a dedicated instance/schema per tenant. Captured for context; not yet a scored factor.',
     scored: false,
   },
   requiresAuthentication: {
@@ -386,6 +432,42 @@ function NumericSelectField({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+/** The 10 catalog platforms other than Oracle/PostgreSQL, which have their own dedicated checkboxes. */
+const OTHER_EXISTING_PLATFORM_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'milvus', label: 'Milvus' },
+  { value: 'pinecone', label: 'Pinecone' },
+  { value: 'qdrant', label: 'Qdrant' },
+  { value: 'weaviate', label: 'Weaviate' },
+  { value: 'chroma', label: 'Chroma' },
+  { value: 'elasticsearch', label: 'Elasticsearch / OpenSearch' },
+  { value: 'redis', label: 'Redis' },
+  { value: 'mongodb_atlas', label: 'MongoDB Atlas' },
+  { value: 'lancedb', label: 'LanceDB' },
+  { value: 'actian', label: 'Actian Vector' },
+];
+
+/** A number field whose value may be entirely absent (cleared -> `undefined`), for genuinely optional inputs like budget/precision. */
+function OptionalNumberField({ id, form, setForm, activeField, setActiveField, step = 1, min, max }: FieldProps & { min?: number; max?: number }) {
+  const meta = FIELD_META[id];
+  const current = form[id] as number | undefined | null;
+  return (
+    <div className={`field${activeField === id ? ' field-active' : ''}`}>
+      <label htmlFor={id}>{meta.label} (optional)</label>
+      <input
+        id={id}
+        type="number"
+        step={step}
+        min={min}
+        max={max}
+        value={current == null ? '' : current}
+        placeholder="Not specified"
+        onChange={(e) => setForm({ ...form, [id]: e.target.value === '' ? undefined : Number(e.target.value) })}
+        onFocus={() => setActiveField(id)}
+      />
     </div>
   );
 }
@@ -737,6 +819,7 @@ export function DiscoveryPage() {
                   <NumberField id="peakQps" {...fieldProps} step={0.1} />
                   <NumberField id="concurrentUsers" {...fieldProps} />
                   <NumberField id="targetP95LatencyMs" {...fieldProps} />
+                  <NumberField id="targetP99LatencyMs" {...fieldProps} />
                   <NumericSelectField id="availabilityTargetPercent" {...fieldProps} options={AVAILABILITY_OPTIONS} />
                   <NumberField id="rpoMinutes" {...fieldProps} />
                   <NumberField id="rtoMinutes" {...fieldProps} />
@@ -756,10 +839,12 @@ export function DiscoveryPage() {
                   <BoolField id="requiresHybridSearch" {...fieldProps} />
                   <BoolField id="requiresMetadataFiltering" {...fieldProps} />
                   <BoolField id="requiresFullTextSearch" {...fieldProps} />
+                  <BoolField id="requiresReranking" {...fieldProps} />
                 </div>
                 <div className="field-grid">
                   <NumericSelectField id="topK" {...fieldProps} options={TOP_K_OPTIONS} />
                   <NumericSelectField id="recallTarget" {...fieldProps} options={RECALL_OPTIONS} />
+                  <OptionalNumberField id="precisionTarget" {...fieldProps} step={0.01} min={0} max={1} />
                 </div>
               </section>
 
@@ -776,6 +861,34 @@ export function DiscoveryPage() {
                   <BoolField id="hasExistingPostgres" {...fieldProps} />
                   <BoolField id="hasExistingKubernetes" {...fieldProps} />
                   <BoolField id="hasGpu" {...fieldProps} />
+                  <BoolField id="requiresMultiRegion" {...fieldProps} />
+                </div>
+                <div className={`field${activeField === 'existingPlatforms' ? ' field-active' : ''}`} style={{ marginBottom: 14 }}>
+                  <label>{FIELD_META.existingPlatforms.label}</label>
+                  <div className="checkbox-grid">
+                    {OTHER_EXISTING_PLATFORM_OPTIONS.map((p) => (
+                      <label
+                        key={p.value}
+                        className={`checkbox-chip${form.existingPlatforms.includes(p.value) ? ' checked' : ''}`}
+                        onFocus={() => setActiveField('existingPlatforms')}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={form.existingPlatforms.includes(p.value)}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              existingPlatforms: e.target.checked
+                                ? [...form.existingPlatforms, p.value]
+                                : form.existingPlatforms.filter((v) => v !== p.value),
+                            })
+                          }
+                          onFocus={() => setActiveField('existingPlatforms')}
+                        />
+                        {p.label}
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 <div className="field-grid">
                   <div className={`field${activeField === 'deploymentEnvironment' ? ' field-active' : ''}`}>
@@ -807,6 +920,34 @@ export function DiscoveryPage() {
                   <NumberField id="availableCpuCores" {...fieldProps} step={0.5} />
                   <NumberField id="availableRamGb" {...fieldProps} step={0.5} />
                   <NumberField id="availableStorageGb" {...fieldProps} step={1} />
+                  <div className={`field${activeField === 'operationalCapability' ? ' field-active' : ''}`}>
+                    <label htmlFor="operationalCapability">{FIELD_META.operationalCapability.label}</label>
+                    <select
+                      id="operationalCapability"
+                      value={form.operationalCapability}
+                      onChange={(e) => setForm({ ...form, operationalCapability: e.target.value as any })}
+                      onFocus={() => setActiveField('operationalCapability')}
+                    >
+                      <option value="none">None</option>
+                      <option value="part_time">Part-time</option>
+                      <option value="dedicated_dba">Dedicated DBA</option>
+                      <option value="platform_team">Platform team</option>
+                    </select>
+                  </div>
+                  <OptionalNumberField id="monthlyBudgetUsd" {...fieldProps} step={100} min={0} />
+                  <div className={`field${activeField === 'tenancyModel' ? ' field-active' : ''}`}>
+                    <label htmlFor="tenancyModel">{FIELD_META.tenancyModel.label}</label>
+                    <select
+                      id="tenancyModel"
+                      value={form.tenancyModel}
+                      onChange={(e) => setForm({ ...form, tenancyModel: e.target.value as any })}
+                      onFocus={() => setActiveField('tenancyModel')}
+                    >
+                      <option value="single_tenant">Single tenant</option>
+                      <option value="shared_multi_tenant">Shared multi-tenant</option>
+                      <option value="dedicated_per_tenant">Dedicated per tenant</option>
+                    </select>
+                  </div>
                 </div>
               </section>
 
