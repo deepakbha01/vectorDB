@@ -1,8 +1,12 @@
 # Vector Database Assessment & Optimization Platform
 
 Production-grade platform for assessing, designing, provisioning, ingesting,
-optimizing, and scaling vector database solutions across **Oracle (native
-vector)**, **PostgreSQL + pgvector**, and **Milvus on Kubernetes**.
+optimizing, and scaling vector database solutions across 12 platforms:
+**Oracle (native vector)**, **PostgreSQL + pgvector**, **Milvus**,
+**Pinecone**, **Qdrant**, **Weaviate**, **Chroma**, **Elasticsearch/
+OpenSearch**, **Redis**, **MongoDB Atlas**, **LanceDB**, and **Actian**
+(Discovery/Design/Deployment/Capacity-Planning only - see the platform
+expansion notes below).
 
 Built phase by phase per `Vector_Database_Phase_by_Phase_Claude_Prompt.txt`:
 Discovery -> Design -> Implementation -> Operations.
@@ -16,6 +20,50 @@ Discovery -> Design -> Implementation -> Operations.
 
 All seven phases have a working engine and a live frontend page (since
 Sprint 8); every deliverable can now be exported and every action audited.
+
+### Post-Sprint 10: Multi-platform expansion (Pinecone, Qdrant, Weaviate, Chroma, Elasticsearch/OpenSearch, Redis, MongoDB Atlas, LanceDB, Actian)
+
+Extended every phase from 3 platforms to 12:
+- **Phase 1 (Discovery)**: scoring and infra estimation generalized onto
+  shared categorization constants (`platform.enum.ts`) - SQL-based/bolt-on,
+  embedded-library, dedicated-at-scale, Kubernetes-self-hostable, and
+  fully-managed-SaaS - so new platforms plug into existing scoring logic
+  instead of needing bespoke branches per platform
+- **Phase 2/3 (Schema & Index generation)**: JSON-config schema generation
+  and platform-native index-tuning artifacts for each new platform - e.g.
+  Qdrant HNSW config + scalar quantization, Elasticsearch `int8_hnsw`,
+  LanceDB IVF_PQ/IVF_HNSW_SQ - plus a corrected Redis index artifact (RediSearch
+  can't alter a live vector field in place, so it's a documented drop/recreate
+  substitution snippet, not a fabricated `FT.ALTER`)
+- **Phase 4 (Deployment/IaC)**: real Terraform providers for Pinecone
+  (`pinecone-io/pinecone`) and MongoDB Atlas (`mongodb/mongodbatlas`);
+  Kubernetes manifests for the self-hostable group (Qdrant, Weaviate,
+  Elasticsearch via the ECK operator, Redis via the Bitnami chart with the
+  `redis-stack-server` image); real per-platform health checks, rollback
+  procedures, and deployment checklists; Actian documented as having no
+  automated Terraform path
+- **Phase 5 (Ingestion adapters)**: real SDK-backed adapters for 8 platforms
+  (Pinecone, Qdrant, Weaviate, Chroma, Elasticsearch, Redis, MongoDB Atlas,
+  LanceDB), each implementing `healthCheck`/`createSchema`/
+  `createVectorIndex`/`upsert`/`search`/`deleteById`/`dropSchema`. **Actian
+  is a documented exception**: no maintained Node.js driver exists, so its
+  adapter fails clearly with an ODBC/JDBC-bridge pointer rather than
+  pretending to connect - Phase 2-4/7 are still fully generated for it
+- **Phase 7 (Capacity planning)**: sharding and HA recommendations now
+  branch by platform category (K8s-self-hostable sharding advice,
+  vendor-managed-scaling advice for fully-managed SaaS, app-level
+  partitioning advice for embedded libraries) instead of only knowing about
+  Milvus
+- New dependencies: `@pinecone-database/pinecone`, `@qdrant/js-client-rest`,
+  `weaviate-client`, `chromadb`, `@elastic/elasticsearch`, `redis`,
+  `mongodb`, `@lancedb/lancedb`, `apache-arrow`
+- Test suite grew to 42 suites / 311 tests, all passing, with unit tests
+  against mocked SDK clients for every new adapter plus a live curl-based
+  smoke test through the running dev server across Phases 1-4/7 for a real
+  project. **Not verified**: actual data read/write round-trips against real
+  cloud accounts for the 8 SDK-backed platforms, since no live credentials
+  exist in this environment - consistent with this project's existing,
+  documented stance on Oracle/Postgres/Milvus connectivity
 
 Sprint 1 delivered the application skeleton (auth, users, projects, dashboard
 shell, pluggable database-adapter interfaces, Docker Compose). Sprint 2 added
@@ -331,7 +379,9 @@ claiming a demonstration project is production-ready without qualification.
 ```
 Web Frontend -> API Gateway (Nest) -> Assessment Engine -> Design Engine
              -> Operations Engine -> Recommendation Engine
-             -> Oracle / PostgreSQL+pgvector / Milvus (pluggable adapters)
+             -> Oracle / PostgreSQL+pgvector / Milvus / Pinecone / Qdrant /
+                Weaviate / Chroma / Elasticsearch / Redis / MongoDB Atlas /
+                LanceDB / Actian (pluggable adapters)
 ```
 
 ## Local development
