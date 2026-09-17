@@ -75,7 +75,7 @@ const FIELD_META: Record<FieldKey, FieldMeta> = {
   },
   documentCount: {
     label: 'Document count',
-    help: 'Total number of source documents you plan to ingest, before chunking.',
+    help: 'Total number of source documents you plan to ingest, before chunking, chosen from common corpus-size tiers.',
     scored: false,
   },
   documentGrowthPercentPerMonth: {
@@ -95,12 +95,12 @@ const FIELD_META: Record<FieldKey, FieldMeta> = {
   },
   estimatedVectorCount: {
     label: 'Estimated vector count',
-    help: 'Total vectors across the whole corpus (documents x chunks per document). Directly drives platform scoring and the infrastructure (RAM/storage) estimate.',
+    help: 'Total vectors across the whole corpus (documents x chunks per document), chosen from tiers spanning the platform-scoring thresholds. Directly drives platform scoring and the infrastructure (RAM/storage) estimate.',
     scored: true,
   },
   embeddingDimension: {
     label: 'Embedding dimension',
-    help: 'Dimensionality of your embedding model’s output vectors. Feeds the infrastructure sizing estimate directly; it does not change which platform wins.',
+    help: 'Dimensionality of your embedding model’s output vectors, chosen from this platform’s embedding model catalog. Feeds the infrastructure sizing estimate directly; it does not change which platform wins.',
     scored: false,
   },
   qps: {
@@ -170,7 +170,7 @@ const FIELD_META: Record<FieldKey, FieldMeta> = {
   },
   topK: {
     label: 'Top-K',
-    help: 'How many results are returned per query. Used to reason about index tuning in later phases.',
+    help: 'How many results are returned per query, chosen from common values. Used to reason about index tuning in later phases.',
     scored: false,
   },
   recallTarget: {
@@ -307,6 +307,56 @@ const RECALL_OPTIONS: NumericOption[] = [
   { value: 0.98, label: '0.98 — high recall' },
   { value: 0.99, label: '0.99 — very high recall' },
   { value: 0.995, label: '0.995 — near-exhaustive search' },
+];
+
+/** Typical corpus sizes, from a small pilot to a large enterprise corpus. */
+const DOCUMENT_COUNT_OPTIONS: NumericOption[] = [
+  { value: 1_000, label: '1,000 — small pilot / PoC' },
+  { value: 10_000, label: '10,000 — small production corpus' },
+  { value: 50_000, label: '50,000' },
+  { value: 100_000, label: '100,000 — typical mid-size corpus' },
+  { value: 500_000, label: '500,000' },
+  { value: 1_000_000, label: '1,000,000 — large corpus' },
+  { value: 5_000_000, label: '5,000,000 — enterprise-scale corpus' },
+];
+
+/**
+ * Vector-count tiers straddling the same thresholds the recommendation
+ * engine scores against (thresholds.yaml `vectorCount`: dedicatedFloor=1M,
+ * embeddedMax=5M, dedicatedRecommendedMin=20M), so each option maps to a
+ * distinct scoring regime rather than an arbitrary round number.
+ */
+const VECTOR_COUNT_OPTIONS: NumericOption[] = [
+  { value: 10_000, label: '10,000 — small pilot / PoC' },
+  { value: 100_000, label: '100,000' },
+  { value: 400_000, label: '400,000 — default (100k docs x 4 chunks/doc)' },
+  { value: 500_000, label: '500,000 — comfortably embedded-friendly' },
+  { value: 1_000_000, label: '1,000,000 — dedicated-platform floor' },
+  { value: 5_000_000, label: '5,000,000 — embedded-platform ceiling' },
+  { value: 10_000_000, label: '10,000,000' },
+  { value: 20_000_000, label: '20,000,000 — dedicated platform recommended' },
+  { value: 50_000_000, label: '50,000,000 — large scale' },
+  { value: 100_000_000, label: '100,000,000 — very large scale' },
+];
+
+/** Dimensions of the embedding models in this platform's catalog (config/embeddings.yaml). */
+const EMBEDDING_DIMENSION_OPTIONS: NumericOption[] = [
+  { value: 384, label: '384 — e.g. all-MiniLM-L6-v2 (open-source)' },
+  { value: 768, label: '768 — e.g. Google text-embedding-004' },
+  { value: 1024, label: '1024 — e.g. Cohere embed-v3 / BGE-large' },
+  { value: 1536, label: '1536 — e.g. OpenAI text-embedding-3-small' },
+  { value: 3072, label: '3072 — e.g. OpenAI text-embedding-3-large' },
+];
+
+/** Common top-K values for vector search result sets. */
+const TOP_K_OPTIONS: NumericOption[] = [
+  { value: 1, label: '1' },
+  { value: 3, label: '3' },
+  { value: 5, label: '5' },
+  { value: 10, label: '10 — common default' },
+  { value: 20, label: '20' },
+  { value: 50, label: '50' },
+  { value: 100, label: '100' },
 ];
 
 function NumericSelectField({
@@ -661,12 +711,12 @@ export function DiscoveryPage() {
                   How much data you're ingesting and how many vectors it produces.
                 </p>
                 <div className="field-grid">
-                  <NumberField id="documentCount" {...fieldProps} />
+                  <NumericSelectField id="documentCount" {...fieldProps} options={DOCUMENT_COUNT_OPTIONS} />
                   <NumberField id="documentGrowthPercentPerMonth" {...fieldProps} step={0.1} />
                   <NumberField id="avgDocumentSizeKb" {...fieldProps} step={0.1} />
                   <NumberField id="chunksPerDocument" {...fieldProps} />
-                  <NumberField id="estimatedVectorCount" {...fieldProps} />
-                  <NumberField id="embeddingDimension" {...fieldProps} />
+                  <NumericSelectField id="estimatedVectorCount" {...fieldProps} options={VECTOR_COUNT_OPTIONS} />
+                  <NumericSelectField id="embeddingDimension" {...fieldProps} options={EMBEDDING_DIMENSION_OPTIONS} />
                 </div>
               </section>
 
@@ -702,7 +752,7 @@ export function DiscoveryPage() {
                   <BoolField id="requiresFullTextSearch" {...fieldProps} />
                 </div>
                 <div className="field-grid">
-                  <NumberField id="topK" {...fieldProps} />
+                  <NumericSelectField id="topK" {...fieldProps} options={TOP_K_OPTIONS} />
                   <NumericSelectField id="recallTarget" {...fieldProps} options={RECALL_OPTIONS} />
                 </div>
               </section>
