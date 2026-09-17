@@ -56,6 +56,9 @@ export class DiscoveryService {
       hasExistingPostgres: dto.hasExistingPostgres,
       hasExistingKubernetes: dto.hasExistingKubernetes,
       containsPii: dto.containsPii,
+      requiresHybridSearch: dto.requiresHybridSearch,
+      requiresFullTextSearch: dto.requiresFullTextSearch,
+      requiresMetadataFiltering: dto.requiresMetadataFiltering,
     });
 
     const adr = await this.adrs.save(

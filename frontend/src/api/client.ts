@@ -180,6 +180,8 @@ export interface ScoredOption {
   totalScore: number;
   criteriaScores: CriteriaScores;
   evidence: string[];
+  eligible: boolean;
+  ineligibleReasons: string[];
 }
 
 export interface InfrastructureEstimate {

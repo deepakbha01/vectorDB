@@ -19,6 +19,9 @@ export interface AssessmentInput {
   hasExistingPostgres: boolean;
   hasExistingKubernetes: boolean;
   containsPii: boolean;
+  requiresHybridSearch: boolean;
+  requiresFullTextSearch: boolean;
+  requiresMetadataFiltering: boolean;
 }
 
 export interface CriteriaScores {
@@ -37,6 +40,9 @@ export interface ScoredOption {
   totalScore: number;
   criteriaScores: CriteriaScores;
   evidence: string[];
+  /** False if this platform fails a hard search-capability requirement (see `ineligibleReasons`) and therefore cannot win, regardless of totalScore. */
+  eligible: boolean;
+  ineligibleReasons: string[];
 }
 
 export interface InfrastructureEstimate {

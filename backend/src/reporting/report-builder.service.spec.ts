@@ -45,6 +45,8 @@ describe('ReportBuilderService', () => {
             cost: 0.95,
           },
           evidence: ['Estimated vector count scored 1.00 against thresholds.'],
+          eligible: true,
+          ineligibleReasons: [],
         },
       ],
       rejectedAlternatives: [{ platformId: VectorPlatform.MILVUS, reason: 'overkill' }],

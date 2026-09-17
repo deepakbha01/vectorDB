@@ -51,23 +51,35 @@ export class RecommendationEngineService {
         criteriaScores.existingPlatform * weights.existingPlatform +
         criteriaScores.operationalComplexity * weights.operationalComplexity +
         criteriaScores.cost * weights.cost;
+      const ineligibleReasons = this.checkEligibility(entry, input);
+      const evidence = this.buildEvidence(platformId, entry, input, thresholds, criteriaScores);
 
       return {
         platformId,
         label: entry.label,
         totalScore: Number(totalScore.toFixed(4)),
         criteriaScores,
-        evidence: this.buildEvidence(platformId, entry, input, thresholds, criteriaScores),
+        eligible: ineligibleReasons.length === 0,
+        ineligibleReasons,
+        evidence: ineligibleReasons.length > 0 ? [...ineligibleReasons, ...evidence] : evidence,
       };
     });
 
     options.sort((a, b) => b.totalScore - a.totalScore);
-    const winner = options[0];
-    const rejected = options.slice(1).map((o) => ({
-      platformId: o.platformId,
-      reason: this.buildRejectionReason(o, winner),
-    }));
-    const risks = this.buildRisks(winner.platformId, input, thresholds);
+    // Eligibility gates who can win, independently of score: a platform that
+    // fails a hard search-capability requirement is never the recommendation,
+    // no matter how well it scores on everything else. Falls back to scoring
+    // all options only if literally nothing in the catalog qualifies.
+    const eligibleOptions = options.filter((o) => o.eligible);
+    const winnerPool = eligibleOptions.length > 0 ? eligibleOptions : options;
+    const winner = winnerPool[0];
+    const rejected = options
+      .filter((o) => o.platformId !== winner.platformId)
+      .map((o) => ({
+        platformId: o.platformId,
+        reason: o.eligible ? this.buildRejectionReason(o, winner) : o.ineligibleReasons.join(' '),
+      }));
+    const risks = this.buildRisks(winner.platformId, input, thresholds, eligibleOptions.length === 0);
 
     return {
       rulesVersion: this.platformConfig.getRulesVersion(),
@@ -212,6 +224,32 @@ export class RecommendationEngineService {
     return 0.5;
   }
 
+  /**
+   * Hard eligibility gate, separate from scoring: `databases.yaml`'s
+   * `supportsHybridSearch`/`supportsMetadataFiltering` flags previously had
+   * no effect on the recommendation even when the assessment explicitly
+   * required that capability (e.g. Chroma/LanceDB are marked
+   * `supportsHybridSearch: false` but could still win outright). A platform
+   * that fails a required capability here can still be scored for
+   * transparency, but can never be the winning `decision`.
+   */
+  private checkEligibility(catalogEntry: Record<string, any>, input: AssessmentInput): string[] {
+    const reasons: string[] = [];
+    if (input.requiresHybridSearch && !catalogEntry.supportsHybridSearch) {
+      reasons.push(`${catalogEntry.label} does not support hybrid (vector + keyword) search, which this workload requires.`);
+    }
+    // The catalog has no separate full-text-search flag; supportsHybridSearch is the closest
+    // available signal, since every platform that supports hybrid search does so via a
+    // built-in lexical/full-text engine (BM25 or equivalent).
+    if (input.requiresFullTextSearch && !catalogEntry.supportsHybridSearch) {
+      reasons.push(`${catalogEntry.label} has no built-in full-text search capability, which this workload requires.`);
+    }
+    if (input.requiresMetadataFiltering && !catalogEntry.supportsMetadataFiltering) {
+      reasons.push(`${catalogEntry.label} does not support metadata filtering, which this workload requires.`);
+    }
+    return reasons;
+  }
+
   private buildEvidence(
     platformId: VectorPlatform,
     catalogEntry: Record<string, any>,
@@ -265,9 +303,20 @@ export class RecommendationEngineService {
     ];
   }
 
-  private buildRisks(decision: VectorPlatform, input: AssessmentInput, thresholds: Record<string, any>): string[] {
+  private buildRisks(
+    decision: VectorPlatform,
+    input: AssessmentInput,
+    thresholds: Record<string, any>,
+    noPlatformFullyEligible: boolean,
+  ): string[] {
     const risks: string[] = [];
 
+    if (noPlatformFullyEligible) {
+      risks.push(
+        'No cataloged platform fully satisfies the required search capabilities (hybrid search / full-text search / metadata ' +
+          'filtering); the recommendation below is the best available compromise and this gap should be revisited.',
+      );
+    }
     if (decision === VectorPlatform.MILVUS && !input.hasExistingKubernetes) {
       risks.push('No existing Kubernetes platform was reported; a new cluster must be stood up before Milvus can be provisioned (Phase 4).');
     }

@@ -33,18 +33,18 @@ const thresholds = {
 };
 
 const catalog = [
-  { id: 'oracle', label: 'Oracle Database (Vector)', operationalComplexity: 'medium' },
-  { id: 'postgres_pgvector', label: 'PostgreSQL + pgvector', operationalComplexity: 'low' },
-  { id: 'milvus', label: 'Milvus (Kubernetes)', operationalComplexity: 'high', requiresKubernetes: true },
-  { id: 'pinecone', label: 'Pinecone', operationalComplexity: 'low' },
-  { id: 'qdrant', label: 'Qdrant', operationalComplexity: 'medium' },
-  { id: 'weaviate', label: 'Weaviate', operationalComplexity: 'medium' },
-  { id: 'chroma', label: 'Chroma', operationalComplexity: 'low' },
-  { id: 'elasticsearch', label: 'Elasticsearch / OpenSearch', operationalComplexity: 'high' },
-  { id: 'redis', label: 'Redis', operationalComplexity: 'medium' },
-  { id: 'mongodb_atlas', label: 'MongoDB Atlas Vector Search', operationalComplexity: 'low' },
-  { id: 'lancedb', label: 'LanceDB', operationalComplexity: 'low' },
-  { id: 'actian', label: 'Actian Vector', operationalComplexity: 'medium' },
+  { id: 'oracle', label: 'Oracle Database (Vector)', operationalComplexity: 'medium', supportsHybridSearch: true, supportsMetadataFiltering: true },
+  { id: 'postgres_pgvector', label: 'PostgreSQL + pgvector', operationalComplexity: 'low', supportsHybridSearch: true, supportsMetadataFiltering: true },
+  { id: 'milvus', label: 'Milvus (Kubernetes)', operationalComplexity: 'high', requiresKubernetes: true, supportsHybridSearch: true, supportsMetadataFiltering: true },
+  { id: 'pinecone', label: 'Pinecone', operationalComplexity: 'low', supportsHybridSearch: true, supportsMetadataFiltering: true },
+  { id: 'qdrant', label: 'Qdrant', operationalComplexity: 'medium', supportsHybridSearch: true, supportsMetadataFiltering: true },
+  { id: 'weaviate', label: 'Weaviate', operationalComplexity: 'medium', supportsHybridSearch: true, supportsMetadataFiltering: true },
+  { id: 'chroma', label: 'Chroma', operationalComplexity: 'low', supportsHybridSearch: false, supportsMetadataFiltering: true },
+  { id: 'elasticsearch', label: 'Elasticsearch / OpenSearch', operationalComplexity: 'high', supportsHybridSearch: true, supportsMetadataFiltering: true },
+  { id: 'redis', label: 'Redis', operationalComplexity: 'medium', supportsHybridSearch: true, supportsMetadataFiltering: true },
+  { id: 'mongodb_atlas', label: 'MongoDB Atlas Vector Search', operationalComplexity: 'low', supportsHybridSearch: true, supportsMetadataFiltering: true },
+  { id: 'lancedb', label: 'LanceDB', operationalComplexity: 'low', supportsHybridSearch: false, supportsMetadataFiltering: true },
+  { id: 'actian', label: 'Actian Vector', operationalComplexity: 'medium', supportsHybridSearch: true, supportsMetadataFiltering: true },
 ];
 
 function baseInput(overrides: Partial<AssessmentInput> = {}): AssessmentInput {
@@ -59,6 +59,9 @@ function baseInput(overrides: Partial<AssessmentInput> = {}): AssessmentInput {
     hasExistingPostgres: false,
     hasExistingKubernetes: false,
     containsPii: false,
+    requiresHybridSearch: false,
+    requiresFullTextSearch: false,
+    requiresMetadataFiltering: false,
     ...overrides,
   };
 }
@@ -174,7 +177,7 @@ describe('RecommendationEngineService', () => {
       expect(LIVE_INGESTION_SUPPORTED.has(VectorPlatform.ACTIAN)).toBe(false);
       // buildRisks is private; Actian has no dedicated "existing platform" input to force it to win
       // outright, so this exercises the risk-building logic directly for that decision.
-      const risks: string[] = (service as any).buildRisks(VectorPlatform.ACTIAN, baseInput(), thresholds);
+      const risks: string[] = (service as any).buildRisks(VectorPlatform.ACTIAN, baseInput(), thresholds, false);
       expect(risks.some((r) => r.includes('No maintained Node.js driver exists'))).toBe(true);
     });
 
@@ -182,6 +185,48 @@ describe('RecommendationEngineService', () => {
       const result = service.evaluate(baseInput({ hasExistingPostgres: true }));
       expect(result.decision).toBe(VectorPlatform.POSTGRES_PGVECTOR);
       expect(result.risks.some((r) => r.includes('No maintained Node.js driver exists'))).toBe(false);
+    });
+  });
+
+  describe('search-capability eligibility', () => {
+    it('disqualifies platforms that do not support hybrid search from winning, even at a scale where they would otherwise score highest', () => {
+      const result = service.evaluate(baseInput({ estimatedVectorCount: 10_000, requiresHybridSearch: true }));
+      const chroma = result.options.find((o) => o.platformId === VectorPlatform.CHROMA)!;
+      const lancedb = result.options.find((o) => o.platformId === VectorPlatform.LANCEDB)!;
+      expect(chroma.eligible).toBe(false);
+      expect(lancedb.eligible).toBe(false);
+      expect(chroma.ineligibleReasons[0]).toContain('hybrid');
+      expect(result.decision).not.toBe(VectorPlatform.CHROMA);
+      expect(result.decision).not.toBe(VectorPlatform.LANCEDB);
+    });
+
+    it('gives an ineligible platform a capability-gap rejection reason instead of a generic score comparison', () => {
+      const result = service.evaluate(baseInput({ requiresHybridSearch: true }));
+      const rejectedChroma = result.rejectedAlternatives.find((r) => r.platformId === VectorPlatform.CHROMA);
+      expect(rejectedChroma?.reason).toContain('does not support hybrid');
+    });
+
+    it('does not disqualify any platform when no search capability is required', () => {
+      const result = service.evaluate(baseInput());
+      expect(result.options.every((o) => o.eligible)).toBe(true);
+    });
+
+    it('checkEligibility flags every required capability the catalog entry does not support', () => {
+      const entry = { label: 'Test Platform', supportsHybridSearch: false, supportsMetadataFiltering: false };
+      const reasons: string[] = (service as any).checkEligibility(
+        entry,
+        baseInput({ requiresHybridSearch: true, requiresFullTextSearch: true, requiresMetadataFiltering: true }),
+      );
+      expect(reasons).toHaveLength(3);
+    });
+
+    it('checkEligibility returns no reasons when the catalog entry supports everything required', () => {
+      const entry = { label: 'Test Platform', supportsHybridSearch: true, supportsMetadataFiltering: true };
+      const reasons: string[] = (service as any).checkEligibility(
+        entry,
+        baseInput({ requiresHybridSearch: true, requiresFullTextSearch: true, requiresMetadataFiltering: true }),
+      );
+      expect(reasons).toHaveLength(0);
     });
   });
 });

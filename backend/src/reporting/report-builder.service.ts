@@ -79,15 +79,18 @@ export class ReportBuilderService {
                 'Each candidate is scored 0-1 on seven weighted criteria - vector-volume fit, query throughput, latency fit, recall fit, ' +
                 'existing-platform fit, operational complexity, and cost - using the thresholds and weights in rules v' +
                 adr.rulesVersion +
-                '. Each criterion score is multiplied by its weight and the results are summed into the total score below; the winner is whichever candidate totals highest.',
+                '. Each criterion score is multiplied by its weight and the results are summed into the total score below. A candidate ' +
+                'that fails a required search capability (hybrid search, full-text search, or metadata filtering) is marked ineligible ' +
+                'and cannot win regardless of score; among eligible candidates, the winner is whichever totals highest.',
             },
           ],
           tables: [
             {
               title: 'Total and per-criterion scores (0-1, higher is better)',
-              headers: ['Platform', 'Total', 'Vector Count', 'QPS', 'Latency', 'Recall', 'Existing', 'Ops', 'Cost'],
+              headers: ['Platform', 'Eligible', 'Total', 'Vector Count', 'QPS', 'Latency', 'Recall', 'Existing', 'Ops', 'Cost'],
               rows: adr.options.map((o) => [
                 o.label,
+                o.eligible ? 'Yes' : 'No',
                 o.totalScore.toFixed(2),
                 o.criteriaScores.vectorCount.toFixed(2),
                 o.criteriaScores.qps.toFixed(2),

@@ -511,12 +511,15 @@ function AdrView({ adr }: { adr: ArchitectureDecisionRecord }) {
           Each candidate is scored 0-1 on seven weighted criteria (vector-volume fit, query throughput, latency fit,
           recall fit, existing-platform fit, operational complexity, and cost) using the thresholds and weights in
           rules v{adr.rulesVersion}. Each criterion score is multiplied by its weight and the results are summed into
-          the total score - whichever candidate totals highest wins.
+          the total score. A platform that fails a required search capability (hybrid search, full-text search, or
+          metadata filtering) is marked ineligible below and cannot win regardless of score; among eligible
+          candidates, whichever totals highest wins.
         </p>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
               <th style={{ padding: '6px 8px' }}>Platform</th>
+              <th style={{ padding: '6px 8px' }}>Eligible</th>
               <th style={{ padding: '6px 8px' }}>Total</th>
               <th style={{ padding: '6px 8px' }}>Vector Count</th>
               <th style={{ padding: '6px 8px' }}>QPS</th>
@@ -531,6 +534,9 @@ function AdrView({ adr }: { adr: ArchitectureDecisionRecord }) {
             {adr.options.map((o) => (
               <tr key={o.platformId} style={{ borderBottom: '1px solid #eceff3', fontWeight: o.platformId === adr.decision ? 600 : 400 }}>
                 <td style={{ padding: '6px 8px' }}>{o.label}</td>
+                <td style={{ padding: '6px 8px' }} title={o.ineligibleReasons.join(' ')}>
+                  {o.eligible ? 'Yes' : 'No'}
+                </td>
                 <td style={{ padding: '6px 8px' }}>{o.totalScore.toFixed(2)}</td>
                 <td style={{ padding: '6px 8px' }}>{o.criteriaScores.vectorCount.toFixed(2)}</td>
                 <td style={{ padding: '6px 8px' }}>{o.criteriaScores.qps.toFixed(2)}</td>
