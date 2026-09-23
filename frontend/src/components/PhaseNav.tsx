@@ -42,6 +42,16 @@ export function PhaseNav({ project }: { project: Project }) {
         })}
       </ul>
       <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid #dfe3e8' }}>
+        <div style={{ fontSize: 11, color: '#5a6472', textTransform: 'uppercase', marginBottom: 6 }}>Inference track</div>
+        <ul className="phase-nav">
+          <li>
+            <NavLink to={`/projects/${project.id}/inference`} className={({ isActive }) => (isActive ? 'active' : '')}>
+              Inference-as-a-Service
+            </NavLink>
+          </li>
+        </ul>
+      </div>
+      <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid #dfe3e8' }}>
         <div style={{ fontSize: 11, color: '#5a6472', textTransform: 'uppercase', marginBottom: 6 }}>Project tools</div>
         <ul className="phase-nav">
           <li>

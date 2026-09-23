@@ -17,6 +17,7 @@ import { CapacityPage } from './pages/CapacityPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { AuditLogPage } from './pages/AuditLogPage';
 import { UsersManagementPage } from './pages/UsersManagementPage';
+import { InferencePage } from './pages/InferencePage';
 
 export function App() {
   return (
@@ -40,6 +41,7 @@ export function App() {
           <Route path="/projects/:id/capacity" element={<CapacityPage />} />
           <Route path="/projects/:id/reports" element={<ReportsPage />} />
           <Route path="/projects/:id/audit-log" element={<AuditLogPage />} />
+          <Route path="/projects/:id/inference" element={<InferencePage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

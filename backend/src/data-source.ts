@@ -14,6 +14,7 @@ import { IngestionContentHash } from './ingestion/ingestion-content-hash.entity'
 import { OptimizationReport } from './benchmark/optimization-report.entity';
 import { CapacityPlan } from './capacity-planning/capacity-plan.entity';
 import { AuditLogEntry } from './audit/audit-log-entry.entity';
+import { InferenceAssessment } from './inference/inference-assessment.entity';
 
 config();
 
@@ -52,6 +53,7 @@ export const AppDataSource = new DataSource({
     OptimizationReport,
     CapacityPlan,
     AuditLogEntry,
+    InferenceAssessment,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,
