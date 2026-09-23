@@ -16,6 +16,7 @@ import { CapacityPlan } from './capacity-planning/capacity-plan.entity';
 import { AuditLogEntry } from './audit/audit-log-entry.entity';
 import { InferenceAssessment } from './inference/inference-assessment.entity';
 import { AiFactoryStateSnapshot } from './ai-factory/ai-factory-state-snapshot.entity';
+import { AiWorkloadProfile } from './ai-factory/workload-profile/workload-profile.entity';
 
 config();
 
@@ -55,6 +56,7 @@ export const AppDataSource = new DataSource({
     AuditLogEntry,
     InferenceAssessment,
     AiFactoryStateSnapshot,
+    AiWorkloadProfile,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,

@@ -5,7 +5,7 @@
 # phases compute anything; it only describes how their deliverables relate so
 # the AI Factory view can show lineage, staleness and impact.
 
-rulesVersion: ai-factory-2026.09-1
+rulesVersion: ai-factory-2026.09-2
 
 # ---------------------------------------------------------------------------
 # Phase dependency graph. `dependsOn` lists the DIRECT upstream deliverables
@@ -62,6 +62,12 @@ phases:
     dependsOn:
       - { phase: discovery, kind: advisory }
       - { phase: data_embeddings, kind: advisory }
+      - { phase: workload_profile, kind: advisory }
+  - key: workload_profile
+    label: AI Workload Profile
+    route: workload-profile
+    dependsOn:
+      - { phase: discovery, kind: advisory }   # Discovery answers only pre-fill blanks
 
 # ---------------------------------------------------------------------------
 # Parameter impact map (spec §22). Which phases must be re-run when a
@@ -75,24 +81,26 @@ parameterImpact:
   # DataPipelineDesignService; vector_db_selection passes the assessment into
   # RecommendationEngineService (AssessmentInput fields); capacity and
   # inference read the fields listed. "none" = captured but not read by any
-  # engine today (a Wave 2 input to revisit, not a bug in this map).
+  # engine today. Wave 2: the AI Workload Profile now reads several fields that
+  # were "none" before (documentCount, concurrentUsers, deploymentEnvironment,
+  # hasGpu, regulatoryRequirements).
   # corpus & scale
   environment: none
-  documentCount: none
-  documentGrowthPercentPerMonth: [capacity]
+  documentCount: [workload_profile]
+  documentGrowthPercentPerMonth: [capacity, workload_profile]
   avgDocumentSizeKb: none
   chunksPerDocument: none
-  estimatedVectorCount: [data_embeddings, vector_db_selection]
+  estimatedVectorCount: [data_embeddings, vector_db_selection, workload_profile]
   embeddingDimension: [data_embeddings, vector_db_selection]
   similarityMetric: [data_embeddings]
   # performance & SLAs
-  qps: [data_embeddings, vector_db_selection, inference]
-  peakQps: [data_embeddings, vector_db_selection, inference]
+  qps: [data_embeddings, vector_db_selection, inference, workload_profile]
+  peakQps: [data_embeddings, vector_db_selection, inference, workload_profile]
   qpsScope: [vector_db_selection]
-  concurrentUsers: none
+  concurrentUsers: [workload_profile]
   targetP95LatencyMs: [data_embeddings, vector_db_selection]
   targetP99LatencyMs: [vector_db_selection]
-  availabilityTargetPercent: [capacity, inference]
+  availabilityTargetPercent: [capacity, inference, workload_profile]
   rpoMinutes: [vector_db_selection, capacity]
   rtoMinutes: [vector_db_selection, capacity]
   retentionDays: [vector_db_selection]
@@ -113,11 +121,11 @@ parameterImpact:
   hasExistingPostgres: [vector_db_selection]
   hasExistingKubernetes: [vector_db_selection]
   existingPlatforms: [vector_db_selection]
-  deploymentEnvironment: none
+  deploymentEnvironment: [workload_profile]
   availableCpuCores: [capacity]
   availableRamGb: [data_embeddings]
   availableStorageGb: [capacity]
-  hasGpu: none
+  hasGpu: [workload_profile]
   operationalCapability: [vector_db_selection]
   monthlyBudgetUsd: [vector_db_selection, inference]
   # multi-region & tenancy
@@ -131,14 +139,14 @@ parameterImpact:
   # security & compliance
   requiresAuthentication: [vector_db_selection]
   requiresRbac: [vector_db_selection]
-  requiresEncryptionAtRest: [vector_db_selection]
-  requiresEncryptionInTransit: [vector_db_selection]
+  requiresEncryptionAtRest: [vector_db_selection, workload_profile]
+  requiresEncryptionInTransit: [vector_db_selection, workload_profile]
   requiresKeyManagement: [vector_db_selection]
   requiresTenantIsolation: [vector_db_selection]
   requiresAuditLogging: [vector_db_selection]
-  dataResidencyRequirement: [vector_db_selection, inference]
-  containsPii: [vector_db_selection, inference]
-  regulatoryRequirements: none
+  dataResidencyRequirement: [vector_db_selection, inference, workload_profile]
+  containsPii: [vector_db_selection, inference, workload_profile]
+  regulatoryRequirements: [workload_profile]
 
 # ---------------------------------------------------------------------------
 # Guided workflow (spec §20). `phases` are the existing deliverables backing a
@@ -146,8 +154,8 @@ parameterImpact:
 # today; `plannedWave` is where the remaining scope lands.
 # ---------------------------------------------------------------------------
 steps:
-  - { number: 1,  key: use_case,        title: Use Case,              phases: [],                                   coverage: partial, plannedWave: 2,  note: "Project name, business use case, industry and pattern today; business criticality, users and workload type arrive with the AI Workload Profile." }
-  - { number: 2,  key: scale,           title: Scale,                 phases: [discovery],                          coverage: partial, plannedWave: 2,  note: "Vector-DB Discovery covers scale, SLAs and compliance; workload/architecture classification and named clouds arrive in Wave 2." }
+  - { number: 1,  key: use_case,        title: Use Case,              phases: [workload_profile],                   coverage: full,    note: "Business objective, criticality, users, applications, workload types and data sources - captured in the AI Workload Profile." }
+  - { number: 2,  key: scale,           title: Scale,                 phases: [workload_profile, discovery],        coverage: full,    note: "Workload size and architecture classification, named deployment targets and data classification (AI Workload Profile), built on the vector Discovery answers." }
   - { number: 3,  key: data_embedding,  title: Data & Embedding,      phases: [data_embeddings],                    coverage: partial, plannedWave: 3,  note: "Chunking and embedding design exist; embedding-model eligibility and scoring arrive in Wave 3." }
   - { number: 4,  key: vectordb_index,  title: VectorDB & Index,      phases: [index_design, vector_db_selection],  coverage: full }
   - { number: 5,  key: model,           title: Model,                 phases: [],                                   coverage: none,    plannedWave: 3 }
@@ -159,3 +167,74 @@ steps:
   - { number: 11, key: cost,            title: Cost,                  phases: [],                                   coverage: partial, plannedWave: 9,  note: "Budget feasibility (ADR) and inference cost exist; the consolidated FinOps view arrives in Wave 9." }
   - { number: 12, key: operations,      title: Operations,            phases: [capacity],                           coverage: partial, plannedWave: 10, note: "Capacity, HA and DR exist; model versioning and observability arrive in Wave 10." }
   - { number: 13, key: final,           title: Final Recommendation,  phases: [],                                   coverage: none,    plannedWave: 11 }
+
+# ---------------------------------------------------------------------------
+# Wave 2 - AI Workload Profile (spec §4). Classification rules only; no cloud,
+# vendor or model is preferred anywhere in this section.
+# ---------------------------------------------------------------------------
+workloadProfile:
+  # Workload size: each dimension is classified against ascending upper bounds
+  # (value < bound → that tier); above the last bound is extreme_scale. The
+  # overall size is the HIGHEST tier across the dimensions that were answered,
+  # so one very large dimension is never averaged away.
+  sizeTiers: [small, medium, large, enterprise, extreme_scale]
+  sizeDimensions:
+    expectedVectorCount: { label: Vector count, bounds: [1000000, 10000000, 100000000, 1000000000] }
+    dailyRequests: { label: Daily requests, bounds: [10000, 100000, 1000000, 10000000] }
+    peakQps: { label: Peak QPS, bounds: [10, 100, 1000, 10000] }
+    expectedUsers: { label: Expected users, bounds: [100, 1000, 10000, 100000] }
+    concurrentUsers: { label: Concurrent users, bounds: [50, 500, 5000, 50000] }
+    numberOfApplications: { label: Applications, bounds: [2, 4, 11, 51] }
+
+  # Architecture class from the selected AI workload types. One class → that
+  # class; more than one → hybrid, listing the components.
+  architectureByWorkloadType:
+    rag: rag
+    question_answering: rag
+    agentic: agent
+    copilot: copilot
+    genai: generative_ai
+    summarization: generative_ai
+    classification: generative_ai
+    search: search
+    recommendation: search
+    multimodal: multimodal
+    other: null
+  # Data types that make any workload multimodal.
+  multimodalDataTypes: [images, audio, video]
+  architectureLabels:
+    rag: RAG
+    agent: Agent
+    copilot: Copilot
+    generative_ai: Generative AI
+    search: Search
+    multimodal: Multimodal
+    hybrid: Hybrid
+
+  # Data classification: the most sensitive level that applies wins.
+  dataClassification:
+    restricted: [containsPhi, containsPci]
+    confidential: [containsPii, confidentialData]
+    # otherwise: internal
+
+  # Security controls implied by the data classification (spec §4 security requirements).
+  requiredControls:
+    restricted:
+      - Encryption at rest with customer-managed keys
+      - Encryption in transit (TLS 1.2+)
+      - Private network endpoints only - no public model or vector endpoints
+      - Audit logging of prompts, retrievals and responses with retention policy
+      - Third-party model APIs only under a signed BAA / DPA with zero data retention
+      - Role-based access control with least privilege
+    confidential:
+      - Encryption at rest
+      - Encryption in transit (TLS 1.2+)
+      - PII detection / redaction before data leaves the trust boundary
+      - Audit logging
+      - Role-based access control
+    internal:
+      - Encryption in transit (TLS 1.2+)
+      - Authentication for every AI and data endpoint
+
+  # Answers the profile needs before it counts as complete (spec §27.19: validate before proceeding).
+  requiredInputs: [businessObjective, businessCriticality, workloadTypes, dataTypes, deploymentTargets, dailyRequests, expectedVectorCount]

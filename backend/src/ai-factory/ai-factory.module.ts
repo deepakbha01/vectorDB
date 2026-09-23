@@ -14,11 +14,14 @@ import { AiFactoryConfigService } from './ai-factory-config.service';
 import { AiFactoryService } from './ai-factory.service';
 import { AiFactoryController } from './ai-factory.controller';
 import { AiFactoryEnabledGuard } from './ai-factory-enabled.guard';
+import { AiWorkloadProfile } from './workload-profile/workload-profile.entity';
+import { WorkloadProfileService } from './workload-profile/workload-profile.service';
+import { WorkloadProfileController } from './workload-profile/workload-profile.controller';
 
 /**
- * AI Factory Wave 1 foundations. Registers repositories for the existing
- * deliverable entities for READ access only; the only table this module
- * writes is ai_factory_state_snapshots.
+ * AI Factory foundations (Wave 1) and AI Workload Profile (Wave 2). Registers repositories for the existing
+ * deliverable entities for READ access only; the only tables this module
+ * writes are ai_factory_state_snapshots and ai_workload_profiles.
  */
 @Module({
   imports: [
@@ -32,10 +35,12 @@ import { AiFactoryEnabledGuard } from './ai-factory-enabled.guard';
       CapacityPlan,
       InferenceAssessment,
       AiFactoryStateSnapshot,
+      AiWorkloadProfile,
     ]),
     ProjectsModule,
   ],
-  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard],
-  controllers: [AiFactoryController],
+  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService],
+  controllers: [AiFactoryController, WorkloadProfileController],
+  exports: [AiFactoryConfigService],
 })
 export class AiFactoryModule {}

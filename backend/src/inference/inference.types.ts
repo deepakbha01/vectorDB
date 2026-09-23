@@ -214,4 +214,6 @@ export interface InferenceDefaultsSuggestion {
   dataResidencyRequirement?: string;
   monthlyBudgetUsd?: number;
   workloadType?: InferenceWorkloadType;
+  ttftTargetMs?: number;
+  allowThirdPartyApi?: boolean;
 }

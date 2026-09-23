@@ -9,7 +9,7 @@ import { analyseImpact, sameValue } from './impact.engine';
 const cfg = new AiFactoryConfigService({} as ConfigService);
 cfg.setConfig(yaml.load(fs.readFileSync(path.join(__dirname, '../../config/ai-factory.yaml'), 'utf8')) as Record<string, any>);
 
-const base = { qps: 20, peakQps: 40, hasGpu: false, documentGrowthPercentPerMonth: 5, existingPlatforms: ['qdrant', 'redis'], containsPii: false, dataResidencyRequirement: null };
+const base = { qps: 20, peakQps: 40, hasGpu: false, environment: 'production', documentGrowthPercentPerMonth: 5, existingPlatforms: ['qdrant', 'redis'], containsPii: false, dataResidencyRequirement: null };
 const run = (changes: Record<string, unknown>) =>
   analyseImpact(cfg.getPhases(), cfg.getParameterImpact(), { version: 1, values: base }, { version: 2, values: { ...base, ...changes } });
 const affected = (r: ReturnType<typeof run>) => Object.fromEntries(r.affected.map((a) => [a.phase, a.action]));
@@ -24,7 +24,7 @@ describe('analyseImpact', () => {
 
   it('re-runs direct readers and everything built from them; advisory readers only need review', () => {
     const r = run({ qps: 200 });
-    expect(r.changes).toEqual([{ field: 'qps', from: 20, to: 200, directPhases: ['data_embeddings', 'vector_db_selection', 'inference'] }]);
+    expect(r.changes).toEqual([{ field: 'qps', from: 20, to: 200, directPhases: ['data_embeddings', 'vector_db_selection', 'inference', 'workload_profile'] }]);
     expect(affected(r)).toEqual({
       data_embeddings: 'rerun',
       index_design: 'rerun',
@@ -33,21 +33,28 @@ describe('analyseImpact', () => {
       optimization: 'rerun',
       capacity: 'rerun',
       inference: 'review',
+      workload_profile: 'review',
     });
     const idx = r.affected.find((a) => a.phase === 'index_design')!;
     expect(idx.because).toEqual(['built from Data & Embedding design, which must be re-run']);
   });
 
-  it('does not recalculate unrelated phases (spec §22): a growth-rate change only touches capacity', () => {
+  it('does not recalculate unrelated phases (spec §22): a growth-rate change re-runs capacity and only asks the profile for review', () => {
     const r = run({ documentGrowthPercentPerMonth: 12 });
-    expect(affected(r)).toEqual({ capacity: 'rerun' });
+    expect(affected(r)).toEqual({ capacity: 'rerun', workload_profile: 'review' });
     expect(r.unaffected.map((u) => u.phase)).toEqual(expect.arrayContaining(['data_embeddings', 'index_design', 'vector_db_selection', 'infrastructure', 'optimization', 'inference']));
   });
 
   it('lists answers no engine reads as no-impact instead of triggering re-runs', () => {
-    const r = run({ hasGpu: true });
-    expect(r.noImpactFields).toEqual(['hasGpu']);
+    const r = run({ environment: 'staging' });
+    expect(r.noImpactFields).toEqual(['environment']);
     expect(r.affected).toEqual([]);
+  });
+
+  it('sends GPU availability to the Workload Profile for review only (Wave 2)', () => {
+    const r = run({ hasGpu: true });
+    expect(r.noImpactFields).toEqual([]);
+    expect(affected(r)).toEqual({ workload_profile: 'review' });
   });
 
   it('treats compliance changes as affecting selection and inference', () => {

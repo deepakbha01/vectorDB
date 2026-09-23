@@ -34,7 +34,7 @@ function dto(overrides: Partial<CreateInferenceAssessmentDto> = {}): CreateInfer
   };
 }
 
-function setup(opts: { discovery?: any; pipeline?: any } = {}) {
+function setup(opts: { discovery?: any; pipeline?: any; profile?: any } = {}) {
   const cfg = new InferenceConfigService({} as ConfigService);
   cfg.setCatalogue(catalogue);
   const saved: any[] = [];
@@ -48,7 +48,8 @@ function setup(opts: { discovery?: any; pipeline?: any } = {}) {
   const projects = { findOne: jest.fn(async () => ({ id: 'p1', name: 'Demo' })) };
   const discovery = { getLatest: jest.fn(async () => (opts.discovery ? { assessment: opts.discovery } : null)) };
   const pipeline = { getLatest: jest.fn(async () => opts.pipeline ?? null) };
-  const service = new InferenceService(repo as any, projects as any, discovery as any, pipeline as any, new InferenceEngineService(cfg), cfg);
+  const profiles = { findOne: jest.fn(async () => opts.profile ?? null) };
+  const service = new InferenceService(repo as any, projects as any, discovery as any, pipeline as any, new InferenceEngineService(cfg), cfg, profiles as any);
   return { service, repo, projects, discovery, pipeline };
 }
 
@@ -120,6 +121,51 @@ describe('InferenceService', () => {
         monthlyBudgetUsd: 20000,
       });
       expect(s.source).toHaveLength(2);
+    });
+
+    it('lets the AI Workload Profile override Discovery-derived values and blocks APIs for on-premises-only', async () => {
+      const value = <T>(v: T) => ({ value: v, source: 'profile' });
+      const { service } = setup({
+        discovery: { version: 2, qps: 10, peakQps: 40, topK: 0, availabilityTargetPercent: 99.5, containsPii: false },
+        profile: {
+          version: 3,
+          inputs: {
+            dailyRequests: value(250_000),
+            targetTtftMs: value(800),
+            availabilityTargetPercent: value(99.95),
+            containsPii: value(true),
+            dataResidencyRequirement: value('EU'),
+            deploymentTargets: value(['on_premises']),
+          },
+          result: { architecture: { class: 'agent' } },
+        },
+      });
+      const s = await service.getDefaults('p1', user);
+      expect(s).toMatchObject({
+        requestsPerDay: 250_000, // profile beats qps × 86,400 (864,000)
+        ttftTargetMs: 800,
+        availabilityTargetPercent: 99.95,
+        containsPii: true,
+        dataResidencyRequirement: 'EU',
+        workloadType: InferenceWorkloadType.AGENT,
+        allowThirdPartyApi: false,
+      });
+      expect(s.source).toEqual(['Vector Discovery assessment v2', 'AI Workload Profile v3']);
+    });
+
+    it('does not block third-party APIs when a cloud target is allowed', async () => {
+      const value = <T>(v: T) => ({ value: v, source: 'profile' });
+      const blank = { value: null, source: 'missing' };
+      const { service } = setup({
+        profile: {
+          version: 1,
+          inputs: { dailyRequests: blank, targetTtftMs: blank, availabilityTargetPercent: blank, containsPii: blank, dataResidencyRequirement: blank, deploymentTargets: value(['on_premises', 'azure']) },
+          result: { architecture: { class: 'hybrid' } },
+        },
+      });
+      const s = await service.getDefaults('p1', user);
+      expect(s.allowThirdPartyApi).toBeUndefined();
+      expect(s.workloadType).toBeUndefined();
     });
 
     it('uses token-based chunk sizes as-is', async () => {

@@ -11,6 +11,8 @@ import { DiscoveryService } from '../discovery/discovery.service';
 import { DataPipelineDesignService } from '../data-pipeline/data-pipeline-design.service';
 import { ChunkingStrategy } from '../chunking/enums/chunking-strategy.enum';
 import { AuthenticatedUser } from '../auth/auth.service';
+import { AiWorkloadProfile } from '../ai-factory/workload-profile/workload-profile.entity';
+import { DeploymentTarget } from '../ai-factory/workload-profile/workload-profile.types';
 import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
 
@@ -25,6 +27,7 @@ export class InferenceService {
     private readonly dataPipelineService: DataPipelineDesignService,
     private readonly engine: InferenceEngineService,
     private readonly cfg: InferenceConfigService,
+    @InjectRepository(AiWorkloadProfile) private readonly profiles: Repository<AiWorkloadProfile>,
   ) {}
 
   async submit(projectId: string, requester: AuthenticatedUser, dto: CreateInferenceAssessmentDto): Promise<InferenceAssessment> {
@@ -60,7 +63,8 @@ export class InferenceService {
   }
 
   /**
-   * Suggested intake values from this project's vector-DB track (read-only).
+   * Suggested intake values from this project's vector-DB track and, when one
+   * exists, its AI Workload Profile (read-only; the profile wins on overlaps).
    * A RAG system makes one generation call per retrieval query, so the vector
    * track's QPS, top-K and chunk size translate directly into inference load
    * and prompt size.
@@ -91,6 +95,25 @@ export class InferenceService {
         suggestion.ragContextTokens = a.topK * chunkTokens;
         suggestion.avgInputTokens = suggestion.ragContextTokens + (sizing.ragPromptOverheadTokens ?? 500);
       }
+    }
+
+    // AI Workload Profile (AI Factory Wave 2), when present, describes the AI workload itself,
+    // so its answers take precedence over values inferred from the vector Discovery.
+    const profile = await this.profiles.findOne({ where: { project: { id: projectId } }, order: { version: 'DESC' } });
+    if (profile) {
+      const v = profile.inputs;
+      suggestion.source.push(`AI Workload Profile v${profile.version}`);
+      if (v.dailyRequests.value) suggestion.requestsPerDay = Math.round(v.dailyRequests.value);
+      if (v.targetTtftMs.value) suggestion.ttftTargetMs = v.targetTtftMs.value;
+      if (v.availabilityTargetPercent.value) suggestion.availabilityTargetPercent = v.availabilityTargetPercent.value;
+      if (v.containsPii.value !== null) suggestion.containsPii = v.containsPii.value;
+      if (v.dataResidencyRequirement.value) suggestion.dataResidencyRequirement = v.dataResidencyRequirement.value;
+      const arch = profile.result.architecture.class;
+      const workload = arch === 'rag' ? InferenceWorkloadType.RAG : arch === 'agent' ? InferenceWorkloadType.AGENT : arch === 'copilot' ? InferenceWorkloadType.CHAT : null;
+      if (workload) suggestion.workloadType = workload;
+      const targets = v.deploymentTargets.value ?? [];
+      // On-premises only: data may not leave for a third-party model API.
+      if (targets.length === 1 && targets[0] === DeploymentTarget.ON_PREMISES) suggestion.allowThirdPartyApi = false;
     }
     return suggestion;
   }
