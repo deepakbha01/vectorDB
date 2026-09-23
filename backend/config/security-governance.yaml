@@ -1,0 +1,127 @@
+# AI Factory Wave 7 - AI Security & Governance Assessment (spec §12).
+# Read only by the ai-factory module.
+#
+# Technology-neutral: components are judged by what they do with data (where
+# it is processed, on which path), never by vendor. The assessment checks the
+# DESIGN - it does not replace a security review, DPIA or penetration test.
+
+rulesVersion: security-2026.09-1
+
+# Worst first is last: the overall status is the worst component status.
+statusOrder: [approved, approved_with_conditions, restricted, not_eligible]
+statusLabels:
+  approved: Approved
+  approved_with_conditions: Approved with conditions
+  restricted: Restricted
+  not_eligible: Not eligible
+
+# Components that process customer data outside the customer boundary.
+# document path = every document passes through it (cannot be routed around);
+# request path  = per request, so restricted requests can be routed elsewhere.
+externalProcessing:
+  onPremOnly: not_eligible
+  restricted:                 # PHI or PCI in scope
+    documentPath: not_eligible
+    requestPath: restricted
+    phiOnlyWithBaa: approved_with_conditions
+  confidential:               # confidential data or PII
+    withoutDpa: approved_with_conditions
+    withDpa: approved
+  internal: approved
+
+# Vector DB ADR compliance gate (PII controls captured in Discovery).
+complianceGate: { passed: approved, unverified: approved_with_conditions, not_applicable: approved }
+
+nonPermissiveLicence: approved_with_conditions
+placementConditional: approved_with_conditions
+
+agentTools:
+  none: approved
+  read_only: approved
+  read_write: approved_with_conditions
+  external_actions: approved_with_conditions
+  withoutPolicyEngine: restricted     # write / external actions with no policy engine to enforce guardrails
+
+# Spec §12 control areas. `evidence` is matched against the statements the
+# upstream designs produced (Inference Architecture, Infrastructure, RAG /
+# Agent) so the assessment shows where each control is addressed. `actions`
+# are what an implementation must still do and verify.
+controls:
+  - id: identity
+    label: Identity
+    evidence: 'identity|OIDC|on-behalf-of'
+    actions: [Federate users through the enterprise IdP (OIDC / SAML), Workload identities for every service - no shared service accounts]
+  - id: authentication
+    label: Authentication
+    evidence: 'authenticat'
+    actions: [Authenticate every call at the gateway, including internal callers, Short-lived tokens; no API keys embedded in clients]
+  - id: authorization
+    label: Authorization
+    evidence: 'authoris|authoriz|least privilege|role-based|tool allow-list'
+    actions: [Per-application and per-tool authorisation at the gateway and tool layer]
+  - id: rbac
+    label: RBAC
+    evidence: 'RBAC|role|scoped identity'
+    actions: [Roles for users, operators and administrators; separate duties for model and prompt changes]
+  - id: encryption
+    label: Encryption
+    evidence: 'encrypt|TLS|customer-managed keys|KMS|Key Vault|HSM'
+    actions: [TLS 1.2+ on every hop, Encryption at rest for vectors, documents, logs and model artefacts]
+  - id: secrets
+    label: Secrets
+    evidence: 'secret|Key Vault|KMS|Secrets Manager|HSM|credential'
+    actions: [Secrets in the platform secret store with rotation; never in prompts, images or config files]
+  - id: network_isolation
+    label: Network isolation
+    evidence: 'segmentation|firewall|egress|network|VPC|VNet|interconnect'
+    actions: [Segment the AI platform network; deny-by-default egress with an allow-list]
+  - id: private_endpoints
+    label: Private endpoints
+    evidence: 'Private Link|PrivateLink|Private Service Connect|private endpoint|Private network endpoints'
+    actions: [Private endpoints for managed services; no public model or vector endpoints]
+  - id: data_residency
+    label: Data residency
+    evidence: 'region|residency'
+    actions: [Pin every component and processor to in-scope regions, including backups, logs and vendor sub-processors]
+  - id: pii
+    label: PII
+    evidence: 'PII'
+    actions: [Detect and redact PII before prompts, logs or third parties; honour deletion requests across vectors and memory]
+  - id: phi
+    label: PHI
+    evidence: 'PHI|BAA|restricted data'
+    actions: [BAA with every processor handling PHI; minimum-necessary data in prompts]
+  - id: prompt_security
+    label: Prompt security
+    evidence: 'prompt template|Versioned prompt|system prompt'
+    actions: [Versioned, reviewed prompt templates; system prompts treated as code]
+  - id: prompt_injection
+    label: Prompt injection
+    evidence: 'injection'
+    actions: [Screen user input, retrieved documents and tool results for injected instructions; red-team before go-live]
+  - id: data_leakage
+    label: Data leakage
+    evidence: 'leakage|content filtering|redact|tenant filter|output checks|output: '
+    actions: [Output checks for sensitive data; retrieval always scoped to what the caller may see]
+  - id: model_governance
+    label: Model governance
+    evidence: 'licen|model version|model registry|evaluation set with known answers|version pinned'
+    actions: [Model registry with approved versions and licences; evaluation gate before promotion; rollback plan]
+  - id: audit
+    label: Audit
+    evidence: 'audit'
+    actions: [Tamper-evident audit trail of who called which model and tool, with what policy decision]
+  - id: logging
+    label: Logging
+    evidence: 'logging|tracing|Per-request'
+    actions: [Structured logs and traces per request; prompt and response logging only after redaction]
+  - id: retention
+    label: Retention
+    evidence: 'retention|deletion'
+    actions: [Retention limits for logs, conversations, memories and vectors; deletion that reaches every copy]
+
+verificationRequired:
+  - Security architecture review of the final design against this assessment
+  - Penetration test of the gateway, application and tool endpoints
+  - Red-team exercise for prompt injection, jailbreaks and data exfiltration
+  - Data protection impact assessment (DPIA) where personal data is processed

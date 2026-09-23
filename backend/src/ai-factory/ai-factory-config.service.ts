@@ -9,13 +9,15 @@ import { EmbeddingEligibilityRules, IndexEligibilityRules } from './eligibility/
 import { ServingCatalogue } from './inference-architecture/inference-architecture.types';
 import { InfrastructureCatalogue } from './infrastructure/infrastructure.types';
 import { RagAgentCatalogue } from './rag-agent/rag-agent.types';
+import { SecurityCatalogue } from './security/security.types';
 
 /**
  * Loads config/ai-factory.yaml (dependency graph, parameter impact map,
  * guided steps, workload-profile and eligibility rules), config/models.yaml
  * (model catalogue), config/serving.yaml (serving options) and
  * config/infrastructure-targets.yaml (deployment targets) and
- * config/rag-agent.yaml (RAG / agent patterns). Separate from
+ * config/rag-agent.yaml (RAG / agent patterns) and
+ * config/security-governance.yaml (policy rules and control areas). Separate from
  * PlatformConfigService so the vector engines' configuration is untouched.
  */
 @Injectable()
@@ -25,6 +27,7 @@ export class AiFactoryConfigService implements OnModuleInit {
   private serving: ServingCatalogue = {} as ServingCatalogue;
   private infrastructure: InfrastructureCatalogue = {} as InfrastructureCatalogue;
   private ragAgent: RagAgentCatalogue = {} as RagAgentCatalogue;
+  private security: SecurityCatalogue = {} as SecurityCatalogue;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -39,6 +42,8 @@ export class AiFactoryConfigService implements OnModuleInit {
     this.infrastructure = yaml.load(fs.readFileSync(infraPath, 'utf8')) as InfrastructureCatalogue;
     const ragAgentPath = this.config.get<string>('AI_FACTORY_RAG_AGENT_CONFIG_PATH') ?? './config/rag-agent.yaml';
     this.ragAgent = yaml.load(fs.readFileSync(ragAgentPath, 'utf8')) as RagAgentCatalogue;
+    const securityPath = this.config.get<string>('AI_FACTORY_SECURITY_CONFIG_PATH') ?? './config/security-governance.yaml';
+    this.security = yaml.load(fs.readFileSync(securityPath, 'utf8')) as SecurityCatalogue;
   }
 
   /** Test seams. */
@@ -76,6 +81,14 @@ export class AiFactoryConfigService implements OnModuleInit {
 
   getRagAgentCatalogue(): RagAgentCatalogue {
     return this.ragAgent;
+  }
+
+  setSecurityCatalogue(security: SecurityCatalogue) {
+    this.security = security;
+  }
+
+  getSecurityCatalogue(): SecurityCatalogue {
+    return this.security;
   }
 
   getIndexEligibilityRules(): IndexEligibilityRules {

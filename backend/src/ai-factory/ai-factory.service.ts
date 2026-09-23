@@ -20,12 +20,13 @@ import { AiModelSelection } from './model-selection/model-selection.entity';
 import { AiInferenceArchitecture } from './inference-architecture/inference-architecture.entity';
 import { AiInfrastructureDesign } from './infrastructure/infrastructure.entity';
 import { AiRagAgentDesign } from './rag-agent/rag-agent.entity';
+import { AiSecurityAssessment } from './security/security.entity';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 import { ChunkingStrategy } from '../chunking/enums/chunking-strategy.enum';
 import { EmbeddingModelFacts } from './eligibility/eligibility.rules';
 import { computeLineage } from './lineage.engine';
 import { analyseImpact } from './impact.engine';
-import { fromDataPipelineDesign, fromIndexDesign, fromInferenceArchitecture, fromInferenceAssessment, fromInfrastructureDesign, fromRagAgentDesign, fromModelSelection, fromVectorDbSelection } from './decision-record.adapters';
+import { fromDataPipelineDesign, fromIndexDesign, fromInferenceArchitecture, fromInferenceAssessment, fromInfrastructureDesign, fromRagAgentDesign, fromSecurityAssessment, fromModelSelection, fromVectorDbSelection } from './decision-record.adapters';
 import {
   AiFactoryOverview,
   AssessmentState,
@@ -69,6 +70,7 @@ export class AiFactoryService {
     @InjectRepository(AiInferenceArchitecture) private readonly inferenceArchitectures: Repository<AiInferenceArchitecture>,
     @InjectRepository(AiInfrastructureDesign) private readonly infrastructureDesigns: Repository<AiInfrastructureDesign>,
     @InjectRepository(AiRagAgentDesign) private readonly ragAgentDesigns: Repository<AiRagAgentDesign>,
+    @InjectRepository(AiSecurityAssessment) private readonly securityAssessments: Repository<AiSecurityAssessment>,
     private readonly platformConfig: PlatformConfigService,
   ) {}
 
@@ -88,6 +90,7 @@ export class AiFactoryService {
       inference_architecture: this.inferenceArchitectures,
       infrastructure_design: this.infrastructureDesigns,
       rag_agent_architecture: this.ragAgentDesigns,
+      security_governance: this.securityAssessments,
     }[phase];
   }
 
@@ -205,6 +208,9 @@ export class AiFactoryService {
     const ragAgent = await this.latest<AiRagAgentDesign>('rag_agent_architecture', projectId);
     if (ragAgent) records.push(fromRagAgentDesign(ragAgent));
 
+    const security = await this.latest<AiSecurityAssessment>('security_governance', projectId);
+    if (security) records.push(fromSecurityAssessment(security));
+
     return records;
   }
 
@@ -279,7 +285,7 @@ export class AiFactoryService {
     };
     const later = (wave: number): StateSection => ({ status: 'not_yet_available', coverage: 'none', source: null, summary: {}, plannedWave: wave });
 
-    const [d, p, i, adr, dep, opt, cap, inf, wp, ms, ia, infra, ra] = await Promise.all([
+    const [d, p, i, adr, dep, opt, cap, inf, wp, ms, ia, infra, ra, sec] = await Promise.all([
       this.latest<DiscoveryAssessment>('discovery', project.id),
       this.latest<DataPipelineDesign>('data_embeddings', project.id),
       this.latest<IndexDesign>('index_design', project.id),
@@ -293,6 +299,7 @@ export class AiFactoryService {
       this.latest<AiInferenceArchitecture>('inference_architecture', project.id),
       this.latest<AiInfrastructureDesign>('infrastructure_design', project.id),
       this.latest<AiRagAgentDesign>('rag_agent_architecture', project.id),
+      this.latest<AiSecurityAssessment>('security_governance', project.id),
     ]);
     const profileValue = (k: keyof AiWorkloadProfile['inputs']) => wp?.inputs[k]?.value ?? null;
     const wpResult = wp?.result;
@@ -366,10 +373,17 @@ export class AiFactoryService {
             confidence: ra.result.confidence,
           })
         : later(6),
-      security: {
-        ...section('discovery', 'partial', d ? { containsPii: d.containsPii, dataResidency: d.dataResidencyRequirement ?? null, encryptionAtRest: d.requiresEncryptionAtRest, encryptionInTransit: d.requiresEncryptionInTransit, keyManagement: d.requiresKeyManagement, rbac: d.requiresRbac, auditLogging: d.requiresAuditLogging, tenantIsolation: d.requiresTenantIsolation, complianceGate: adr?.complianceGate?.status ?? null, ...(wp ? { dataClassification: wpResult?.dataClassification.level, containsPhi: profileValue('containsPhi'), containsPci: profileValue('containsPci'), requiredControls: wpResult?.securityRequirements.controls.length } : {}) } : {}),
-        plannedWave: 7,
-      },
+      security: sec
+        ? section('security_governance', 'full', {
+            overall: sec.result.overall.label,
+            validation: sec.result.validation.status,
+            components: sec.result.overall.summary,
+            requiredControlGaps: sec.result.controls.filter((k) => k.status === 'gap').map((k) => k.label),
+          })
+        : {
+            ...section('discovery', 'partial', d ? { containsPii: d.containsPii, dataResidency: d.dataResidencyRequirement ?? null, encryptionAtRest: d.requiresEncryptionAtRest, encryptionInTransit: d.requiresEncryptionInTransit, keyManagement: d.requiresKeyManagement, rbac: d.requiresRbac, auditLogging: d.requiresAuditLogging, tenantIsolation: d.requiresTenantIsolation, complianceGate: adr?.complianceGate?.status ?? null, ...(wp ? { dataClassification: wpResult?.dataClassification.level, containsPhi: profileValue('containsPhi'), containsPci: profileValue('containsPci'), requiredControls: wpResult?.securityRequirements.controls.length } : {}) } : {}),
+            plannedWave: 7,
+          },
       performance: { ...section('optimization', 'partial', opt ? { recall: opt.recommendedVariant.avgRecall, p95LatencyMs: opt.recommendedVariant.p95LatencyMs, achievedQps: opt.recommendedVariant.achievedQps, evidence: 'measured (vector benchmark sample)' } : {}), plannedWave: 8 },
       cost: {
         status: adr || inf ? 'current' : 'not_started',

@@ -48,6 +48,7 @@ import { AiModelSelection } from './ai-factory/model-selection/model-selection.e
 import { AiInferenceArchitecture } from './ai-factory/inference-architecture/inference-architecture.entity';
 import { AiInfrastructureDesign } from './ai-factory/infrastructure/infrastructure.entity';
 import { AiRagAgentDesign } from './ai-factory/rag-agent/rag-agent.entity';
+import { AiSecurityAssessment } from './ai-factory/security/security.entity';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { AiRagAgentDesign } from './ai-factory/rag-agent/rag-agent.entity';
           AiInferenceArchitecture,
           AiInfrastructureDesign,
           AiRagAgentDesign,
+          AiSecurityAssessment,
         ],
         // Sprint 1 uses schema sync for velocity. Replace with TypeORM migrations
         // before any non-development deployment (see development rule #12).

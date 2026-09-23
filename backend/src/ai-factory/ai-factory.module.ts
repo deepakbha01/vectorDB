@@ -29,16 +29,21 @@ import { InfrastructureDesignController } from './infrastructure/infrastructure.
 import { AiRagAgentDesign } from './rag-agent/rag-agent.entity';
 import { RagAgentDesignService } from './rag-agent/rag-agent.service';
 import { RagAgentDesignController } from './rag-agent/rag-agent.controller';
+import { AiSecurityAssessment } from './security/security.entity';
+import { SecurityAssessmentService } from './security/security.service';
+import { SecurityAssessmentController } from './security/security.controller';
 import { InferenceModule } from '../inference/inference.module';
 
 /**
  * AI Factory foundations (Wave 1), AI Workload Profile (Wave 2), Model
  * Selection (Wave 3), Inference Architecture (Wave 4), Infrastructure
- * (Wave 5) and RAG / Agent architecture (Wave 6). Registers repositories for the existing
+ * (Wave 5), RAG / Agent architecture (Wave 6) and Security & Governance
+ * (Wave 7). Registers repositories for the existing
  * deliverable entities for READ access only; the only tables this module
  * writes are ai_factory_state_snapshots, ai_workload_profiles,
  * ai_model_selections, ai_inference_architectures,
- * ai_infrastructure_designs and ai_rag_agent_designs.
+ * ai_infrastructure_designs, ai_rag_agent_designs and
+ * ai_security_assessments.
  */
 @Module({
   imports: [
@@ -57,12 +62,13 @@ import { InferenceModule } from '../inference/inference.module';
       AiInferenceArchitecture,
       AiInfrastructureDesign,
       AiRagAgentDesign,
+      AiSecurityAssessment,
     ]),
     ProjectsModule,
     InferenceModule,
   ],
-  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService, InferenceArchitectureService, InfrastructureDesignService, RagAgentDesignService],
-  controllers: [AiFactoryController, WorkloadProfileController, ModelSelectionController, InferenceArchitectureController, InfrastructureDesignController, RagAgentDesignController],
+  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService, InferenceArchitectureService, InfrastructureDesignService, RagAgentDesignService, SecurityAssessmentService],
+  controllers: [AiFactoryController, WorkloadProfileController, ModelSelectionController, InferenceArchitectureController, InfrastructureDesignController, RagAgentDesignController, SecurityAssessmentController],
   exports: [AiFactoryConfigService],
 })
 export class AiFactoryModule {}

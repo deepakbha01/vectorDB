@@ -104,6 +104,14 @@ export function PhaseNav({ project }: { project: Project }) {
               </NavLink>
             </li>
           )}
+          {features.aiFactory && (
+            <li>
+              <NavLink to={`/projects/${project.id}/security-governance`} className={({ isActive }) => (isActive ? 'active' : '')}>
+                Security &amp; Governance
+                {lineage.security_governance === 'stale' && <span className="status-pill danger" title="A security requirement or one of the designs it checks changed since this assessment">out of date</span>}
+              </NavLink>
+            </li>
+          )}
         </ul>
       </div>
       <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid #dfe3e8' }}>
