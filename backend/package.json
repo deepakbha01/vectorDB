@@ -11,6 +11,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:golden": "jest src/golden-master --ci",
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:generate": "npm run typeorm -- -d src/data-source.ts migration:generate",
     "migration:run": "npm run typeorm -- -d src/data-source.ts migration:run",
