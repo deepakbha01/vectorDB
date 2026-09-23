@@ -96,6 +96,14 @@ export function PhaseNav({ project }: { project: Project }) {
               </NavLink>
             </li>
           )}
+          {features.aiFactory && (
+            <li>
+              <NavLink to={`/projects/${project.id}/rag-agent`} className={({ isActive }) => (isActive ? 'active' : '')}>
+                RAG / Agent Architecture
+                {lineage.rag_agent_architecture === 'stale' && <span className="status-pill danger" title="Search requirements, the data pipeline, vector DB, model selection or inference design changed since this design">out of date</span>}
+              </NavLink>
+            </li>
+          )}
         </ul>
       </div>
       <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid #dfe3e8' }}>

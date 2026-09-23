@@ -7,6 +7,7 @@ import { DataPipelineDesign } from '../data-pipeline/data-pipeline-design.entity
 import { AiModelSelection } from './model-selection/model-selection.entity';
 import { AiInferenceArchitecture } from './inference-architecture/inference-architecture.entity';
 import { AiInfrastructureDesign } from './infrastructure/infrastructure.entity';
+import { AiRagAgentDesign } from './rag-agent/rag-agent.entity';
 import { EmbeddingEligibilityRules, EmbeddingModelFacts, IndexEligibilityRules, embeddingEligibility, indexEligibility, scoreEmbedding } from './eligibility/eligibility.rules';
 import { DecisionAlternative, DecisionCandidate, DecisionRecord, Eligibility, EvidenceType } from './ai-factory.types';
 
@@ -442,5 +443,40 @@ export function fromInfrastructureDesign(d: AiInfrastructureDesign): DecisionRec
     benchmarkRequired: r.benchmarkRequired,
     wouldChangeIf: r.wouldChangeIf,
     gaps: [],
+  };
+}
+
+// ------------------------------------------------------- RAG / agent design
+/** Spec §10 GenAI Application Architecture in the standard format: one decision per area (retrieval, reranking, agent orchestration). */
+export function fromRagAgentDesign(d: AiRagAgentDesign): DecisionRecord {
+  const r = d.result;
+  const infeasible = r.decisions.some((x) => !x.chosen);
+  const alternatives = pickAlternatives(
+    r.decisions.flatMap((x) => {
+      const alt = x.candidates.find((c) => c.eligibility !== 'not_eligible' && c.id !== x.chosen?.id);
+      return alt ? [{ id: `${x.area}:${alt.id}`, label: `${x.title}: ${alt.label}`, eligibility: alt.eligibility, reason: [...alt.conditions, `score ${alt.score}`][0] }] : [];
+    }),
+    null,
+  );
+  return {
+    phase: 'rag_agent_architecture',
+    title: 'RAG / agent architecture',
+    source: { deliverableId: d.id, version: d.version, createdAt: d.createdAt },
+    status: infeasible ? 'not_feasible' : r.decisions.some((x) => x.chosen?.eligibility === 'conditional') ? 'conditional' : 'decided',
+    recommendation: infeasible ? null : { id: r.decisions.map((x) => x.chosen!.id).join('+'), label: r.scope.summary },
+    confidence: r.confidence,
+    why: r.decisions.map((x) => `${x.title}: ${x.why}`),
+    candidates: r.decisions.flatMap((x) => x.candidates.map((c) => ({ id: `${x.area}:${c.id}`, label: `${x.title}: ${c.label}`, eligibility: c.eligibility, score: c.score, notes: [...c.failures, ...c.conditions, ...c.notes] }))),
+    alternatives,
+    tradeoffs: [r.contextBudget.note, ...r.latencyBudget.lines.filter((l) => l.stage === 'Reranking' || l.stage === 'Agent steps before the answer').map((l) => `${l.stage} adds ~${l.ms.toLocaleString()} ms (${l.detail})`)],
+    risks: [...r.decisions.flatMap((x) => (x.chosen?.conditions ?? []).map((c) => `${x.title}: ${c}`)), ...r.gaps],
+    assumptions: Object.entries(d.sources).map(([k, s]) => ({ statement: `${k}: ${s.detail}`, evidenceType: 'assumption' as const })),
+    evidence: [
+      ...r.contextBudget.lines.map((l) => ({ label: `Context: ${l.label}`, value: `${l.tokens.toLocaleString()} tokens`, evidenceType: l.evidenceType })),
+      ...r.latencyBudget.lines.map((l) => ({ label: `Latency: ${l.stage}`, value: `${l.ms.toLocaleString()} ms`, evidenceType: l.evidenceType })),
+    ],
+    benchmarkRequired: r.benchmarkRequired,
+    wouldChangeIf: r.wouldChangeIf,
+    gaps: r.gaps,
   };
 }

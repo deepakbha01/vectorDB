@@ -1,0 +1,137 @@
+# AI Factory Wave 6 - RAG / Agent architecture (spec §10, "GenAI Application
+# Architecture"). Read only by the ai-factory module.
+#
+# Technology-neutral: options are patterns, not products. Tiers are relative
+# 1-5 planning ratings (5 = best / easiest). Every millisecond and token figure
+# below is a planning ASSUMPTION - the Performance phase replaces them with
+# measurements.
+
+rulesVersion: rag-agent-2026.09-1
+
+# ---------------------------------------------------------------- retrieval
+retrieval:
+  options:
+    - id: semantic
+      label: Semantic search (dense vectors only)
+      keyword: false
+      requiresNativeHybrid: false
+      extraComponent: null
+      relevance: 3
+      latency: 5
+      operationalSimplicity: 5
+    - id: hybrid_native
+      label: Hybrid search in the vector database (dense + keyword, fused in-engine)
+      keyword: true
+      requiresNativeHybrid: true
+      extraComponent: null
+      relevance: 5
+      latency: 4
+      operationalSimplicity: 4
+    - id: hybrid_app_fusion
+      label: Hybrid search with a separate keyword index (reciprocal-rank fusion in the application)
+      keyword: true
+      requiresNativeHybrid: false
+      extraComponent: Keyword / full-text index kept in sync with the vector database
+      relevance: 5
+      latency: 3
+      operationalSimplicity: 2
+  weights: { relevance: 0.45, latency: 0.25, operationalSimplicity: 0.30 }
+
+# ---------------------------------------------------------------- reranking
+reranking:
+  options:
+    - id: none
+      label: No reranking (vector / hybrid order as returned)
+      external: false
+      usesLlm: false
+      relevance: 2
+      latency: 5
+      operationalSimplicity: 5
+      cost: 5
+    - id: cross_encoder
+      label: Self-hosted cross-encoder reranker
+      external: false
+      usesLlm: false
+      relevance: 4
+      latency: 3
+      operationalSimplicity: 3
+      cost: 4
+    - id: managed_rerank_api
+      label: Managed rerank API (third-party)
+      external: true
+      usesLlm: false
+      relevance: 4
+      latency: 2                     # network round trip
+      operationalSimplicity: 4       # no infrastructure, but a vendor contract
+      cost: 3
+    - id: llm_rerank
+      label: LLM-as-reranker (primary model scores the candidates)
+      external: false
+      usesLlm: true
+      relevance: 5
+      latency: 1
+      operationalSimplicity: 3
+      cost: 1                        # a full LLM call per request
+  weights: { relevance: 0.40, latency: 0.25, operationalSimplicity: 0.20, cost: 0.15 }
+  # Candidates reranked = topK × multiplier, capped.
+  candidateMultiplier: 4
+  maxCandidates: 100
+
+# ------------------------------------------------------ agent orchestration
+agent:
+  options:
+    - id: workflow_graph
+      label: Deterministic workflow (graph / state machine with LLM steps)
+      requiresToolCalling: false
+      maxSteps: 3
+      controllability: 5
+      flexibility: 2
+      latency: 4
+      operationalSimplicity: 4
+    - id: single_agent
+      label: Single agent with a bounded tool-calling loop
+      requiresToolCalling: true
+      maxSteps: 5
+      controllability: 3
+      flexibility: 4
+      latency: 3
+      operationalSimplicity: 4
+    - id: multi_agent
+      label: Supervisor agent with specialist sub-agents
+      requiresToolCalling: true
+      maxSteps: 8
+      controllability: 2
+      flexibility: 5
+      latency: 1
+      operationalSimplicity: 2
+  weights: { controllability: 0.35, flexibility: 0.25, latency: 0.20, operationalSimplicity: 0.20 }
+  # Operational capability needed to run a multi-agent system well.
+  multiAgentMinOps: dedicated_team
+
+# Weight multiplier for the criterion a stated priority emphasises
+# (accuracy → relevance / controllability, latency → latency).
+priorityMultiplier: 1.6
+opsCapabilityOrder: [none, part_time, dedicated_team, platform_team]
+
+# ------------------------------------------------------------ assumptions
+assumptions:
+  latencyMs:
+    queryEmbeddingSelfHosted: 15
+    queryEmbeddingApi: 60
+    vectorSearchDefault: 50          # used when Discovery has no P95 search target
+    keywordFusion: 10                # in-engine hybrid
+    appFusion: 25                    # separate keyword index + RRF
+    promptAssembly: 5
+    crossEncoderBase: 20
+    crossEncoderPerCandidate: 1.5
+    managedRerankApi: 120
+    toolCall: 250                    # one tool invocation incl. network
+  tokens:
+    systemPrompt: 800
+    conversationHistory: 2000        # multi-turn only
+    toolSchemas: 1500                # agents only
+    toolResultPerStep: 500           # agents only, per intermediate step
+    defaultOutputReserve: 1000       # when no Inference assessment
+  # Share of the context window the assembled prompt may use (headroom for
+  # tokenizer differences and prompt growth).
+  maxContextUtilisation: 0.8

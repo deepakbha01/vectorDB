@@ -8,12 +8,14 @@ import { ModelCatalogue } from './model-selection/model-selection.types';
 import { EmbeddingEligibilityRules, IndexEligibilityRules } from './eligibility/eligibility.rules';
 import { ServingCatalogue } from './inference-architecture/inference-architecture.types';
 import { InfrastructureCatalogue } from './infrastructure/infrastructure.types';
+import { RagAgentCatalogue } from './rag-agent/rag-agent.types';
 
 /**
  * Loads config/ai-factory.yaml (dependency graph, parameter impact map,
  * guided steps, workload-profile and eligibility rules), config/models.yaml
  * (model catalogue), config/serving.yaml (serving options) and
- * config/infrastructure-targets.yaml (deployment targets). Separate from
+ * config/infrastructure-targets.yaml (deployment targets) and
+ * config/rag-agent.yaml (RAG / agent patterns). Separate from
  * PlatformConfigService so the vector engines' configuration is untouched.
  */
 @Injectable()
@@ -22,6 +24,7 @@ export class AiFactoryConfigService implements OnModuleInit {
   private models: ModelCatalogue = {} as ModelCatalogue;
   private serving: ServingCatalogue = {} as ServingCatalogue;
   private infrastructure: InfrastructureCatalogue = {} as InfrastructureCatalogue;
+  private ragAgent: RagAgentCatalogue = {} as RagAgentCatalogue;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -34,6 +37,8 @@ export class AiFactoryConfigService implements OnModuleInit {
     this.serving = yaml.load(fs.readFileSync(servingPath, 'utf8')) as ServingCatalogue;
     const infraPath = this.config.get<string>('AI_FACTORY_INFRASTRUCTURE_CONFIG_PATH') ?? './config/infrastructure-targets.yaml';
     this.infrastructure = yaml.load(fs.readFileSync(infraPath, 'utf8')) as InfrastructureCatalogue;
+    const ragAgentPath = this.config.get<string>('AI_FACTORY_RAG_AGENT_CONFIG_PATH') ?? './config/rag-agent.yaml';
+    this.ragAgent = yaml.load(fs.readFileSync(ragAgentPath, 'utf8')) as RagAgentCatalogue;
   }
 
   /** Test seams. */
@@ -63,6 +68,14 @@ export class AiFactoryConfigService implements OnModuleInit {
 
   getInfrastructureCatalogue(): InfrastructureCatalogue {
     return this.infrastructure;
+  }
+
+  setRagAgentCatalogue(ragAgent: RagAgentCatalogue) {
+    this.ragAgent = ragAgent;
+  }
+
+  getRagAgentCatalogue(): RagAgentCatalogue {
+    return this.ragAgent;
   }
 
   getIndexEligibilityRules(): IndexEligibilityRules {

@@ -17,7 +17,8 @@ export type PhaseKey =
   | 'workload_profile'
   | 'model_selection'
   | 'inference_architecture'
-  | 'infrastructure_design';
+  | 'infrastructure_design'
+  | 'rag_agent_architecture';
 
 export type DependencyKind = 'hard' | 'advisory';
 
