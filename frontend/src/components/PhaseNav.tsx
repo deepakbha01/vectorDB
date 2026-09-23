@@ -59,6 +59,14 @@ export function PhaseNav({ project }: { project: Project }) {
               </NavLink>
             </li>
           )}
+          {features.aiFactory && (
+            <li>
+              <NavLink to={`/projects/${project.id}/workload-profile`} className={({ isActive }) => (isActive ? 'active' : '')}>
+                AI Workload Profile
+                {lineage.workload_profile === 'review' && <span className="status-pill warning" title="Discovery changed since this profile was saved">review</span>}
+              </NavLink>
+            </li>
+          )}
           <li>
             <NavLink to={`/projects/${project.id}/inference`} className={({ isActive }) => (isActive ? 'active' : '')}>
               Inference-as-a-Service
