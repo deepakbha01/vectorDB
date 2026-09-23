@@ -36,3 +36,16 @@ export enum QpsScope {
   PER_REGION = 'per_region',
   PER_INDEX = 'per_index',
 }
+
+/**
+ * The vector distance/similarity function the workload requires. Drives schema
+ * and index generation (Phase 2/3) - every platform generator must read this
+ * rather than assuming cosine, since the correct choice depends on how the
+ * embedding model was trained (e.g. most modern text embedding models are
+ * cosine/normalized-dot-product, but some domains genuinely need Euclidean).
+ */
+export enum SimilarityMetric {
+  COSINE = 'cosine',
+  DOT_PRODUCT = 'dot_product',
+  EUCLIDEAN = 'euclidean',
+}

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { Fragment, FormEvent, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiClient, CreateIndexDesignInput, extractErrorMessage, IndexDesign, Project, UpdateFrequency } from '../api/client';
 import { PhaseNav } from '../components/PhaseNav';
@@ -22,6 +22,7 @@ export function IndexDesignPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(true);
+  const [expandedOption, setExpandedOption] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -30,7 +31,8 @@ export function IndexDesignPage() {
       .get<IndexDesign>(`/projects/${id}/index-design/designs/latest`)
       .then((res) => {
         setDesign(res.data);
-        setForm({ updateFrequency: res.data.updateFrequency, ...res.data.inputsUsed });
+        const { vectorCount, dimension, availableMemoryGb, qps, recallTarget, targetP95LatencyMs, topK } = res.data.inputsUsed;
+        setForm({ updateFrequency: res.data.updateFrequency, vectorCount, dimension, availableMemoryGb, qps, recallTarget, targetP95LatencyMs, topK });
         setShowForm(false);
       })
       .catch(() => {
@@ -116,6 +118,53 @@ export function IndexDesignPage() {
               </div>
             </div>
 
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="metric-label" style={{ marginBottom: 8 }}>
+                How this is scored
+              </div>
+              <p style={{ fontSize: 13, color: '#5a6472', margin: '0 0 8px' }}>
+                Each candidate index earns a 0-1 score on five criteria; a weighted sum decides the winner:
+              </p>
+              <p
+                style={{
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                  background: '#f5f7fa',
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  margin: '0 0 10px',
+                  overflowX: 'auto',
+                }}
+              >
+                Total = Recall&times;{design.criteriaWeights.recall} + Latency&times;{design.criteriaWeights.latency} + Memory&times;
+                {design.criteriaWeights.memory} + Throughput&times;{design.criteriaWeights.throughput} + Update-friendliness&times;
+                {design.criteriaWeights.updateFriendliness}
+              </p>
+              <ul style={{ fontSize: 12, color: '#5a6472', margin: 0, paddingLeft: 18 }}>
+                <li>
+                  <strong>Recall</strong> - how well the index's approximate search meets your {design.inputsUsed.recallTarget} recall
+                  target.
+                </li>
+                <li>
+                  <strong>Latency</strong> - how comfortably the index meets your {design.inputsUsed.targetP95LatencyMs}ms P95 target.
+                </li>
+                <li>
+                  <strong>Memory</strong> - estimated footprint vs. your {design.inputsUsed.availableMemoryGb}GB budget (degrades
+                  gradually past a comfortable utilization level, not a hard cutoff at the limit).
+                </li>
+                <li>
+                  <strong>Throughput</strong> - fit for your {design.inputsUsed.qps} QPS target.
+                </li>
+                <li>
+                  <strong>Update-friendliness</strong> - how well the index tolerates your &quot;{design.updateFrequency}&quot; update
+                  pattern.
+                </li>
+              </ul>
+              <p style={{ fontSize: 11, color: '#8892a0', margin: '8px 0 0' }}>
+                Click a row below to see the exact evidence behind that option's scores.
+              </p>
+            </div>
+
             <div className="card" style={{ marginBottom: 16, overflowX: 'auto' }}>
               <div className="metric-label" style={{ marginBottom: 10 }}>
                 Scored options
@@ -134,18 +183,42 @@ export function IndexDesignPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {design.options.map((o) => (
-                    <tr key={o.indexType} style={{ borderBottom: '1px solid #eceff3', fontWeight: o.indexType === design.decision ? 600 : 400 }}>
-                      <td style={{ padding: '6px 8px' }}>{o.label}</td>
-                      <td style={{ padding: '6px 8px' }}>{o.totalScore.toFixed(2)}</td>
-                      <td style={{ padding: '6px 8px' }}>{o.criteriaScores.recall.toFixed(2)}</td>
-                      <td style={{ padding: '6px 8px' }}>{o.criteriaScores.latency.toFixed(2)}</td>
-                      <td style={{ padding: '6px 8px' }}>{o.criteriaScores.memory.toFixed(2)}</td>
-                      <td style={{ padding: '6px 8px' }}>{o.criteriaScores.throughput.toFixed(2)}</td>
-                      <td style={{ padding: '6px 8px' }}>{o.criteriaScores.updateFriendliness.toFixed(2)}</td>
-                      <td style={{ padding: '6px 8px' }}>{o.estimatedMemoryGb} GB</td>
-                    </tr>
-                  ))}
+                  {design.options.map((o) => {
+                    const isExpanded = expandedOption === o.indexType;
+                    return (
+                      <Fragment key={o.indexType}>
+                        <tr
+                          onClick={() => setExpandedOption(isExpanded ? null : o.indexType)}
+                          style={{
+                            borderBottom: '1px solid #eceff3',
+                            fontWeight: o.indexType === design.decision ? 600 : 400,
+                            cursor: 'pointer',
+                            background: isExpanded ? '#f5f7fa' : undefined,
+                          }}
+                        >
+                          <td style={{ padding: '6px 8px' }}>{o.label}</td>
+                          <td style={{ padding: '6px 8px' }}>{o.totalScore.toFixed(2)}</td>
+                          <td style={{ padding: '6px 8px' }}>{o.criteriaScores.recall.toFixed(2)}</td>
+                          <td style={{ padding: '6px 8px' }}>{o.criteriaScores.latency.toFixed(2)}</td>
+                          <td style={{ padding: '6px 8px' }}>{o.criteriaScores.memory.toFixed(2)}</td>
+                          <td style={{ padding: '6px 8px' }}>{o.criteriaScores.throughput.toFixed(2)}</td>
+                          <td style={{ padding: '6px 8px' }}>{o.criteriaScores.updateFriendliness.toFixed(2)}</td>
+                          <td style={{ padding: '6px 8px' }}>{o.estimatedMemoryGb} GB</td>
+                        </tr>
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={8} style={{ padding: '4px 8px 12px 24px', background: '#f9fafb' }}>
+                              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: '#5a6472' }}>
+                                {o.evidence.map((line, i) => (
+                                  <li key={i}>{line}</li>
+                                ))}
+                              </ul>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

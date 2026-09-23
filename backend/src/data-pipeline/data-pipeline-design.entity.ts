@@ -3,7 +3,9 @@ import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
 import { ChunkingStrategy } from '../chunking/enums/chunking-strategy.enum';
 import { GeneratedSchemas, MetadataFieldDefinition } from '../schema-generator/schema-generator.types';
+import { SimilarityMetric } from '../discovery/enums/discovery.enum';
 import { DataPipelineExecutiveSummary } from './plain-language-summary';
+import { DimensionMismatchReason } from './data-pipeline-design.types';
 
 export interface PipelineStage {
   name: string;
@@ -65,6 +67,14 @@ export class DataPipelineDesign {
 
   @Column()
   embeddingDimension: number;
+
+  /** Denormalized from the Discovery assessment at submit time (same pattern as embeddingDimension) - every platform generator reads this instead of assuming cosine. */
+  @Column({ type: 'enum', enum: SimilarityMetric, default: SimilarityMetric.COSINE })
+  similarityMetric: SimilarityMetric;
+
+  // Nullable: only set when a Discovery/model dimension mismatch was detected and the architect confirmed it was intentional.
+  @Column({ type: 'enum', enum: DimensionMismatchReason, nullable: true })
+  dimensionMismatchReason?: DimensionMismatchReason | null;
 
   @Column()
   maxInputTokens: number;

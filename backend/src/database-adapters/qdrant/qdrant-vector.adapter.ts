@@ -12,6 +12,7 @@ import { SchemaGeneratorService } from '../../schema-generator/schema-generator.
 import { IndexTuningParameter } from '../../schema-generator/schema-generator.types';
 import { IndexType } from '../../index-recommendation-engine/enums/index-type.enum';
 import { VectorPlatform } from '../../projects/enums/platform.enum';
+import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
 
 /**
@@ -56,6 +57,7 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter {
     const { qdrant } = this.schemaGenerator.generateAll({
       collectionName: collection,
       dimension: definition.dimension,
+      metric: definition.metric,
       metadataFields: definition.metadataFields as SchemaDefinition['metadataFields'] as any,
     });
     const spec = qdrant.schema as { create_collection_request: { vectors: { size: number; distance: string } }; payload_indexes: Array<{ field_name: string; field_schema: string }> };
@@ -66,9 +68,9 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter {
     }
   }
 
-  async createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[]): Promise<void> {
+  async createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[], metric?: SimilarityMetric): Promise<void> {
     const collection = sanitizeSqlIdentifier(collectionOrTableName, 'collectionOrTableName');
-    const artifact = this.schemaGenerator.generateIndexArtifact(VectorPlatform.QDRANT, collection, indexType, parameters);
+    const artifact = this.schemaGenerator.generateIndexArtifact(VectorPlatform.QDRANT, collection, indexType, parameters, metric);
     const config = JSON.parse(artifact.statement) as { hnsw_config?: Record<string, unknown>; quantization_config?: Record<string, unknown> };
     // Qdrant tunes HNSW/quantization via collection update, not a separate index-creation call.
     await this.getClient().updateCollection(collection, config as any);

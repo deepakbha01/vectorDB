@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { CustomerMode } from '../enums/customer-mode.enum';
 
 export class CreateProjectDto {
   @ApiProperty()
@@ -17,4 +18,14 @@ export class CreateProjectDto {
   @IsOptional()
   @IsString()
   industry?: string;
+
+  @ApiProperty({ required: false, description: 'AI Factory Pattern Library entry id to seed Discovery defaults from (optional).' })
+  @IsOptional()
+  @IsString()
+  patternId?: string;
+
+  @ApiProperty({ enum: CustomerMode, required: false, description: 'Defaults to "new" (greenfield) when omitted.' })
+  @IsOptional()
+  @IsEnum(CustomerMode)
+  customerMode?: CustomerMode;
 }

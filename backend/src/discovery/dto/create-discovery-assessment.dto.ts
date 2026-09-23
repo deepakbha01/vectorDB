@@ -17,6 +17,7 @@ import {
   Environment,
   OperationalCapability,
   QpsScope,
+  SimilarityMetric,
   TenancyModel,
 } from '../enums/discovery.enum';
 import { VectorPlatform } from '../../projects/enums/platform.enum';
@@ -62,6 +63,10 @@ export class CreateDiscoveryAssessmentDto {
   @Min(1)
   @Max(65536)
   embeddingDimension: number;
+
+  @ApiProperty({ enum: SimilarityMetric, description: 'Vector distance/similarity function this workload requires - drives Phase 2/3 schema and index generation.' })
+  @IsEnum(SimilarityMetric)
+  similarityMetric: SimilarityMetric;
 
   @ApiProperty({ description: 'Sustained queries per second' })
   @IsNumber()

@@ -3,7 +3,7 @@ import { RecommendationEngineService } from './recommendation-engine.service';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 import { LIVE_INGESTION_SUPPORTED, VectorPlatform } from '../projects/enums/platform.enum';
 import { DataReplicationModel, OperationalCapability, QpsScope, TenancyModel } from '../discovery/enums/discovery.enum';
-import { AssessmentInput } from './recommendation.types';
+import { AssessmentInput, RiskEntry } from './recommendation.types';
 
 const thresholds = {
   rulesVersion: 'test-1.0.0',
@@ -149,7 +149,7 @@ describe('RecommendationEngineService', () => {
       }),
     );
     if (result.decision === VectorPlatform.MILVUS) {
-      expect(result.risks.some((r) => r.includes('Kubernetes'))).toBe(true);
+      expect(result.risks.some((r) => r.description.includes('Kubernetes'))).toBe(true);
     }
   });
 
@@ -203,14 +203,14 @@ describe('RecommendationEngineService', () => {
       expect(LIVE_INGESTION_SUPPORTED.has(VectorPlatform.ACTIAN)).toBe(false);
       // buildRisks is private; Actian has no dedicated "existing platform" input to force it to win
       // outright, so this exercises the risk-building logic directly for that decision.
-      const risks: string[] = (service as any).buildRisks(VectorPlatform.ACTIAN, baseInput(), thresholds, false);
-      expect(risks.some((r) => r.includes('No maintained Node.js driver exists'))).toBe(true);
+      const risks: RiskEntry[] = (service as any).buildRisks(VectorPlatform.ACTIAN, baseInput(), thresholds, false);
+      expect(risks.some((r) => r.description.includes('No maintained Node.js driver exists'))).toBe(true);
     });
 
     it('does not flag the live-ingestion risk for one of the fully-implemented platforms', () => {
       const result = service.evaluate(baseInput({ hasExistingPostgres: true }));
       expect(result.decision).toBe(VectorPlatform.POSTGRES_PGVECTOR);
-      expect(result.risks.some((r) => r.includes('No maintained Node.js driver exists'))).toBe(false);
+      expect(result.risks.some((r) => r.description.includes('No maintained Node.js driver exists'))).toBe(false);
     });
   });
 
@@ -309,28 +309,57 @@ describe('RecommendationEngineService', () => {
   describe('additional captured parameters (P99, multi-region)', () => {
     it('flags a risk when the P99 target is tight relative to the P95 target', () => {
       const result = service.evaluate(baseInput({ targetP95LatencyMs: 200, targetP99LatencyMs: 220 }));
-      expect(result.risks.some((r) => r.includes('P99 target is tight'))).toBe(true);
+      expect(result.risks.some((r) => r.description.includes('P99 target is tight'))).toBe(true);
     });
 
     it('does not flag the P99 risk for a normally-proportioned tail-latency target', () => {
       const result = service.evaluate(baseInput({ targetP95LatencyMs: 200, targetP99LatencyMs: 400 }));
-      expect(result.risks.some((r) => r.includes('P99 target is tight'))).toBe(false);
+      expect(result.risks.some((r) => r.description.includes('P99 target is tight'))).toBe(false);
     });
 
     it('flags a risk when multi-region deployment is required', () => {
       const result = service.evaluate(baseInput({ requiresMultiRegion: true }));
-      expect(result.risks.some((r) => r.includes('Multi-region deployment was requested'))).toBe(true);
+      expect(result.risks.some((r) => r.description.includes('Multi-region deployment was requested'))).toBe(true);
     });
   });
 
   describe('tie detection and tie-break', () => {
-    it('detects and reports a genuine tie (Chroma/LanceDB score identically under baseInput() defaults)', () => {
+    it('detects a genuine tie (Chroma/LanceDB score identically under baseInput() defaults) and reports "low" confidence, since the two are also identical on every tie-break criterion (cost, existing-stack fit, operational complexity) - an honestly arbitrary pick, not a modeling gap', () => {
       const result = service.evaluate(baseInput());
       expect(result.decisionStatus).toBe('tied');
+      expect(result.tieBreakStage).toContain('catalog order');
       expect(result.confidence).toBe('low');
       expect(result.tiedPlatformIds).toEqual(expect.arrayContaining([VectorPlatform.CHROMA, VectorPlatform.LANCEDB]));
       expect(result.tiedPlatformIds).toHaveLength(2);
       expect([VectorPlatform.CHROMA, VectorPlatform.LANCEDB]).toContain(result.decision);
+      // Honest about there being no real differentiator here, rather than a bare "Tied" with no next step.
+      expect(result.plainLanguageSummary.conditionalBadge).toContain('Tied');
+      expect(result.plainLanguageSummary.conditionalBadge).toContain('Architect Review Recommended');
+    });
+
+    it('upgrades confidence from "low" to "medium" - and names the winner + reason in the badge - once a tie is resolved by a real tie-break criterion instead of arbitrary catalog order', () => {
+      // Not reachable through evaluate() with the current catalog (Chroma/LanceDB tie on every
+      // modeled criterion), so this exercises buildConfidence/the badge directly against a
+      // representative "resolved via cost" stage name, as produced by resolveWinner.
+      const costStage = 'cost / budget feasibility (raw cost fit)';
+      expect((service as any).buildConfidence('tied', 0, 'eligible', costStage)).toBe('medium');
+
+      const { buildPlainLanguageSummary } = require('./plain-language-summary');
+      const criteriaScores = { vectorCount: 0.8, qps: 0.8, latency: 0.8, recall: 0.8, existingPlatform: 0.5, operationalComplexity: 0.8, cost: 0.8 };
+      const summary = buildPlainLanguageSummary(
+        'LanceDB',
+        0.9,
+        criteriaScores,
+        [],
+        thresholds.decisionModel.verdict,
+        [],
+        'tied',
+        ['Chroma', 'LanceDB'],
+        costStage,
+      );
+      expect(summary.conditionalBadge).toContain('LanceDB');
+      expect(summary.conditionalBadge).toContain('Tied');
+      expect(summary.conditionalBadge).toContain('Cost Efficiency');
     });
 
     it('resolveWinner breaks a tie deterministically via raw cost score and reports which stage broke it', () => {
@@ -347,6 +376,23 @@ describe('RecommendationEngineService', () => {
       const { winner, tieBreakStage } = (service as any).resolveWinner(tied, tied);
       expect(winner.platformId).toBe(VectorPlatform.LANCEDB);
       expect(tieBreakStage).toContain('cost');
+    });
+
+    it('reports "low" confidence (and an architect-review badge) only when a tie survives every tie-break stage down to arbitrary catalog order', () => {
+      const makeOption = (platformId: VectorPlatform) => ({
+        platformId,
+        label: platformId,
+        totalScore: 0.9,
+        criteriaScores: { vectorCount: 1, qps: 1, latency: 1, recall: 1, existingPlatform: 1, operationalComplexity: 1, cost: 1 },
+        evidence: [],
+        eligibilityStatus: 'eligible' as const,
+        eligibilityNotes: [],
+      });
+      const tied = [makeOption(VectorPlatform.CHROMA), makeOption(VectorPlatform.LANCEDB)];
+      const { tieBreakStage } = (service as any).resolveWinner(tied, tied);
+      expect(tieBreakStage).toContain('catalog order');
+      expect((service as any).buildConfidence('tied', 0, 'eligible', tieBreakStage)).toBe('low');
+      expect((service as any).buildConfidence('tied', 0, 'eligible', null)).toBe('low');
     });
 
     it('does not report a tie once a real scoring difference (e.g. an existing-platform bonus) exceeds the tie epsilon', () => {

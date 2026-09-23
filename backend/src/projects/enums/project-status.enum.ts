@@ -12,6 +12,7 @@ export enum ProjectPhase {
   DISCOVERY = 'discovery',
   DATA_EMBEDDINGS = 'data_embeddings',
   INDEX_DESIGN = 'index_design',
+  VECTOR_DB_SELECTION = 'vector_db_selection',
   INFRASTRUCTURE = 'infrastructure',
   INGESTION = 'ingestion',
   OPTIMIZATION = 'optimization',

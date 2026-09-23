@@ -64,7 +64,7 @@ export class VectorAdapterFactory {
         return this.actian;
       default:
         throw new Error(
-          `Cannot resolve a database adapter: platform is '${platform}'. Complete the Phase 1 Discovery assessment first.`,
+          `Cannot resolve a database adapter: platform is '${platform}'. Complete Phase 4 Vector DB Selection (or manually select a platform) first.`,
         );
     }
   }

@@ -12,6 +12,7 @@ import { SchemaGeneratorService } from '../../schema-generator/schema-generator.
 import { IndexTuningParameter } from '../../schema-generator/schema-generator.types';
 import { IndexType } from '../../index-recommendation-engine/enums/index-type.enum';
 import { VectorPlatform } from '../../projects/enums/platform.enum';
+import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
 
 /**
@@ -65,15 +66,16 @@ export class ElasticsearchVectorAdapter implements VectorDatabaseAdapter {
     const { elasticsearch } = this.schemaGenerator.generateAll({
       collectionName: definition.collectionOrTableName,
       dimension: definition.dimension,
+      metric: definition.metric,
       metadataFields: definition.metadataFields as SchemaDefinition['metadataFields'] as any,
     });
     const spec = elasticsearch.schema as { index: string; mappings: Record<string, unknown> };
     await this.getClient().indices.create({ index: spec.index, mappings: spec.mappings as any });
   }
 
-  async createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[]): Promise<void> {
+  async createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[], metric?: SimilarityMetric): Promise<void> {
     const index = this.indexName(collectionOrTableName);
-    const artifact = this.schemaGenerator.generateIndexArtifact(VectorPlatform.ELASTICSEARCH, index, indexType, parameters);
+    const artifact = this.schemaGenerator.generateIndexArtifact(VectorPlatform.ELASTICSEARCH, index, indexType, parameters, metric);
     const config = JSON.parse(artifact.statement) as { index_options: Record<string, unknown> };
     // index_options for an existing dense_vector field can only be updated by closing the index first.
     await this.getClient().indices.close({ index });

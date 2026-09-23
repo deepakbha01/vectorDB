@@ -15,7 +15,8 @@ import { DiscoveryModule } from './discovery/discovery.module';
 import { User } from './users/user.entity';
 import { Project } from './projects/project.entity';
 import { DiscoveryAssessment } from './discovery/discovery-assessment.entity';
-import { ArchitectureDecisionRecord } from './discovery/architecture-decision-record.entity';
+import { VectorDbSelectionModule } from './vector-db-selection/vector-db-selection.module';
+import { ArchitectureDecisionRecord } from './vector-db-selection/architecture-decision-record.entity';
 import { ChunkingModule } from './chunking/chunking.module';
 import { EmbeddingsModule } from './embeddings/embeddings.module';
 import { SchemaGeneratorModule } from './schema-generator/schema-generator.module';
@@ -98,6 +99,7 @@ import { AuditLogEntry } from './audit/audit-log-entry.entity';
     DataPipelineDesignModule,
     IndexRecommendationEngineModule,
     IndexDesignModule,
+    VectorDbSelectionModule,
     DeploymentModule,
     IngestionModule,
     BenchmarkModule,

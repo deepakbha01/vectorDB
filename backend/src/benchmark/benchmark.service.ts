@@ -15,6 +15,7 @@ import { AuthenticatedUser } from '../auth/auth.service';
 import { User } from '../users/user.entity';
 import { Project } from '../projects/project.entity';
 import { ProjectPhase, PhaseStatus } from '../projects/enums/project-status.enum';
+import { VectorPlatform } from '../projects/enums/platform.enum';
 
 const UPSERT_BATCH_SIZE = 500;
 
@@ -33,6 +34,9 @@ export class BenchmarkService {
 
   async runBenchmark(projectId: string, requester: AuthenticatedUser, dto: CreateBenchmarkDto): Promise<OptimizationReport> {
     const project = await this.projectsService.findOne(projectId, requester);
+    if (project.platform === VectorPlatform.UNDETERMINED) {
+      throw new BadRequestException('Complete Phase 4 Vector DB Selection (or manually select a platform) before benchmarking.');
+    }
     const indexDesign = await this.indexDesignService.getLatest(projectId, requester);
     if (!indexDesign) {
       throw new BadRequestException('Complete Phase 3 (Index Design) before benchmarking.');
@@ -61,8 +65,8 @@ export class BenchmarkService {
 
     let variantResults: VariantResult[];
     try {
-      await adapter.createSchema({ collectionOrTableName: collectionName, dimension, metadataFields: [] });
-      await adapter.createVectorIndex(collectionName, indexDesign.decision, indexDesign.configuration);
+      await adapter.createSchema({ collectionOrTableName: collectionName, dimension, metric: indexDesign.inputsUsed.metric, metadataFields: [] });
+      await adapter.createVectorIndex(collectionName, indexDesign.decision, indexDesign.configuration, indexDesign.inputsUsed.metric);
       for (let i = 0; i < corpus.length; i += UPSERT_BATCH_SIZE) {
         const batch = corpus.slice(i, i + UPSERT_BATCH_SIZE).map((c) => ({ id: c.id, vector: c.vector, metadata: {} }));
         await adapter.upsert(collectionName, batch);

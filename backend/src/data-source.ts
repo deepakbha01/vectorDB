@@ -4,7 +4,7 @@ import { config } from 'dotenv';
 import { User } from './users/user.entity';
 import { Project } from './projects/project.entity';
 import { DiscoveryAssessment } from './discovery/discovery-assessment.entity';
-import { ArchitectureDecisionRecord } from './discovery/architecture-decision-record.entity';
+import { ArchitectureDecisionRecord } from './vector-db-selection/architecture-decision-record.entity';
 import { DataPipelineDesign } from './data-pipeline/data-pipeline-design.entity';
 import { IndexDesign } from './index-design/index-design.entity';
 import { DeploymentPlan } from './deployment/deployment-plan.entity';

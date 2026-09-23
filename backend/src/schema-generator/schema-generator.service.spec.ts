@@ -154,4 +154,70 @@ describe('SchemaGeneratorService', () => {
       expect(definition.fields[0]).toEqual({ type: 'vector', path: 'embedding', numDimensions: 768, similarity: 'cosine' });
     });
   });
+
+  describe('similarity metric (no hard-coded cosine)', () => {
+    it('defaults to cosine when the caller omits a metric', () => {
+      const result = service.generateAll(input);
+      expect(result.pinecone.schema.metric).toBe('cosine');
+    });
+
+    it('threads a non-cosine metric through every platform that declares one at schema time', () => {
+      const result = service.generateAll({ ...input, metric: 'dot_product' as any });
+      expect(result.pinecone.schema.metric).toBe('dotproduct');
+      expect((result.qdrant.schema as any).create_collection_request.vectors.distance).toBe('Dot');
+      expect((result.elasticsearch.schema as any).mappings.properties.embedding.similarity).toBe('dot_product');
+      expect((result.mongodb_atlas.schema as any).definition.fields[0].similarity).toBe('dotProduct');
+      expect((result.chroma.schema as any).metadata['hnsw:space']).toBe('ip');
+      expect((result.redis.ddl as string)).toContain('DISTANCE_METRIC IP');
+      expect((result.postgres_pgvector.ddl as string)).toContain('vector_ip_ops');
+      expect((result.oracle.ddl as string)).toContain('DISTANCE DOT');
+    });
+
+    it('threads the metric into Phase 3 index-artifact generation (Postgres, Oracle, Milvus)', () => {
+      const params = [{ name: 'M', value: 16 }, { name: 'efConstruction', value: 200 }, { name: 'efSearch', value: 100 }];
+      const pg = service.generateIndexArtifact(VectorPlatform.POSTGRES_PGVECTOR, 'docs', IndexType.HNSW, params, 'euclidean' as any);
+      expect(pg.statement).toContain('vector_l2_ops');
+
+      const oracle = service.generateIndexArtifact(VectorPlatform.ORACLE, 'docs', IndexType.HNSW, params, 'euclidean' as any);
+      expect(oracle.statement).toContain('DISTANCE EUCLIDEAN');
+
+      const milvus = service.generateIndexArtifact(VectorPlatform.MILVUS, 'docs', IndexType.HNSW, params, 'euclidean' as any);
+      expect(JSON.parse(milvus.statement).metric_type).toBe('L2');
+    });
+
+    it('defaults generateIndexArtifact to cosine when no metric is passed (adapter call sites that omit it)', () => {
+      const pg = service.generateIndexArtifact(VectorPlatform.POSTGRES_PGVECTOR, 'docs', IndexType.HNSW, [{ name: 'M', value: 16 }, { name: 'efConstruction', value: 200 }]);
+      expect(pg.statement).toContain('vector_cosine_ops');
+    });
+  });
+
+  describe('filterable metadata fields', () => {
+    const mixed = {
+      collectionName: 'docs',
+      dimension: 768,
+      metadataFields: [
+        { name: 'source_url', type: 'string' as const, filterable: true },
+        { name: 'internal_notes', type: 'string' as const, filterable: false },
+      ],
+    };
+
+    it('only indexes filterable fields on Qdrant, keeping non-filterable ones in the payload unindexed', () => {
+      const result = service.generateAll(mixed);
+      const indexed = (result.qdrant.schema as any).payload_indexes.map((p: any) => p.field_name);
+      expect(indexed).toEqual(['source_url']);
+      expect(result.qdrant.notes.join(' ')).toContain('internal_notes');
+    });
+
+    it('only adds filterable fields as Atlas Vector Search pre-filters', () => {
+      const result = service.generateAll(mixed);
+      const filterFields = (result.mongodb_atlas.schema as any).definition.fields.filter((f: any) => f.type === 'filter');
+      expect(filterFields.map((f: any) => f.path)).toEqual(['source_url']);
+    });
+
+    it('omits non-filterable fields from the Redis FT.CREATE schema', () => {
+      const result = service.generateAll(mixed);
+      expect(result.redis.ddl).toContain('source_url TAG');
+      expect(result.redis.ddl).not.toContain('internal_notes');
+    });
+  });
 });

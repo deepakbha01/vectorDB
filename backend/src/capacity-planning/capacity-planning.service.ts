@@ -12,7 +12,7 @@ import { AuthenticatedUser } from '../auth/auth.service';
 import { User } from '../users/user.entity';
 import { Project } from '../projects/project.entity';
 import { ProjectPhase, PhaseStatus } from '../projects/enums/project-status.enum';
-import { IMPLEMENTED_BEYOND_DISCOVERY } from '../projects/enums/platform.enum';
+import { IMPLEMENTED_BEYOND_DISCOVERY, VectorPlatform } from '../projects/enums/platform.enum';
 
 @Injectable()
 export class CapacityPlanningService {
@@ -28,6 +28,9 @@ export class CapacityPlanningService {
 
   async generatePlan(projectId: string, requester: AuthenticatedUser, dto: CreateCapacityPlanDto): Promise<CapacityPlan> {
     const project = await this.projectsService.findOne(projectId, requester);
+    if (project.platform === VectorPlatform.UNDETERMINED) {
+      throw new BadRequestException('Complete Phase 4 Vector DB Selection (or manually select a platform) before capacity planning.');
+    }
     if (!IMPLEMENTED_BEYOND_DISCOVERY.has(project.platform)) {
       // Defensive only - every VectorPlatform value other than UNDETERMINED is currently in this set.
       throw new BadRequestException(`Capacity forecasting is not yet implemented for '${project.platform}'.`);

@@ -3,6 +3,7 @@ import { NotFoundException } from '@nestjs/common';
 import { ReportingService } from './reporting.service';
 import { ProjectsService } from '../projects/projects.service';
 import { DiscoveryService } from '../discovery/discovery.service';
+import { VectorDbSelectionService } from '../vector-db-selection/vector-db-selection.service';
 import { DataPipelineDesignService } from '../data-pipeline/data-pipeline-design.service';
 import { IndexDesignService } from '../index-design/index-design.service';
 import { DeploymentPlanService } from '../deployment/deployment-plan.service';
@@ -16,13 +17,15 @@ describe('ReportingService', () => {
   let service: ReportingService;
   let projectsService: { findOne: jest.Mock };
   let discoveryService: { getLatest: jest.Mock };
-  let dataPipelineDesignService: { getLatest: jest.Mock };
+  let vectorDbSelectionService: { getLatest: jest.Mock };
+  let dataPipelineDesignService: { getLatest: jest.Mock; buildPhase3Handoff: jest.Mock };
   let indexDesignService: { getLatest: jest.Mock };
   let deploymentPlanService: { getLatest: jest.Mock };
   let benchmarkService: { getLatest: jest.Mock };
   let capacityPlanningService: { getLatest: jest.Mock };
   let reportBuilder: {
     buildDiscoveryReport: jest.Mock;
+    buildVectorDbSelectionReport: jest.Mock;
     buildDataPipelineReport: jest.Mock;
     buildIndexDesignReport: jest.Mock;
     buildDeploymentPlanReport: jest.Mock;
@@ -40,13 +43,15 @@ describe('ReportingService', () => {
   beforeEach(async () => {
     projectsService = { findOne: jest.fn().mockResolvedValue(project) };
     discoveryService = { getLatest: jest.fn() };
-    dataPipelineDesignService = { getLatest: jest.fn() };
+    vectorDbSelectionService = { getLatest: jest.fn() };
+    dataPipelineDesignService = { getLatest: jest.fn(), buildPhase3Handoff: jest.fn().mockResolvedValue({ status: 'BLOCKED', statusReasons: [] }) };
     indexDesignService = { getLatest: jest.fn() };
     deploymentPlanService = { getLatest: jest.fn() };
     benchmarkService = { getLatest: jest.fn() };
     capacityPlanningService = { getLatest: jest.fn() };
     reportBuilder = {
       buildDiscoveryReport: jest.fn().mockReturnValue(doc),
+      buildVectorDbSelectionReport: jest.fn().mockReturnValue(doc),
       buildDataPipelineReport: jest.fn().mockReturnValue(doc),
       buildIndexDesignReport: jest.fn().mockReturnValue(doc),
       buildDeploymentPlanReport: jest.fn().mockReturnValue(doc),
@@ -62,6 +67,7 @@ describe('ReportingService', () => {
         ReportingService,
         { provide: ProjectsService, useValue: projectsService },
         { provide: DiscoveryService, useValue: discoveryService },
+        { provide: VectorDbSelectionService, useValue: vectorDbSelectionService },
         { provide: DataPipelineDesignService, useValue: dataPipelineDesignService },
         { provide: IndexDesignService, useValue: indexDesignService },
         { provide: DeploymentPlanService, useValue: deploymentPlanService },
@@ -96,6 +102,21 @@ describe('ReportingService', () => {
   it('throws NotFoundException when the requested deliverable does not exist yet', async () => {
     discoveryService.getLatest.mockResolvedValue(null);
     await expect(service.generateReport('project-1', requester, 'discovery', 'pdf')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('dispatches to the Vector DB Selection builder with both the assessment and the ADR', async () => {
+    discoveryService.getLatest.mockResolvedValue({ assessment: { version: 1 } });
+    vectorDbSelectionService.getLatest.mockResolvedValue({ adr: { decision: 'postgres_pgvector' } });
+
+    await service.generateReport('project-1', requester, 'vector-db-selection', 'pdf');
+
+    expect(reportBuilder.buildVectorDbSelectionReport).toHaveBeenCalledWith({ version: 1 }, { decision: 'postgres_pgvector' });
+  });
+
+  it('throws NotFoundException for "vector-db-selection" when it has not been run yet', async () => {
+    discoveryService.getLatest.mockResolvedValue({ assessment: { version: 1 } });
+    vectorDbSelectionService.getLatest.mockResolvedValue(null);
+    await expect(service.generateReport('project-1', requester, 'vector-db-selection', 'pdf')).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it.each([

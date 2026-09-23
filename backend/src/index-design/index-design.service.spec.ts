@@ -4,7 +4,6 @@ import { BadRequestException } from '@nestjs/common';
 import { IndexDesignService } from './index-design.service';
 import { IndexDesign } from './index-design.entity';
 import { ProjectsService } from '../projects/projects.service';
-import { DiscoveryService } from '../discovery/discovery.service';
 import { DataPipelineDesignService } from '../data-pipeline/data-pipeline-design.service';
 import { IndexRecommendationEngineService } from '../index-recommendation-engine/index-recommendation-engine.service';
 import { UpdateFrequency } from '../index-recommendation-engine/enums/update-frequency.enum';
@@ -14,21 +13,28 @@ describe('IndexDesignService', () => {
   let service: IndexDesignService;
   let designsRepo: { create: jest.Mock; save: jest.Mock; count: jest.Mock; findOne: jest.Mock; find: jest.Mock };
   let projectsService: { findOne: jest.Mock; updatePhaseStatus: jest.Mock };
-  let discoveryService: { getLatest: jest.Mock };
-  let dataPipelineDesignService: { getLatest: jest.Mock };
+  let dataPipelineDesignService: { buildPhase3Handoff: jest.Mock };
   let engine: { evaluate: jest.Mock };
 
   const requester = { id: 'user-1', email: 'architect@example.com', role: 'architect' as any };
 
-  const assessment = {
-    estimatedVectorCount: 400_000,
-    embeddingDimension: 768,
+  const readyHandoff = {
+    vectorCount: 400_000,
+    dimension: 768,
+    metric: 'cosine',
+    availableMemoryGb: 32,
     qps: 20,
     peakQps: 60,
     recallTarget: 0.9,
     targetP95LatencyMs: 150,
     topK: 10,
-    availableRamGb: 32,
+    candidateK: 100,
+    filterUsage: true,
+    hybridSearch: false,
+    reranking: false,
+    candidateIndexFamilies: [IndexType.HNSW, IndexType.IVF_FLAT, IndexType.PQ],
+    status: 'READY',
+    statusReasons: [],
   };
 
   const engineResult = {
@@ -53,8 +59,7 @@ describe('IndexDesignService', () => {
       find: jest.fn(),
     };
     projectsService = { findOne: jest.fn().mockResolvedValue({ id: 'project-1' }), updatePhaseStatus: jest.fn().mockResolvedValue({}) };
-    discoveryService = { getLatest: jest.fn().mockResolvedValue({ assessment }) };
-    dataPipelineDesignService = { getLatest: jest.fn().mockResolvedValue(null) };
+    dataPipelineDesignService = { buildPhase3Handoff: jest.fn().mockResolvedValue(readyHandoff) };
     engine = { evaluate: jest.fn().mockReturnValue(engineResult) };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -62,7 +67,6 @@ describe('IndexDesignService', () => {
         IndexDesignService,
         { provide: getRepositoryToken(IndexDesign), useValue: designsRepo },
         { provide: ProjectsService, useValue: projectsService },
-        { provide: DiscoveryService, useValue: discoveryService },
         { provide: DataPipelineDesignService, useValue: dataPipelineDesignService },
         { provide: IndexRecommendationEngineService, useValue: engine },
       ],
@@ -71,14 +75,19 @@ describe('IndexDesignService', () => {
     service = module.get(IndexDesignService);
   });
 
-  it('rejects submission when no Discovery assessment exists yet', async () => {
-    discoveryService.getLatest.mockResolvedValue(null);
+  it('rejects submission when the Phase 2->3 handoff is BLOCKED (e.g. Phase 1/2 incomplete)', async () => {
+    dataPipelineDesignService.buildPhase3Handoff.mockResolvedValue({
+      ...readyHandoff,
+      status: 'BLOCKED',
+      statusReasons: ['Phase 1 (Discovery) has not been completed.'],
+    });
     await expect(service.submitDesign('project-1', requester, { updateFrequency: UpdateFrequency.LOW })).rejects.toBeInstanceOf(
       BadRequestException,
     );
+    expect(engine.evaluate).not.toHaveBeenCalled();
   });
 
-  it('defaults engine inputs from the latest Discovery assessment', async () => {
+  it('defaults engine inputs from the Phase 2->3 handoff, using the higher of sustained/peak QPS', async () => {
     await service.submitDesign('project-1', requester, { updateFrequency: UpdateFrequency.LOW });
     expect(engine.evaluate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -94,21 +103,26 @@ describe('IndexDesignService', () => {
     );
   });
 
-  it('prefers the Data Pipeline Design dimension over the Discovery estimate when available', async () => {
-    dataPipelineDesignService.getLatest.mockResolvedValue({ embeddingDimension: 1536 });
+  it('proceeds (READY_WITH_CONDITIONS is not blocking, only BLOCKED is)', async () => {
+    dataPipelineDesignService.buildPhase3Handoff.mockResolvedValue({
+      ...readyHandoff,
+      status: 'READY_WITH_CONDITIONS',
+      statusReasons: ['Some validation warning.'],
+    });
     await service.submitDesign('project-1', requester, { updateFrequency: UpdateFrequency.LOW });
-    expect(engine.evaluate).toHaveBeenCalledWith(expect.objectContaining({ dimension: 1536 }));
+    expect(engine.evaluate).toHaveBeenCalled();
   });
 
-  it('lets explicit overrides win over both defaults', async () => {
+  it('lets explicit overrides win over the handoff', async () => {
     await service.submitDesign('project-1', requester, { updateFrequency: UpdateFrequency.HIGH, vectorCount: 999, recallTarget: 0.5 });
     expect(engine.evaluate).toHaveBeenCalledWith(expect.objectContaining({ vectorCount: 999, recallTarget: 0.5 }));
   });
 
-  it('persists version 1 and marks the index_design phase completed', async () => {
+  it('persists version 1, marks the index_design phase completed, and stores the handoff metric on inputsUsed', async () => {
     const design = await service.submitDesign('project-1', requester, { updateFrequency: UpdateFrequency.LOW });
     expect(designsRepo.save).toHaveBeenCalledWith(expect.objectContaining({ version: 1, decision: IndexType.HNSW }));
     expect(projectsService.updatePhaseStatus).toHaveBeenCalled();
     expect(design.decision).toBe(IndexType.HNSW);
+    expect(design.inputsUsed.metric).toBe('cosine');
   });
 });

@@ -4,11 +4,14 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { Project } from './project.entity';
 import { VectorPlatform } from './enums/platform.enum';
+import { CustomerMode } from './enums/customer-mode.enum';
 import { UserRole } from '../users/user.entity';
+import { PlatformConfigService } from '../common/config/platform-config.service';
 
 describe('ProjectsService', () => {
   let service: ProjectsService;
   let repo: { create: jest.Mock; save: jest.Mock; find: jest.Mock; findOne: jest.Mock };
+  let platformConfig: { getPatternCatalog: jest.Mock };
 
   const owner = { id: 'owner-1', email: 'owner@example.com', role: UserRole.ARCHITECT };
   const stranger = { id: 'stranger-1', email: 'stranger@example.com', role: UserRole.VIEWER };
@@ -20,9 +23,16 @@ describe('ProjectsService', () => {
       find: jest.fn(),
       findOne: jest.fn(),
     };
+    platformConfig = {
+      getPatternCatalog: jest.fn().mockReturnValue([{ id: 'enterprise-document-rag', name: 'Enterprise Document RAG' }]),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ProjectsService, { provide: getRepositoryToken(Project), useValue: repo }],
+      providers: [
+        ProjectsService,
+        { provide: getRepositoryToken(Project), useValue: repo },
+        { provide: PlatformConfigService, useValue: platformConfig },
+      ],
     }).compile();
 
     service = module.get(ProjectsService);
@@ -35,6 +45,27 @@ describe('ProjectsService', () => {
     expect(Object.values(project.phaseStatuses)).toEqual(
       Object.values(project.phaseStatuses).map(() => 'not_started'),
     );
+  });
+
+  it('creates a project seeded from a known pattern', async () => {
+    const project = await service.create(owner, 'RAG Assistant', undefined, undefined, 'enterprise-document-rag');
+    expect(project.patternId).toBe('enterprise-document-rag');
+  });
+
+  it('rejects an unknown patternId', async () => {
+    await expect(service.create(owner, 'RAG Assistant', undefined, undefined, 'not-a-real-pattern')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('defaults customerMode to "new" when not specified', async () => {
+    const project = await service.create(owner, 'RAG Assistant');
+    expect(project.customerMode).toBe(CustomerMode.NEW);
+  });
+
+  it('accepts an explicit "existing" customerMode', async () => {
+    const project = await service.create(owner, 'RAG Assistant', undefined, undefined, undefined, CustomerMode.EXISTING);
+    expect(project.customerMode).toBe(CustomerMode.EXISTING);
   });
 
   it('requires a rationale when manually selecting a platform', async () => {

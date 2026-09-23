@@ -5,15 +5,19 @@ const PHASES: Array<{ key: ProjectPhase; label: string; path?: (projectId: strin
   { key: 'discovery', label: '1. Discovery', path: (id) => `/projects/${id}/discovery` },
   { key: 'data_embeddings', label: '2. Data & Embeddings', path: (id) => `/projects/${id}/data-pipeline` },
   { key: 'index_design', label: '3. Index Design', path: (id) => `/projects/${id}/index-design` },
-  { key: 'infrastructure', label: '4. Infrastructure', path: (id) => `/projects/${id}/deployment` },
-  { key: 'ingestion', label: '5. Ingestion', path: (id) => `/projects/${id}/ingestion` },
-  { key: 'optimization', label: '6. Optimization', path: (id) => `/projects/${id}/optimization` },
-  { key: 'capacity', label: '7. Capacity', path: (id) => `/projects/${id}/capacity` },
+  { key: 'vector_db_selection', label: '4. Vector DB Selection', path: (id) => `/projects/${id}/vector-db-selection` },
+  { key: 'infrastructure', label: '5. Infrastructure', path: (id) => `/projects/${id}/deployment` },
+  { key: 'ingestion', label: '6. Ingestion', path: (id) => `/projects/${id}/ingestion` },
+  { key: 'optimization', label: '7. Optimization', path: (id) => `/projects/${id}/optimization` },
+  { key: 'capacity', label: '8. Capacity', path: (id) => `/projects/${id}/capacity` },
 ];
 
 export function PhaseNav({ project }: { project: Project }) {
   return (
     <>
+      <span className="status-pill" style={{ display: 'inline-block', margin: '0 8px 10px' }}>
+        {project.customerMode === 'existing' ? 'Existing / Modernization' : 'New / Greenfield'}
+      </span>
       <ul className="phase-nav">
         {PHASES.map((phase) => {
           const status: PhaseStatus = project.phaseStatuses[phase.key];

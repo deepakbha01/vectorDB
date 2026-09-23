@@ -39,6 +39,7 @@ describe('DataPipelineDesignService', () => {
     languageSupport: ['en'],
     qualityTier: 'high',
     modelVersion: '3-small',
+    status: 'active',
   };
 
   beforeEach(async () => {
@@ -81,13 +82,24 @@ describe('DataPipelineDesignService', () => {
     );
     expect(designsRepo.save).toHaveBeenCalledWith(expect.objectContaining({ version: 1, embeddingDimension: 1536 }));
     expect(projectsService.updatePhaseStatus).toHaveBeenCalled();
-    expect(design.pipelineStages).toHaveLength(8);
+    expect(design.pipelineStages).toHaveLength(9);
+    expect(design.pipelineStages.map((s: any) => s.name)).toContain('Deduplicate');
   });
 
-  it('warns when the model dimension does not match the Discovery assessment', async () => {
-    discoveryService.getLatest.mockResolvedValue({ assessment: { embeddingDimension: 768 } });
-    const design: any = await service.submitDesign('project-1', requester, dto);
-    expect(design.validationWarnings.some((w: string) => w.includes('does not match'))).toBe(true);
+  it('blocks submission with a structured, machine-readable error when the model dimension does not match Discovery, until acknowledged', async () => {
+    discoveryService.getLatest.mockResolvedValue({ assessment: { embeddingDimension: 768, similarityMetric: 'cosine' } });
+
+    await expect(service.submitDesign('project-1', requester, dto)).rejects.toMatchObject({
+      response: expect.objectContaining({ errorCode: 'DIMENSION_MISMATCH_CONFIRMATION_REQUIRED' }),
+    });
+
+    const design: any = await service.submitDesign('project-1', requester, {
+      ...dto,
+      dimensionMismatchAcknowledged: true,
+      dimensionMismatchReason: 'model_quality_requirement' as any,
+    });
+    expect(design.validationWarnings.some((w: string) => w.includes('confirmed intentional'))).toBe(true);
+    expect(design.dimensionMismatchReason).toBe('model_quality_requirement');
   });
 
   it('warns when the configured chunk size may exceed the model max input tokens', async () => {
@@ -104,5 +116,17 @@ describe('DataPipelineDesignService', () => {
     designsRepo.count.mockResolvedValue(2);
     const design: any = await service.submitDesign('project-1', requester, dto);
     expect(design.version).toBe(3);
+  });
+
+  it('rejects duplicate metadata field names (case-insensitive) before generating any schema', async () => {
+    const badDto = { ...dto, metadataFields: [{ name: 'source_url', type: 'string' as const }, { name: 'Source_URL', type: 'json' as const }] };
+    await expect(service.submitDesign('project-1', requester, badDto)).rejects.toThrow(/Duplicate metadata field name/);
+    expect(schemaGenerator.generateAll).not.toHaveBeenCalled();
+  });
+
+  it('rejects metadata field names that collide with the reserved id/embedding/created_at columns', async () => {
+    const badDto = { ...dto, metadataFields: [{ name: 'embedding', type: 'string' as const }] };
+    await expect(service.submitDesign('project-1', requester, badDto)).rejects.toThrow(/reserved columns/);
+    expect(schemaGenerator.generateAll).not.toHaveBeenCalled();
   });
 });

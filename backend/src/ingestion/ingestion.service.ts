@@ -20,6 +20,7 @@ import { AuthenticatedUser } from '../auth/auth.service';
 import { User } from '../users/user.entity';
 import { Project } from '../projects/project.entity';
 import { ProjectPhase, PhaseStatus } from '../projects/enums/project-status.enum';
+import { VectorPlatform } from '../projects/enums/platform.enum';
 import { VectorRecord } from '../database-adapters/vector-database-adapter.interface';
 
 interface PendingDeadLetter {
@@ -54,6 +55,9 @@ export class IngestionService {
   async runIngestion(projectId: string, requester: AuthenticatedUser, dto: CreateIngestionRunDto): Promise<IngestionRun> {
     const startedAt = Date.now();
     const project = await this.projectsService.findOne(projectId, requester);
+    if (project.platform === VectorPlatform.UNDETERMINED) {
+      throw new BadRequestException('Complete Phase 4 Vector DB Selection (or manually select a platform) before running ingestion.');
+    }
     const pipelineDesign = await this.dataPipelineDesignService.getLatest(projectId, requester);
     if (!pipelineDesign) {
       throw new BadRequestException('Complete Phase 2 (Data & Embedding Design) before running ingestion.');
@@ -280,6 +284,9 @@ export class IngestionService {
    */
   async retryDeadLetters(projectId: string, requester: AuthenticatedUser, runId: string): Promise<{ reprocessed: number; stillFailed: number }> {
     const project = await this.projectsService.findOne(projectId, requester);
+    if (project.platform === VectorPlatform.UNDETERMINED) {
+      throw new BadRequestException('Complete Phase 4 Vector DB Selection (or manually select a platform) before retrying dead letters.');
+    }
     const run = await this.getRun(projectId, requester, runId);
     const pipelineDesign = await this.dataPipelineDesignService.getLatest(projectId, requester);
     if (!pipelineDesign) {

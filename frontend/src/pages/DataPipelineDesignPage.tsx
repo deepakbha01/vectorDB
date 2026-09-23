@@ -6,11 +6,15 @@ import {
   ChunkingPreviewResult,
   ChunkingStrategy,
   DataPipelineDesign,
+  DimensionMismatchReason,
   DiscoveryOutcome,
   EmbeddingProviderCatalogEntry,
+  extractErrorCode,
+  extractErrorDetails,
   extractErrorMessage,
   GENERATED_SCHEMA_PLATFORMS,
   MetadataField,
+  Phase3Handoff,
   Project,
 } from '../api/client';
 import { ExecutiveSummaryCard } from '../components/ExecutiveSummaryCard';
@@ -39,6 +43,40 @@ const STRATEGY_HELP: Record<ChunkingStrategy, string> = {
 
 const DEFAULT_CHUNKING: ChunkingConfig = { strategy: 'recursive', chunkSize: 500, chunkOverlap: 50, minChunkSize: 50, maxChunkSize: 1000 };
 const DEFAULT_OVERLAP_RATIO = 0.1;
+
+/** Must match RESERVED_METADATA_FIELD_NAMES in backend/src/schema-generator/schema-generator.types.ts. */
+const RESERVED_METADATA_FIELD_NAMES = ['id', 'embedding', 'created_at'];
+
+const DIMENSION_MISMATCH_REASONS: Array<{ value: DimensionMismatchReason; label: string }> = [
+  { value: 'model_quality_requirement', label: 'Model quality requirement' },
+  { value: 'model_migration', label: 'Existing model migration' },
+  { value: 'benchmark_result', label: 'Benchmark result' },
+  { value: 'customer_requirement', label: 'Customer requirement' },
+  { value: 'other', label: 'Other' },
+];
+
+/** Live client-side check mirroring the server-side validation in DataPipelineDesignService.validateMetadataFields. */
+function findMetadataFieldIssues(fields: Array<{ name: string }>): string | null {
+  const seen = new Map<string, string>();
+  const duplicates = new Set<string>();
+  const reserved = new Set<string>();
+  for (const field of fields) {
+    const key = field.name.trim().toLowerCase();
+    if (!key) continue;
+    if (seen.has(key)) {
+      duplicates.add(seen.get(key)!);
+      duplicates.add(field.name);
+    }
+    seen.set(key, field.name);
+    if (RESERVED_METADATA_FIELD_NAMES.includes(key)) {
+      reserved.add(field.name);
+    }
+  }
+  const problems: string[] = [];
+  if (duplicates.size > 0) problems.push(`Duplicate field name(s): ${[...duplicates].join(', ')}.`);
+  if (reserved.size > 0) problems.push(`Reserved column name(s) cannot be used: ${[...reserved].join(', ')}.`);
+  return problems.length > 0 ? problems.join(' ') : null;
+}
 
 const SAMPLE_TEXT = `Vector databases store high-dimensional embeddings and support approximate nearest-neighbor search.
 
@@ -80,13 +118,15 @@ const OVERLAP_RATIO_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 0.25, label: '25% of chunk size — maximum recommended overlap' },
 ];
 
-/** Picks the catalog model whose dimension matches the Phase 1 target most closely; exact match wins, else the closest. */
+/** Picks the catalog model whose dimension matches the Phase 1 target most closely; exact match wins, else the closest. Prefers active-status models over deprecated/retired ones. */
 function recommendModel(
   providers: EmbeddingProviderCatalogEntry[],
   targetDimension: number | null,
 ): { providerId: string; modelId: string } | null {
-  const flat = providers.flatMap((p) => p.models.map((m) => ({ providerId: p.id, modelId: m.id, dimension: m.dimension })));
-  if (flat.length === 0) return null;
+  const all = providers.flatMap((p) => p.models.map((m) => ({ providerId: p.id, modelId: m.id, dimension: m.dimension, status: m.status })));
+  if (all.length === 0) return null;
+  const active = all.filter((m) => m.status === 'active');
+  const flat = active.length > 0 ? active : all;
   if (targetDimension == null) return { providerId: flat[0].providerId, modelId: flat[0].modelId };
   const exact = flat.find((m) => m.dimension === targetDimension);
   const pick =
@@ -170,6 +210,10 @@ export function DataPipelineDesignPage() {
   const [submitting, setSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(true);
   const [showTechnical, setShowTechnical] = useState(false);
+  const [handoff, setHandoff] = useState<Phase3Handoff | null>(null);
+
+  const [dimensionMismatch, setDimensionMismatch] = useState<{ discoveryDimension: number; selectedDimension: number } | null>(null);
+  const [dimensionMismatchReason, setDimensionMismatchReason] = useState<DimensionMismatchReason>('model_quality_requirement');
 
   useEffect(() => {
     if (!id) return;
@@ -217,6 +261,10 @@ export function DataPipelineDesignPage() {
         setModelId(existingDesign.embeddingModelId);
         setMetadataFields(existingDesign.metadataFields.map((f) => ({ ...f, rowId: makeRowId() })));
         setShowForm(false);
+        apiClient
+          .get<Phase3Handoff>(`/projects/${id}/data-pipeline/handoff`)
+          .then((res) => !cancelled && setHandoff(res.data))
+          .catch(() => {});
       } else {
         setRecommendedDimension(targetDimension);
         const recommended = recommendModel(catalogRes.data, targetDimension);
@@ -251,8 +299,9 @@ export function DataPipelineDesignPage() {
     setMetadataFields((fields) => fields.map((f) => (f.rowId === rowId ? { ...f, ...field } : f)));
   };
 
-  const onSubmit = async (e: FormEvent) => {
-    e.preventDefault();
+  const metadataFieldIssues = findMetadataFieldIssues(metadataFields);
+
+  const submitDesign = async (acknowledged: boolean) => {
     if (!id) return;
     setError(null);
     setSubmitting(true);
@@ -265,17 +314,37 @@ export function DataPipelineDesignPage() {
         // Strip the client-only rowId (used for stable React keys) - the API's
         // ValidationPipe rejects any property not on MetadataFieldDto.
         metadataFields: metadataFields.map(({ rowId, ...field }) => field),
+        ...(acknowledged ? { dimensionMismatchAcknowledged: true, dimensionMismatchReason } : {}),
       });
       setDesign(data);
+      setDimensionMismatch(null);
       setShowForm(false);
       setShowTechnical(false);
       const { data: refreshedProject } = await apiClient.get<Project>(`/projects/${id}`);
       setProject(refreshedProject);
+      apiClient
+        .get<Phase3Handoff>(`/projects/${id}/data-pipeline/handoff`)
+        .then((res) => setHandoff(res.data))
+        .catch(() => {});
     } catch (err: any) {
-      setError(extractErrorMessage(err, 'Could not submit the data pipeline design.'));
+      if (extractErrorCode(err) === 'DIMENSION_MISMATCH_CONFIRMATION_REQUIRED') {
+        setDimensionMismatch(extractErrorDetails(err) ?? null);
+        setError(null);
+      } else {
+        setError(extractErrorMessage(err, 'Could not submit the data pipeline design.'));
+      }
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (metadataFieldIssues) {
+      setError(metadataFieldIssues);
+      return;
+    }
+    await submitDesign(false);
   };
 
   if (!project) {
@@ -361,7 +430,7 @@ export function DataPipelineDesignPage() {
             {showTechnical && (
               <div className="card" style={{ marginBottom: 16 }}>
                 <div className="metric-label" style={{ marginBottom: 8 }}>
-                  Data Pipeline: Source -&gt; Extract -&gt; Clean -&gt; Chunk -&gt; Embed -&gt; Validate -&gt; Store -&gt; Index
+                  Data Pipeline: {design.pipelineStages.map((s) => s.name).join(' -> ')}
                 </div>
                 <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13 }}>
                   {design.pipelineStages.map((s) => (
@@ -391,6 +460,11 @@ export function DataPipelineDesignPage() {
                       <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
                         <th style={{ padding: '4px 8px' }}>Field</th>
                         <th style={{ padding: '4px 8px' }}>Type</th>
+                        <th style={{ padding: '4px 8px' }}>Required</th>
+                        <th style={{ padding: '4px 8px' }}>Filterable</th>
+                        <th style={{ padding: '4px 8px' }}>Searchable</th>
+                        <th style={{ padding: '4px 8px' }}>Sortable</th>
+                        <th style={{ padding: '4px 8px' }}>Description</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -398,10 +472,55 @@ export function DataPipelineDesignPage() {
                         <tr key={f.name} style={{ borderBottom: '1px solid #eceff3' }}>
                           <td style={{ padding: '4px 8px' }}>{f.name}</td>
                           <td style={{ padding: '4px 8px' }}>{f.type}</td>
+                          <td style={{ padding: '4px 8px' }}>{f.required ? 'Yes' : 'No'}</td>
+                          <td style={{ padding: '4px 8px' }}>{f.filterable === false ? 'No' : 'Yes'}</td>
+                          <td style={{ padding: '4px 8px' }}>{f.searchable ? 'Yes' : 'No'}</td>
+                          <td style={{ padding: '4px 8px' }}>{f.sortable ? 'Yes' : 'No'}</td>
+                          <td style={{ padding: '4px 8px' }}>{f.description ?? ''}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                )}
+              </div>
+            )}
+
+            {showTechnical && handoff && (
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div className="metric-label" style={{ marginBottom: 8 }}>
+                  Phase 3 handoff - status:{' '}
+                  <span className={`status-pill${handoff.status === 'READY' ? ' validated' : ''}`}>{handoff.status.replace(/_/g, ' ')}</span>
+                </div>
+                <div className="card-grid">
+                  <div className="card">
+                    <div className="metric-label">Vector count</div>
+                    <div className="metric-value">{handoff.vectorCount.toLocaleString()}</div>
+                  </div>
+                  <div className="card">
+                    <div className="metric-label">Dimension / metric</div>
+                    <div className="metric-value" style={{ fontSize: 16 }}>
+                      {handoff.dimension} / {handoff.metric}
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="metric-label">Avg / peak QPS</div>
+                    <div className="metric-value" style={{ fontSize: 16 }}>
+                      {handoff.qps} / {handoff.peakQps}
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="metric-label">Top-K / Candidate-K</div>
+                    <div className="metric-value" style={{ fontSize: 16 }}>
+                      {handoff.topK} / {handoff.candidateK}
+                    </div>
+                  </div>
+                </div>
+                {handoff.statusReasons.length > 0 && (
+                  <ul style={{ margin: '10px 0 0', paddingLeft: 18, fontSize: 13 }}>
+                    {handoff.statusReasons.map((r) => (
+                      <li key={r}>{r}</li>
+                    ))}
+                  </ul>
                 )}
               </div>
             )}
@@ -626,8 +745,9 @@ export function DataPipelineDesignPage() {
                     <label htmlFor="embeddingModel">Model</label>
                     <select id="embeddingModel" value={modelId} onChange={(e) => setModelId(e.target.value)} onFocus={() => setActiveField('embeddingModel')}>
                       {selectedProvider?.models.map((m) => (
-                        <option key={m.id} value={m.id}>
+                        <option key={m.id} value={m.id} disabled={m.status === 'retired'}>
                           {m.label}
+                          {m.status !== 'active' ? ` (${m.status})` : ''}
                         </option>
                       ))}
                     </select>
@@ -635,9 +755,26 @@ export function DataPipelineDesignPage() {
                 </div>
                 {selectedModel && (
                   <div style={{ fontSize: 12, color: '#5a6472', marginTop: 8 }}>
-                    Dimension {selectedModel.dimension} - max input {selectedModel.maxInputTokens} tokens - $
-                    {selectedModel.costPerMillionTokens}/1M tokens - quality {selectedModel.qualityTier} - languages{' '}
-                    {selectedModel.languageSupport.join(', ')}
+                    <div>
+                      Dimension {selectedModel.dimension} - max input {selectedModel.maxInputTokens} tokens - $
+                      {selectedModel.costPerMillionTokens}/1M tokens - quality {selectedModel.qualityTier} - languages{' '}
+                      {selectedModel.languageSupport.join(', ')}
+                    </div>
+                    <div style={{ marginTop: 4 }}>
+                      <span className={`status-pill${selectedModel.status === 'active' ? ' validated' : ''}`}>{selectedModel.status}</span>
+                      {selectedModel.evidence && <span style={{ marginLeft: 8 }}>Evidence: {selectedModel.evidence}</span>}
+                      {selectedModel.lastVerifiedDate && <span style={{ marginLeft: 8 }}>Verified: {selectedModel.lastVerifiedDate}</span>}
+                    </div>
+                    {selectedModel.status === 'deprecated' && (
+                      <div className="error-text" style={{ marginTop: 4 }}>
+                        This model is deprecated - it can still be selected, but consider migrating to an active model.
+                      </div>
+                    )}
+                    {selectedModel.status === 'retired' && (
+                      <div className="error-text" style={{ marginTop: 4 }}>
+                        This model is retired and cannot be selected - choose an active model.
+                      </div>
+                    )}
                   </div>
                 )}
               </section>
@@ -647,38 +784,98 @@ export function DataPipelineDesignPage() {
                   <span className="discovery-section-index">4</span>
                   <h2 className="discovery-section-title">Metadata fields</h2>
                 </div>
-                <p className="discovery-section-sub">Structured fields stored alongside each vector, for filtering at query time.</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {metadataFields.map((field) => (
-                    <div key={field.rowId} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <input
-                        style={{ flex: 1 }}
-                        value={field.name}
-                        onChange={(e) => updateField(field.rowId, { name: e.target.value })}
-                        onFocus={() => setActiveField('metadataFields')}
-                        placeholder="field_name"
-                      />
-                      <select
-                        value={field.type}
-                        onChange={(e) => updateField(field.rowId, { type: e.target.value as MetadataField['type'] })}
-                        onFocus={() => setActiveField('metadataFields')}
+                <p className="discovery-section-sub">
+                  Structured fields stored alongside each vector. Field names must be unique and cannot reuse the reserved
+                  columns ({RESERVED_METADATA_FIELD_NAMES.join(', ')}).
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {metadataFields.map((field) => {
+                    const isReserved = RESERVED_METADATA_FIELD_NAMES.includes(field.name.trim().toLowerCase());
+                    const isDuplicate =
+                      field.name.trim() !== '' &&
+                      metadataFields.filter((f) => f.name.trim().toLowerCase() === field.name.trim().toLowerCase()).length > 1;
+                    const rowHasIssue = isReserved || isDuplicate;
+                    return (
+                      <div
+                        key={field.rowId}
+                        style={{ border: rowHasIssue ? '1px solid #c0392b' : '1px solid #dfe3e8', borderRadius: 6, padding: 8 }}
                       >
-                        <option value="string">string</option>
-                        <option value="number">number</option>
-                        <option value="boolean">boolean</option>
-                        <option value="date">date</option>
-                        <option value="json">json</option>
-                      </select>
-                      <button
-                        type="button"
-                        className="primary-btn"
-                        style={{ background: '#c0392b' }}
-                        onClick={() => setMetadataFields((fields) => fields.filter((f) => f.rowId !== field.rowId))}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <input
+                            style={{ flex: 1 }}
+                            value={field.name}
+                            onChange={(e) => updateField(field.rowId, { name: e.target.value })}
+                            onFocus={() => setActiveField('metadataFields')}
+                            placeholder="field_name"
+                          />
+                          <select
+                            value={field.type}
+                            onChange={(e) => updateField(field.rowId, { type: e.target.value as MetadataField['type'] })}
+                            onFocus={() => setActiveField('metadataFields')}
+                          >
+                            <option value="string">string</option>
+                            <option value="number">number</option>
+                            <option value="boolean">boolean</option>
+                            <option value="date">date</option>
+                            <option value="json">json</option>
+                          </select>
+                          <button
+                            type="button"
+                            className="primary-btn"
+                            style={{ background: '#c0392b' }}
+                            onClick={() => setMetadataFields((fields) => fields.filter((f) => f.rowId !== field.rowId))}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        {rowHasIssue && (
+                          <div className="error-text" style={{ marginTop: 4, fontSize: 12 }}>
+                            {isReserved ? 'This name is reserved and cannot be used.' : 'Duplicate field name.'}
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginTop: 6, fontSize: 12 }}>
+                          <label style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={field.required ?? false}
+                              onChange={(e) => updateField(field.rowId, { required: e.target.checked })}
+                            />
+                            Required
+                          </label>
+                          <label style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={field.filterable !== false}
+                              onChange={(e) => updateField(field.rowId, { filterable: e.target.checked })}
+                            />
+                            Filterable
+                          </label>
+                          <label style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={field.searchable ?? false}
+                              onChange={(e) => updateField(field.rowId, { searchable: e.target.checked })}
+                            />
+                            Searchable
+                          </label>
+                          <label style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={field.sortable ?? false}
+                              onChange={(e) => updateField(field.rowId, { sortable: e.target.checked })}
+                            />
+                            Sortable
+                          </label>
+                          <input
+                            style={{ flex: 1, minWidth: 120 }}
+                            value={field.description ?? ''}
+                            onChange={(e) => updateField(field.rowId, { description: e.target.value })}
+                            placeholder="description (optional)"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
                   <button
                     type="button"
                     className="primary-btn"
@@ -687,11 +884,37 @@ export function DataPipelineDesignPage() {
                   >
                     + Add field
                   </button>
+                  {metadataFieldIssues && <div className="error-text">{metadataFieldIssues}</div>}
                 </div>
               </section>
 
+              {dimensionMismatch && (
+                <div className="card" style={{ marginBottom: 16, borderColor: '#c0392b' }}>
+                  <div className="metric-label">Dimension mismatch</div>
+                  <p style={{ fontSize: 13 }}>
+                    Discovery estimated <strong>{dimensionMismatch.discoveryDimension}</strong> dimensions, but the selected model
+                    produces <strong>{dimensionMismatch.selectedDimension}</strong>. Is this intentional?
+                  </p>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <select value={dimensionMismatchReason} onChange={(e) => setDimensionMismatchReason(e.target.value as DimensionMismatchReason)}>
+                      {DIMENSION_MISMATCH_REASONS.map((r) => (
+                        <option key={r.value} value={r.value}>
+                          {r.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button type="button" className="primary-btn" disabled={submitting} onClick={() => submitDesign(true)}>
+                      Yes, confirm and continue
+                    </button>
+                    <button type="button" className="primary-btn" style={{ background: 'transparent', color: 'var(--primary)', border: '1px solid var(--primary)' }} onClick={() => setDimensionMismatch(null)}>
+                      No, change the model
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {error && <div className="error-text">{error}</div>}
-              <button className="primary-btn" type="submit" disabled={submitting}>
+              <button className="primary-btn" type="submit" disabled={submitting || !!dimensionMismatch}>
                 {submitting ? 'Generating schemas...' : 'Generate Data Pipeline Design'}
               </button>
             </form>

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ProjectsService } from '../projects/projects.service';
 import { DiscoveryService } from '../discovery/discovery.service';
+import { VectorDbSelectionService } from '../vector-db-selection/vector-db-selection.service';
 import { DataPipelineDesignService } from '../data-pipeline/data-pipeline-design.service';
 import { IndexDesignService } from '../index-design/index-design.service';
 import { DeploymentPlanService } from '../deployment/deployment-plan.service';
@@ -11,7 +12,7 @@ import { PdfRendererService } from './pdf-renderer.service';
 import { DocxRendererService } from './docx-renderer.service';
 import { AuthenticatedUser } from '../auth/auth.service';
 
-export const REPORT_TYPES = ['discovery', 'data-pipeline', 'index-design', 'deployment-plan', 'optimization-report', 'capacity-plan', 'complete'] as const;
+export const REPORT_TYPES = ['discovery', 'vector-db-selection', 'data-pipeline', 'index-design', 'deployment-plan', 'optimization-report', 'capacity-plan', 'complete'] as const;
 export type ReportType = (typeof REPORT_TYPES)[number];
 export const REPORT_FORMATS = ['pdf', 'docx'] as const;
 export type ReportFormat = (typeof REPORT_FORMATS)[number];
@@ -36,6 +37,7 @@ export class ReportingService {
   constructor(
     private readonly projectsService: ProjectsService,
     private readonly discoveryService: DiscoveryService,
+    private readonly vectorDbSelectionService: VectorDbSelectionService,
     private readonly dataPipelineDesignService: DataPipelineDesignService,
     private readonly indexDesignService: IndexDesignService,
     private readonly deploymentPlanService: DeploymentPlanService,
@@ -62,12 +64,20 @@ export class ReportingService {
     if (type === 'discovery') {
       const outcome = await this.discoveryService.getLatest(projectId, requester);
       if (!outcome) throw new NotFoundException('No Discovery assessment has been submitted for this project yet.');
-      return this.reportBuilder.buildDiscoveryReport(outcome.assessment, outcome.adr);
+      return this.reportBuilder.buildDiscoveryReport(outcome.assessment);
+    }
+    if (type === 'vector-db-selection') {
+      const outcome = await this.vectorDbSelectionService.getLatest(projectId, requester);
+      if (!outcome) throw new NotFoundException('Vector DB Selection has not been run for this project yet.');
+      const discoveryOutcome = await this.discoveryService.getLatest(projectId, requester);
+      if (!discoveryOutcome) throw new NotFoundException('No Discovery assessment has been submitted for this project yet.');
+      return this.reportBuilder.buildVectorDbSelectionReport(discoveryOutcome.assessment, outcome.adr);
     }
     if (type === 'data-pipeline') {
       const design = await this.dataPipelineDesignService.getLatest(projectId, requester);
       if (!design) throw new NotFoundException('No Data Pipeline Design has been submitted for this project yet.');
-      return this.reportBuilder.buildDataPipelineReport(design);
+      const handoff = await this.dataPipelineDesignService.buildPhase3Handoff(projectId, requester);
+      return this.reportBuilder.buildDataPipelineReport(design, handoff);
     }
     if (type === 'index-design') {
       const design = await this.indexDesignService.getLatest(projectId, requester);
@@ -91,9 +101,11 @@ export class ReportingService {
     }
 
     // complete: assembles whichever phases are available - partial completion is expected and shown as such.
-    const [discovery, dataPipeline, indexDesign, deploymentPlan, optimizationReport, capacityPlan] = await Promise.all([
+    const [discovery, vectorDbSelection, dataPipeline, phase3Handoff, indexDesign, deploymentPlan, optimizationReport, capacityPlan] = await Promise.all([
       this.discoveryService.getLatest(projectId, requester),
+      this.vectorDbSelectionService.getLatest(projectId, requester),
       this.dataPipelineDesignService.getLatest(projectId, requester),
+      this.dataPipelineDesignService.buildPhase3Handoff(projectId, requester),
       this.indexDesignService.getLatest(projectId, requester),
       this.deploymentPlanService.getLatest(projectId, requester),
       this.benchmarkService.getLatest(projectId, requester),
@@ -101,7 +113,9 @@ export class ReportingService {
     ]);
     return this.reportBuilder.buildCompleteReport(project, {
       discovery: discovery ?? undefined,
+      vectorDbSelection: discovery && vectorDbSelection ? { assessment: discovery.assessment, adr: vectorDbSelection.adr } : undefined,
       dataPipeline: dataPipeline ?? undefined,
+      phase3Handoff: dataPipeline ? phase3Handoff : undefined,
       indexDesign: indexDesign ?? undefined,
       deploymentPlan: deploymentPlan ?? undefined,
       optimizationReport: optimizationReport ?? undefined,

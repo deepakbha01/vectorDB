@@ -2,10 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DiscoveryService } from './discovery.service';
 import { DiscoveryAssessment } from './discovery-assessment.entity';
-import { ArchitectureDecisionRecord } from './architecture-decision-record.entity';
 import { ProjectsService } from '../projects/projects.service';
-import { RecommendationEngineService } from '../recommendation-engine/recommendation-engine.service';
-import { VectorPlatform } from '../projects/enums/platform.enum';
+import { ProjectPhase, PhaseStatus } from '../projects/enums/project-status.enum';
 import {
   Environment,
   DeploymentEnvironment,
@@ -13,6 +11,7 @@ import {
   TenancyModel,
   QpsScope,
   DataReplicationModel,
+  SimilarityMetric,
 } from './enums/discovery.enum';
 import { CreateDiscoveryAssessmentDto } from './dto/create-discovery-assessment.dto';
 
@@ -25,6 +24,7 @@ function buildDto(): CreateDiscoveryAssessmentDto {
     chunksPerDocument: 4,
     estimatedVectorCount: 400_000,
     embeddingDimension: 768,
+    similarityMetric: SimilarityMetric.COSINE,
     qps: 10,
     peakQps: 25,
     qpsScope: QpsScope.AGGREGATE,
@@ -74,9 +74,7 @@ function buildDto(): CreateDiscoveryAssessmentDto {
 describe('DiscoveryService', () => {
   let service: DiscoveryService;
   let assessmentsRepo: { create: jest.Mock; save: jest.Mock; count: jest.Mock; findOne: jest.Mock; find: jest.Mock };
-  let adrRepo: { create: jest.Mock; save: jest.Mock; findOne: jest.Mock };
-  let projectsService: { findOne: jest.Mock; applyEngineRecommendation: jest.Mock };
-  let recommendationEngine: { evaluate: jest.Mock };
+  let projectsService: { findOne: jest.Mock; updatePhaseStatus: jest.Mock };
 
   const requester = { id: 'user-1', email: 'architect@example.com', role: 'architect' as any };
 
@@ -88,57 +86,34 @@ describe('DiscoveryService', () => {
       findOne: jest.fn(),
       find: jest.fn(),
     };
-    adrRepo = {
-      create: jest.fn((data) => data),
-      save: jest.fn((data) => Promise.resolve({ id: 'adr-1', ...data })),
-      findOne: jest.fn(),
-    };
     projectsService = {
       findOne: jest.fn().mockResolvedValue({ id: 'project-1' }),
-      applyEngineRecommendation: jest.fn().mockResolvedValue({}),
-    };
-    recommendationEngine = {
-      evaluate: jest.fn().mockReturnValue({
-        rulesVersion: '1.0.0',
-        decision: VectorPlatform.POSTGRES_PGVECTOR,
-        rationale: 'test rationale',
-        options: [],
-        rejectedAlternatives: [],
-        assumptions: [],
-        risks: [],
-        infrastructureEstimate: { estimatedRawVectorGb: 1, estimatedMemoryGb: 1, estimatedStorageGb: 1, estimatedCpuCores: 2, notes: [] },
-        operationalComplexity: 'low',
-      }),
+      updatePhaseStatus: jest.fn().mockResolvedValue({}),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DiscoveryService,
         { provide: getRepositoryToken(DiscoveryAssessment), useValue: assessmentsRepo },
-        { provide: getRepositoryToken(ArchitectureDecisionRecord), useValue: adrRepo },
         { provide: ProjectsService, useValue: projectsService },
-        { provide: RecommendationEngineService, useValue: recommendationEngine },
       ],
     }).compile();
 
     service = module.get(DiscoveryService);
   });
 
-  it('creates version 1 for the first assessment and applies the recommendation to the project', async () => {
+  it('creates version 1 for the first assessment and marks Discovery complete without deciding a platform', async () => {
     const outcome = await service.submitAssessment('project-1', requester, buildDto());
 
     expect(assessmentsRepo.save).toHaveBeenCalledWith(expect.objectContaining({ version: 1 }));
-    expect(recommendationEngine.evaluate).toHaveBeenCalledWith(
-      expect.objectContaining({ estimatedVectorCount: 400_000, hasExistingPostgres: true }),
-    );
-    expect(projectsService.applyEngineRecommendation).toHaveBeenCalledWith(
+    expect(projectsService.updatePhaseStatus).toHaveBeenCalledWith(
       'project-1',
       requester,
-      VectorPlatform.POSTGRES_PGVECTOR,
-      'test rationale',
-      1,
+      ProjectPhase.DISCOVERY,
+      PhaseStatus.COMPLETED,
     );
-    expect(outcome.adr.decision).toBe(VectorPlatform.POSTGRES_PGVECTOR);
+    expect(outcome).toEqual({ assessment: expect.objectContaining({ version: 1 }) });
+    expect((outcome as any).adr).toBeUndefined();
   });
 
   it('increments the version for a second submission on the same project', async () => {

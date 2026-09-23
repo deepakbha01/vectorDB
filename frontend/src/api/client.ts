@@ -38,6 +38,15 @@ export function extractErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+/** Machine-readable error code for flows the UI must react to structurally (e.g. a confirmation step), not just display. */
+export function extractErrorCode(err: unknown): string | undefined {
+  return (err as { response?: { data?: { errorCode?: string } } })?.response?.data?.errorCode;
+}
+
+export function extractErrorDetails<T = unknown>(err: unknown): T | undefined {
+  return (err as { response?: { data?: { details?: T } } })?.response?.data?.details;
+}
+
 export type UserRole = 'admin' | 'architect' | 'viewer';
 
 export interface ApiUser {
@@ -58,6 +67,7 @@ export type ProjectPhase =
   | 'discovery'
   | 'data_embeddings'
   | 'index_design'
+  | 'vector_db_selection'
   | 'infrastructure'
   | 'ingestion'
   | 'optimization'
@@ -65,11 +75,17 @@ export type ProjectPhase =
 
 export type PhaseStatus = 'not_started' | 'in_progress' | 'completed' | 'validated';
 
+export type CustomerMode = 'new' | 'existing';
+
 export interface Project {
   id: string;
   name: string;
   businessUseCase?: string;
   industry?: string;
+  /** AI Factory Pattern Library entry this project started from, if any - always optional. */
+  patternId?: string;
+  /** New/greenfield vs. existing/modernization. Existing-customer technical context lives on the Discovery assessment's existing-technology fields, not here. */
+  customerMode: CustomerMode;
   platform:
     | 'undetermined'
     | 'oracle'
@@ -97,9 +113,33 @@ export interface PlatformCatalogEntry {
   requiresKubernetes?: boolean;
 }
 
+/**
+ * An AI Factory Pattern Library entry (refactoring spec S4) - a reusable
+ * starting point for a new project. `defaultAssessment` only seeds fields it
+ * has an opinion on; every value stays fully editable on Phase 1 Discovery.
+ */
+export interface PatternCatalogEntry {
+  id: string;
+  name: string;
+  description: string;
+  industry: string;
+  typicalDataTypes: string[];
+  typicalIngestionRate: string;
+  typicalVectorVolume: string;
+  typicalQueryProfile: string;
+  typicalLatencyRequirements: string;
+  typicalRetrievalMethod: string;
+  securityComplianceConsiderations: string[];
+  recommendedDesignConsiderations: string[];
+  candidateTechnologyCategories: string[];
+  validationRequirements: string[];
+  defaultAssessment: Partial<DiscoveryAssessmentInput>;
+}
+
 export interface DashboardSummary {
   projectId: string;
   projectName: string;
+  customerMode: CustomerMode;
   assessmentStatus: PhaseStatus;
   recommendedPlatform: string;
   platformIsManualOverride: boolean;
@@ -121,6 +161,7 @@ export type OperationalCapability = 'none' | 'part_time' | 'dedicated_dba' | 'pl
 export type TenancyModel = 'single_tenant' | 'shared_multi_tenant' | 'dedicated_per_tenant';
 export type DataReplicationModel = 'none' | 'active_passive' | 'active_active';
 export type QpsScope = 'aggregate' | 'per_region' | 'per_index';
+export type SimilarityMetric = 'cosine' | 'dot_product' | 'euclidean';
 
 export interface DiscoveryAssessmentInput {
   environment: Environment;
@@ -130,6 +171,7 @@ export interface DiscoveryAssessmentInput {
   chunksPerDocument: number;
   estimatedVectorCount: number;
   embeddingDimension: number;
+  similarityMetric: SimilarityMetric;
   qps: number;
   peakQps: number;
   qpsScope: QpsScope;
@@ -264,6 +306,47 @@ export interface PlainLanguageSummary {
   bottomLine: string;
 }
 
+export type RiskCategory =
+  | 'performance'
+  | 'scalability'
+  | 'security'
+  | 'compliance'
+  | 'availability'
+  | 'cost'
+  | 'migration'
+  | 'data_quality'
+  | 'search_quality'
+  | 'vendor_platform'
+  | 'operations';
+export type RiskSeverity = 'low' | 'medium' | 'high';
+export type RiskStatus = 'open' | 'mitigated' | 'accepted' | 'closed';
+
+export interface RiskEntry {
+  id: string;
+  category: RiskCategory;
+  description: string;
+  impact: RiskSeverity;
+  likelihood: RiskSeverity;
+  mitigation: string;
+  owner?: string;
+  status: RiskStatus;
+  validationRequired: boolean;
+}
+
+export type AssumptionType = 'customer_provided' | 'architect_provided' | 'pattern_default' | 'calculated' | 'directional' | 'unknown';
+export type AssumptionConfidence = 'high' | 'medium' | 'low';
+
+export interface AssumptionEntry {
+  id: string;
+  parameter: string;
+  value: string;
+  source: string;
+  type: AssumptionType;
+  confidence: AssumptionConfidence;
+  impact: string;
+  validationRequired: boolean;
+}
+
 export interface ArchitectureDecisionRecord {
   id: string;
   rulesVersion: string;
@@ -271,8 +354,8 @@ export interface ArchitectureDecisionRecord {
   rationale: string;
   options: ScoredOption[];
   rejectedAlternatives: RankedAlternative[];
-  assumptions: string[];
-  risks: string[];
+  assumptions: AssumptionEntry[];
+  risks: RiskEntry[];
   infrastructureEstimate: InfrastructureEstimate;
   operationalComplexity: string;
   plainLanguageSummary: PlainLanguageSummary | null;
@@ -289,6 +372,10 @@ export interface ArchitectureDecisionRecord {
 
 export interface DiscoveryOutcome {
   assessment: DiscoveryAssessment;
+}
+
+/** Phase 4 - Vector DB Selection & Target Architecture. */
+export interface VectorDbSelectionOutcome {
   adr: ArchitectureDecisionRecord;
 }
 
@@ -337,6 +424,8 @@ export interface ChunkingPreviewResult {
   notes: string[];
 }
 
+export type EmbeddingModelStatus = 'active' | 'deprecated' | 'retired';
+
 export interface EmbeddingModelCatalogEntry {
   id: string;
   label: string;
@@ -346,6 +435,10 @@ export interface EmbeddingModelCatalogEntry {
   languageSupport: string[];
   qualityTier: string;
   modelVersion: string;
+  status: EmbeddingModelStatus;
+  region?: string;
+  evidence?: string;
+  lastVerifiedDate?: string;
 }
 
 export interface EmbeddingProviderCatalogEntry {
@@ -359,7 +452,15 @@ export type MetadataFieldType = 'string' | 'number' | 'boolean' | 'date' | 'json
 export interface MetadataField {
   name: string;
   type: MetadataFieldType;
+  required?: boolean;
+  /** Defaults to true when omitted. */
+  filterable?: boolean;
+  searchable?: boolean;
+  sortable?: boolean;
+  description?: string;
 }
+
+export type DimensionMismatchReason = 'model_quality_requirement' | 'model_migration' | 'benchmark_result' | 'customer_requirement' | 'other';
 
 export interface DataPipelineDesignInput {
   collectionName: string;
@@ -367,6 +468,28 @@ export interface DataPipelineDesignInput {
   embeddingProviderId: string;
   embeddingModelId: string;
   metadataFields: MetadataField[];
+  dimensionMismatchAcknowledged?: boolean;
+  dimensionMismatchReason?: DimensionMismatchReason;
+}
+
+/** The formal Phase 2 -> Phase 3 handoff - see GET /projects/:id/data-pipeline/handoff. */
+export interface Phase3Handoff {
+  vectorCount: number;
+  dimension: number;
+  metric: SimilarityMetric;
+  qps: number;
+  peakQps: number;
+  topK: number;
+  candidateK: number;
+  filterUsage: boolean;
+  hybridSearch: boolean;
+  reranking: boolean;
+  targetP95LatencyMs: number;
+  recallTarget: number;
+  availableMemoryGb: number;
+  candidateIndexFamilies: string[];
+  status: 'READY' | 'READY_WITH_CONDITIONS' | 'BLOCKED';
+  statusReasons: string[];
 }
 
 export interface SqlSchemaOutput {
@@ -440,6 +563,7 @@ export interface DataPipelineDesign extends DataPipelineDesignInput {
   minChunkSize?: number;
   maxChunkSize?: number;
   embeddingDimension: number;
+  similarityMetric: SimilarityMetric;
   maxInputTokens: number;
   costPerMillionTokens: number;
   languageSupport: string[];
@@ -496,6 +620,29 @@ export interface ImpactEstimate {
   memoryEstimateGb: number;
 }
 
+export type Phase3HandoffStatus = 'READY' | 'READY_WITH_CONDITIONS' | 'BLOCKED';
+
+/** The Phase 2->3 handoff plus the one genuinely Phase-3-time input (updateFrequency) - what the engine actually used, persisted verbatim. Only the fields also in CreateIndexDesignInput are user-editable overrides; the rest (metric, status, candidateK, ...) are read-only context carried from Phase 1/2. */
+export interface IndexDesignInputsUsed {
+  vectorCount: number;
+  dimension: number;
+  availableMemoryGb: number;
+  qps: number;
+  recallTarget: number;
+  targetP95LatencyMs: number;
+  topK: number;
+  updateFrequency: UpdateFrequency;
+  metric: SimilarityMetric;
+  peakQps: number;
+  candidateK: number;
+  filterUsage: boolean;
+  hybridSearch: boolean;
+  reranking: boolean;
+  candidateIndexFamilies: IndexType[];
+  status: Phase3HandoffStatus;
+  statusReasons: string[];
+}
+
 export interface IndexDesign {
   id: string;
   version: number;
@@ -507,17 +654,10 @@ export interface IndexDesign {
   impact: ImpactEstimate;
   scalingConsiderations: string[];
   options: ScoredIndexOption[];
+  criteriaWeights: IndexCriteriaScores;
   alternatives: Array<{ indexType: IndexType; reason: string }>;
   updateFrequency: UpdateFrequency;
-  inputsUsed: {
-    vectorCount: number;
-    dimension: number;
-    availableMemoryGb: number;
-    qps: number;
-    recallTarget: number;
-    targetP95LatencyMs: number;
-    topK: number;
-  };
+  inputsUsed: IndexDesignInputsUsed;
   createdAt: string;
 }
 
@@ -686,7 +826,7 @@ export interface CreateCapacityPlanInput {
   monthlyGrowthPercent?: number;
 }
 
-export type ReportType = 'discovery' | 'data-pipeline' | 'index-design' | 'deployment-plan' | 'optimization-report' | 'capacity-plan' | 'complete';
+export type ReportType = 'discovery' | 'vector-db-selection' | 'data-pipeline' | 'index-design' | 'deployment-plan' | 'optimization-report' | 'capacity-plan' | 'complete';
 export type ReportFormat = 'pdf' | 'docx';
 
 export interface AuditLogEntry {

@@ -38,6 +38,19 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           ? (exceptionResponse as { message: string | string[] }).message
           : exceptionResponse ?? 'An unexpected error occurred. Please retry or contact an administrator.';
 
+    // Opt-in escape hatch for a handful of call sites that need the frontend to react to a specific
+    // condition (not just display an error string) - e.g. "confirm this was intentional" flows. Only
+    // present when a thrown exception's body explicitly includes `errorCode`/`details`; every other
+    // exception in the app is unaffected and keeps the plain { statusCode, path, timestamp, message } shape.
+    const errorCode =
+      exceptionResponse && typeof exceptionResponse === 'object' && 'errorCode' in exceptionResponse
+        ? (exceptionResponse as { errorCode: string }).errorCode
+        : undefined;
+    const details =
+      exceptionResponse && typeof exceptionResponse === 'object' && 'details' in exceptionResponse
+        ? (exceptionResponse as { details: unknown }).details
+        : undefined;
+
     this.logger.error(
       `${request.method} ${request.url} -> ${status}: ${JSON.stringify(message)}`,
       exception instanceof Error ? exception.stack : undefined,
@@ -48,6 +61,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       path: request.url,
       timestamp: new Date().toISOString(),
       message,
+      ...(errorCode ? { errorCode, details } : {}),
     });
   }
 }

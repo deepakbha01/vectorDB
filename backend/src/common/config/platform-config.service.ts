@@ -18,6 +18,7 @@ export class PlatformConfigService implements OnModuleInit {
   private embeddings: Record<string, any> = {};
   private indexes: Record<string, any> = {};
   private infrastructure: Record<string, any> = {};
+  private patterns: Record<string, any> = {};
 
   constructor(private readonly config: ConfigService) {}
 
@@ -27,6 +28,7 @@ export class PlatformConfigService implements OnModuleInit {
     this.embeddings = this.load('EMBEDDINGS_CONFIG_PATH', './config/embeddings.yaml');
     this.indexes = this.load('INDEXES_CONFIG_PATH', './config/indexes.yaml');
     this.infrastructure = this.load('INFRASTRUCTURE_CONFIG_PATH', './config/infrastructure.yaml');
+    this.patterns = this.load('PATTERNS_CONFIG_PATH', './config/patterns.yaml');
   }
 
   private load(envKey: string, defaultPath: string): Record<string, any> {
@@ -69,5 +71,10 @@ export class PlatformConfigService implements OnModuleInit {
 
   getCapacityPlanningDefaults(): Record<string, any> {
     return this.thresholds.capacityPlanning ?? {};
+  }
+
+  /** The AI Factory Pattern Library (spec S4) - reusable use-case patterns with configurable defaults, never final decisions. */
+  getPatternCatalog(): Array<Record<string, any>> {
+    return this.patterns.patterns ?? [];
   }
 }

@@ -1,17 +1,15 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { IndexDesign } from './index-design.entity';
+import { IndexDesign, IndexDesignInputs } from './index-design.entity';
 import { CreateIndexDesignDto } from './dto/create-index-design.dto';
 import { ProjectsService } from '../projects/projects.service';
-import { DiscoveryService } from '../discovery/discovery.service';
 import { DataPipelineDesignService } from '../data-pipeline/data-pipeline-design.service';
 import { IndexRecommendationEngineService } from '../index-recommendation-engine/index-recommendation-engine.service';
 import { AuthenticatedUser } from '../auth/auth.service';
 import { User } from '../users/user.entity';
 import { Project } from '../projects/project.entity';
 import { ProjectPhase, PhaseStatus } from '../projects/enums/project-status.enum';
-import { IndexRecommendationInput } from '../index-recommendation-engine/index-recommendation.types';
 
 @Injectable()
 export class IndexDesignService {
@@ -20,7 +18,6 @@ export class IndexDesignService {
   constructor(
     @InjectRepository(IndexDesign) private readonly designs: Repository<IndexDesign>,
     private readonly projectsService: ProjectsService,
-    private readonly discoveryService: DiscoveryService,
     private readonly dataPipelineDesignService: DataPipelineDesignService,
     private readonly engine: IndexRecommendationEngineService,
   ) {}
@@ -73,26 +70,28 @@ export class IndexDesignService {
     return this.designs.find({ where: { project: { id: projectId } }, order: { version: 'DESC' } });
   }
 
-  private async resolveInput(
-    projectId: string,
-    requester: AuthenticatedUser,
-    dto: CreateIndexDesignDto,
-  ): Promise<IndexRecommendationInput> {
-    const discoveryOutcome = await this.discoveryService.getLatest(projectId, requester);
-    if (!discoveryOutcome) {
-      throw new BadRequestException('Complete the Phase 1 Discovery assessment before running Index Design.');
+  /**
+   * Resolves the Phase 3 engine's input from the formal Phase 2 -> Phase 3
+   * handoff (DataPipelineDesignService.buildPhase3Handoff) rather than reading
+   * Discovery/Data Pipeline Design fields directly - a BLOCKED handoff status
+   * (either prerequisite phase incomplete) now actually stops Index Design,
+   * instead of silently falling back to partial data.
+   */
+  private async resolveInput(projectId: string, requester: AuthenticatedUser, dto: CreateIndexDesignDto): Promise<IndexDesignInputs> {
+    const handoff = await this.dataPipelineDesignService.buildPhase3Handoff(projectId, requester);
+    if (handoff.status === 'BLOCKED') {
+      throw new BadRequestException(`Cannot run Index Design: ${handoff.statusReasons.join(' ')}`);
     }
-    const pipelineDesign = await this.dataPipelineDesignService.getLatest(projectId, requester);
-    const { assessment } = discoveryOutcome;
 
     return {
-      vectorCount: dto.vectorCount ?? assessment.estimatedVectorCount,
-      dimension: dto.dimension ?? pipelineDesign?.embeddingDimension ?? assessment.embeddingDimension,
-      availableMemoryGb: dto.availableMemoryGb ?? assessment.availableRamGb,
-      qps: dto.qps ?? Math.max(assessment.qps, assessment.peakQps),
-      recallTarget: dto.recallTarget ?? assessment.recallTarget,
-      targetP95LatencyMs: dto.targetP95LatencyMs ?? assessment.targetP95LatencyMs,
-      topK: dto.topK ?? assessment.topK,
+      ...handoff,
+      vectorCount: dto.vectorCount ?? handoff.vectorCount,
+      dimension: dto.dimension ?? handoff.dimension,
+      availableMemoryGb: dto.availableMemoryGb ?? handoff.availableMemoryGb,
+      qps: dto.qps ?? Math.max(handoff.qps, handoff.peakQps),
+      recallTarget: dto.recallTarget ?? handoff.recallTarget,
+      targetP95LatencyMs: dto.targetP95LatencyMs ?? handoff.targetP95LatencyMs,
+      topK: dto.topK ?? handoff.topK,
       updateFrequency: dto.updateFrequency,
     };
   }

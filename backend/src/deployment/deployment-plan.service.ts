@@ -37,7 +37,7 @@ export class DeploymentPlanService {
   async submitPlan(projectId: string, requester: AuthenticatedUser): Promise<DeploymentPlan> {
     const project = await this.projectsService.findOne(projectId, requester);
     if (project.platform === VectorPlatform.UNDETERMINED) {
-      throw new BadRequestException('Complete Phase 1 Discovery (or manually select a platform) before Implementation.');
+      throw new BadRequestException('Complete Phase 4 Vector DB Selection (or manually select a platform) before Implementation.');
     }
     if (!IMPLEMENTED_BEYOND_DISCOVERY.has(project.platform)) {
       // Defensive only - every VectorPlatform value other than UNDETERMINED is currently in this set.
@@ -60,6 +60,7 @@ export class DeploymentPlanService {
       pipelineDesign.collectionName,
       indexDesign.decision,
       indexDesign.configuration,
+      pipelineDesign.similarityMetric,
     );
 
     // SQL-based platforms store `{ ddl }`; API/SDK-config-based platforms store `{ schema }` (see GeneratedSchemas).
@@ -147,9 +148,10 @@ export class DeploymentPlanService {
     await adapter.createSchema({
       collectionOrTableName: pipelineDesign.collectionName,
       dimension: pipelineDesign.embeddingDimension,
+      metric: pipelineDesign.similarityMetric,
       metadataFields: pipelineDesign.metadataFields,
     });
-    await adapter.createVectorIndex(pipelineDesign.collectionName, indexDesign.decision, indexDesign.configuration);
+    await adapter.createVectorIndex(pipelineDesign.collectionName, indexDesign.decision, indexDesign.configuration, pipelineDesign.similarityMetric);
 
     plan.executed = true;
     plan.executedAt = new Date();

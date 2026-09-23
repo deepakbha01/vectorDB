@@ -12,6 +12,7 @@ import { SchemaGeneratorService } from '../../schema-generator/schema-generator.
 import { IndexTuningParameter } from '../../schema-generator/schema-generator.types';
 import { IndexType } from '../../index-recommendation-engine/enums/index-type.enum';
 import { VectorPlatform } from '../../projects/enums/platform.enum';
+import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
 import { splitSqlStatements } from '../../common/sql-statements';
 
@@ -80,6 +81,7 @@ export class OracleVectorAdapter implements VectorDatabaseAdapter, OnModuleDestr
     const { oracle } = this.schemaGenerator.generateAll({
       collectionName: definition.collectionOrTableName,
       dimension: definition.dimension,
+      metric: definition.metric,
       metadataFields: definition.metadataFields as SchemaDefinition['metadataFields'] as any,
     });
     const connection = await (await this.getPool()).getConnection();
@@ -92,8 +94,8 @@ export class OracleVectorAdapter implements VectorDatabaseAdapter, OnModuleDestr
     }
   }
 
-  async createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[]): Promise<void> {
-    const artifact = this.schemaGenerator.generateIndexArtifact(VectorPlatform.ORACLE, collectionOrTableName, indexType, parameters);
+  async createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[], metric?: SimilarityMetric): Promise<void> {
+    const artifact = this.schemaGenerator.generateIndexArtifact(VectorPlatform.ORACLE, collectionOrTableName, indexType, parameters, metric);
     const connection = await (await this.getPool()).getConnection();
     try {
       for (const statement of splitSqlStatements(artifact.statement)) {

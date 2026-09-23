@@ -2,6 +2,7 @@ import { Column, CreateDateColumn, Entity, ManyToOne, PrimaryGeneratedColumn, Up
 import { User } from '../users/user.entity';
 import { VectorPlatform } from './enums/platform.enum';
 import { PhaseStatus, ProjectPhase } from './enums/project-status.enum';
+import { CustomerMode } from './enums/customer-mode.enum';
 
 export type PhaseStatusMap = Record<ProjectPhase, PhaseStatus>;
 
@@ -25,6 +26,14 @@ export class Project {
 
   @Column({ nullable: true })
   industry?: string;
+
+  /** AI Factory Pattern Library entry id (backend/config/patterns.yaml) this project started from, if any. Always optional - a pattern only seeds defaults, never a hard requirement. */
+  @Column({ nullable: true })
+  patternId?: string;
+
+  /** New/greenfield vs. existing/modernization (spec S3). Existing-customer technical context lives on the Phase 1 Discovery assessment's existing-technology fields, not here. */
+  @Column({ type: 'enum', enum: CustomerMode, default: CustomerMode.NEW })
+  customerMode: CustomerMode;
 
   @ManyToOne(() => User, { eager: true, onDelete: 'CASCADE' })
   owner: User;

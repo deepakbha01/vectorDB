@@ -1,4 +1,4 @@
-import { CriteriaScores, DecisionStatus, FitRating, PlainLanguageSummary } from './recommendation.types';
+import { CriteriaScores, DecisionStatus, FitRating, PlainLanguageSummary, RiskEntry } from './recommendation.types';
 
 /**
  * Presentation-only bucketing for translating a 0-1 score into a traffic-light
@@ -153,6 +153,19 @@ function verdictFor(totalScore: number, bands: { excellentFitMin: number; goodFi
 }
 
 /**
+ * Turns the engine's internal tie-break stage name into a short, customer-facing phrase.
+ * Returns null for the "every stage exhausted, fell back to catalog order" case, since that
+ * one has no real differentiator to name - see buildConditionalBadge and buildConfidence.
+ */
+function tieBreakPhrase(tieBreakStage: string | null): string | null {
+  if (!tieBreakStage || tieBreakStage.startsWith('catalog order')) return null;
+  if (tieBreakStage.includes('cost')) return 'Cost Efficiency';
+  if (tieBreakStage.includes('existing-stack')) return 'Fit With Your Existing Stack';
+  if (tieBreakStage.includes('operational model')) return 'Operational Simplicity';
+  return 'A Secondary Criterion';
+}
+
+/**
  * A raw score alone cannot be trusted as "Excellent Fit": it can land in the top band
  * while an individual criterion is weak, or while real open validations (budget, multi-
  * region, compliance) remain unresolved. This caps the badge honestly instead.
@@ -163,9 +176,18 @@ function buildConditionalBadge(
   openValidations: string[],
   decisionStatus: DecisionStatus,
   tiedLabels: string[],
+  winnerLabel: string,
+  tieBreakStage: string | null,
 ): string | null {
   if (decisionStatus === 'tied') {
-    return `Recommended platforms: ${tiedLabels.join(' / ')} — Tied`;
+    const others = tiedLabels.filter((l) => l !== winnerLabel);
+    const phrase = tieBreakPhrase(tieBreakStage);
+    if (phrase && others.length > 0) {
+      return `${winnerLabel} Recommended — Tied with ${others.join(', ')} on Core Fit, Won on ${phrase}`;
+    }
+    // Every tie-break stage was also exhausted (or no distinct "other" platform to name) -
+    // an honestly unresolved tie, not a confident pick either way.
+    return `Recommended platforms: ${tiedLabels.join(' / ')} — Tied (Architect Review Recommended)`;
   }
   if (verdict !== 'Excellent Fit') {
     return null;
@@ -188,11 +210,12 @@ export function buildPlainLanguageSummary(
   winnerLabel: string,
   totalScore: number,
   criteriaScores: CriteriaScores,
-  risks: string[],
+  risks: RiskEntry[],
   verdictBands: { excellentFitMin: number; goodFitMin: number; workableFitMin: number },
   openValidations: string[] = [],
   decisionStatus: DecisionStatus = 'single',
   tiedLabels: string[] = [],
+  tieBreakStage: string | null = null,
 ): PlainLanguageSummary {
   const scorecard = CRITERIA_ORDER.map((key) => {
     const rating = rate(criteriaScores[key]);
@@ -211,7 +234,15 @@ export function buildPlainLanguageSummary(
   const costAndEffort = `${CRITERIA_META.operationalComplexity.explanation[rate(criteriaScores.operationalComplexity)]} ${CRITERIA_META.cost.explanation[rate(criteriaScores.cost)]}`;
 
   const verdict = verdictFor(totalScore, verdictBands);
-  const conditionalBadge = buildConditionalBadge(verdict, criteriaScores, openValidations, decisionStatus, tiedLabels);
+  const conditionalBadge = buildConditionalBadge(
+    verdict,
+    criteriaScores,
+    openValidations,
+    decisionStatus,
+    tiedLabels,
+    winnerLabel,
+    tieBreakStage,
+  );
   const bottomLine =
     verdict === 'Weak Fit'
       ? `${winnerLabel} is the strongest of the options evaluated, but does not represent a strong overall fit. We recommend revisiting the project requirements or considering a manual platform override.`
@@ -225,7 +256,7 @@ export function buildPlainLanguageSummary(
     headline,
     scorecard,
     costAndEffort,
-    risks: risks.map(simplifyRisk),
+    risks: risks.map((r) => simplifyRisk(r.description)),
     bottomLine,
   };
 }

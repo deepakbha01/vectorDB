@@ -39,4 +39,9 @@ export class DataPipelineDesignController {
     }
     return design;
   }
+
+  @Get('handoff')
+  handoff(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.designService.buildPhase3Handoff(projectId, user);
+  }
 }
