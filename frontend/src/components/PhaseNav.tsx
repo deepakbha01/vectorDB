@@ -128,6 +128,14 @@ export function PhaseNav({ project }: { project: Project }) {
               </NavLink>
             </li>
           )}
+          {features.aiFactory && (
+            <li>
+              <NavLink to={`/projects/${project.id}/operations-model`} className={({ isActive }) => (isActive ? 'active' : '')}>
+                Operations Model
+                {lineage.operations_model === 'stale' && <span className="status-pill danger" title="Targets, capacity or a design changed since this model">out of date</span>}
+              </NavLink>
+            </li>
+          )}
         </ul>
       </div>
       <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid #dfe3e8' }}>

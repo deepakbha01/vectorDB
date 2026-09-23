@@ -1,0 +1,53 @@
+# AI Factory Wave 10 - AI Operations Model (spec §14).
+# Read only by the ai-factory module.
+#
+# Every figure below is a planning ASSUMPTION used to test whether the design
+# can meet its RTO, RPO and SLA on paper. None replaces a DR rehearsal or an
+# availability measurement - the assessment says so wherever it uses them.
+
+rulesVersion: operations-2026.09-1
+
+# Availability of one component in the request path (percent), by how it runs.
+# n replicas are modelled as parallel redundancy, 1 - (1 - singleReplica)^n.
+# That assumes independent failures (optimistic); the site / region below is
+# the shared failure domain that caps it.
+componentAvailability:
+  singleReplica: 99.5
+  managedService: 99.9       # typical managed-service SLA
+  managedApi: 99.9           # typical third-party model API SLA
+# Availability of the place it runs.
+siteAvailability:
+  onPremSingleSite: 99.9
+  onPremMultiSite: 99.99
+  cloudRegion: 99.99
+
+recovery:
+  provisioningMinutes: { cloud: 30, on_premises: 120 }   # stand up replacement capacity (cold DR)
+  restoreGbPerMinute: 2                                  # vector data restore from backup
+  modelLoadGbPerMinute: 4                                # pull + load model weights
+  validationMinutes: 15                                  # smoke tests before taking traffic
+  warmFailoverMinutes: 15
+  activeFailoverMinutes: 2
+
+backup:
+  snapshotIntervalMinutes: 60        # scheduled snapshots can meet an RPO at or above this
+  continuousReplicationRpoMinutes: 1 # log shipping / async replicas below it
+  # an RPO of 0 needs synchronous replication across failure domains
+
+capacityThresholds:
+  vectorMemoryPercent: 75
+  storagePercent: 75
+  cpuPercent: 70
+
+# Operational load of what the team must run, against what it can run.
+operationalLoad:
+  points:
+    selfHostedGpuServing: 3
+    buildKubernetes: 2           # on-premises Kubernetes that does not exist yet
+    selfManagedVectorDb: 1
+    agentsThatAct: 1             # agent tools with write / external actions
+    hybrid: 1
+    standbyDr: 1                 # warm or active DR to keep in sync
+  capacity: { none: 0, part_time: 2, dedicated_team: 5, platform_team: 8 }
+# At or above this availability target, incidents need 24x7 on-call.
+onCallAvailabilityThreshold: 99.9

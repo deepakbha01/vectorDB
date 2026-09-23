@@ -23,12 +23,13 @@ import { AiRagAgentDesign } from './rag-agent/rag-agent.entity';
 import { AiSecurityAssessment } from './security/security.entity';
 import { AiPerformanceAssessment } from './performance/performance.entity';
 import { AiFinopsAssessment } from './finops/finops.entity';
+import { AiOperationsModel } from './operations/operations.entity';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 import { ChunkingStrategy } from '../chunking/enums/chunking-strategy.enum';
 import { EmbeddingModelFacts } from './eligibility/eligibility.rules';
 import { computeLineage } from './lineage.engine';
 import { analyseImpact } from './impact.engine';
-import { fromDataPipelineDesign, fromIndexDesign, fromInferenceArchitecture, fromInferenceAssessment, fromInfrastructureDesign, fromRagAgentDesign, fromSecurityAssessment, fromPerformanceAssessment, fromFinopsAssessment, fromModelSelection, fromVectorDbSelection } from './decision-record.adapters';
+import { fromDataPipelineDesign, fromIndexDesign, fromInferenceArchitecture, fromInferenceAssessment, fromInfrastructureDesign, fromRagAgentDesign, fromSecurityAssessment, fromPerformanceAssessment, fromFinopsAssessment, fromOperationsModel, fromModelSelection, fromVectorDbSelection } from './decision-record.adapters';
 import {
   AiFactoryOverview,
   AssessmentState,
@@ -75,6 +76,7 @@ export class AiFactoryService {
     @InjectRepository(AiSecurityAssessment) private readonly securityAssessments: Repository<AiSecurityAssessment>,
     @InjectRepository(AiPerformanceAssessment) private readonly performanceAssessments: Repository<AiPerformanceAssessment>,
     @InjectRepository(AiFinopsAssessment) private readonly finopsAssessments: Repository<AiFinopsAssessment>,
+    @InjectRepository(AiOperationsModel) private readonly operationsModels: Repository<AiOperationsModel>,
     private readonly platformConfig: PlatformConfigService,
   ) {}
 
@@ -97,6 +99,7 @@ export class AiFactoryService {
       security_governance: this.securityAssessments,
       performance_benchmark: this.performanceAssessments,
       finops: this.finopsAssessments,
+      operations_model: this.operationsModels,
     }[phase];
   }
 
@@ -223,6 +226,9 @@ export class AiFactoryService {
     const finops = await this.latest<AiFinopsAssessment>('finops', projectId);
     if (finops) records.push(fromFinopsAssessment(finops));
 
+    const operations = await this.latest<AiOperationsModel>('operations_model', projectId);
+    if (operations) records.push(fromOperationsModel(operations));
+
     return records;
   }
 
@@ -297,7 +303,7 @@ export class AiFactoryService {
     };
     const later = (wave: number): StateSection => ({ status: 'not_yet_available', coverage: 'none', source: null, summary: {}, plannedWave: wave });
 
-    const [d, p, i, adr, dep, opt, cap, inf, wp, ms, ia, infra, ra, sec, perf, fin] = await Promise.all([
+    const [d, p, i, adr, dep, opt, cap, inf, wp, ms, ia, infra, ra, sec, perf, fin, ops] = await Promise.all([
       this.latest<DiscoveryAssessment>('discovery', project.id),
       this.latest<DataPipelineDesign>('data_embeddings', project.id),
       this.latest<IndexDesign>('index_design', project.id),
@@ -314,6 +320,7 @@ export class AiFactoryService {
       this.latest<AiSecurityAssessment>('security_governance', project.id),
       this.latest<AiPerformanceAssessment>('performance_benchmark', project.id),
       this.latest<AiFinopsAssessment>('finops', project.id),
+      this.latest<AiOperationsModel>('operations_model', project.id),
     ]);
     const profileValue = (k: keyof AiWorkloadProfile['inputs']) => wp?.inputs[k]?.value ?? null;
     const wpResult = wp?.result;
@@ -421,7 +428,15 @@ export class AiFactoryService {
         summary: { vectorDbBudget: adr?.budgetFeasibility ?? null, inferenceSelfHostedMonthlyUsd: inf?.result.recommendedGpuOption?.monthlyTotalUsd ?? null, inferenceManagedApiMonthlyUsd: inf?.result.managedApi.monthlyUsd ?? null, evidence: 'estimated' },
         plannedWave: 9,
       },
-      operations: { ...section('capacity', 'partial', cap ? { sharding: cap.shardingRecommendation.strategy, horizonsMonths: cap.forecast.map((f) => f.horizonMonths), ha: cap.haRecommendation.length, dr: cap.drRecommendation.length } : {}), plannedWave: 10 },
+      operations: ops
+        ? section('operations_model', 'full', {
+            verdict: ops.result.verdict.status,
+            estimatedAvailabilityPercent: ops.result.definitions.sla.estimatedPercent,
+            estimatedRecoveryMinutes: ops.result.definitions.rto.estimatedMinutes,
+            operationalLoad: `${ops.result.operationalLoad.total} / ${ops.result.operationalLoad.capacity}`,
+            gaps: ops.result.gaps.length,
+          })
+        : { ...section('capacity', 'partial', cap ? { sharding: cap.shardingRecommendation.strategy, horizonsMonths: cap.forecast.map((f) => f.horizonMonths), ha: cap.haRecommendation.length, dr: cap.drRecommendation.length } : {}), plannedWave: 10 },
       recommendation: later(11),
     };
   }

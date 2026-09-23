@@ -17,6 +17,7 @@ import { AiWorkloadProfile } from '../workload-profile/workload-profile.entity';
 import { AiInferenceArchitecture } from '../inference-architecture/inference-architecture.entity';
 import { AiInfrastructureDesign } from '../infrastructure/infrastructure.entity';
 import { vectorPlatforms } from '../infrastructure/infrastructure.service';
+import { drTier } from '../operations/dr-tier';
 import { InfrastructureCatalogue, TargetId } from '../infrastructure/infrastructure.types';
 import { AiFinopsAssessment } from './finops.entity';
 import { assessFinops } from './finops.engine';
@@ -117,12 +118,7 @@ export function resolveFinopsContext(x: FinopsInputs, c: FinopsCatalogues): Fino
   }
 
   // ---------------------------------------------------------- DR tier
-  const rto = d?.rtoMinutes ?? null;
-  const dr: FinopsContext['dr'] = d?.requiresMultiRegion
-    ? { tier: 'active', reason: 'multi-region required (Discovery)' }
-    : d?.regionalFailoverRequired || (rto !== null && rto <= c.infrastructure.assumptions.warmStandbyRtoMinutes)
-      ? { tier: 'warm', reason: d?.regionalFailoverRequired ? 'regional failover required (Discovery)' : `RTO ${rto} min (Discovery)` }
-      : { tier: 'cold', reason: rto !== null ? `RTO ${rto} min allows restore from backup (Discovery)` : 'no RTO stated - assumed restore from backup' };
+  const dr: FinopsContext['dr'] = drTier(d, c.infrastructure.assumptions.warmStandbyRtoMinutes);
 
   // ----------------------------------------------------- placements
   const infra = x.infrastructure?.result;

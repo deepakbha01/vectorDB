@@ -12,6 +12,7 @@ import { RagAgentCatalogue } from './rag-agent/rag-agent.types';
 import { SecurityCatalogue } from './security/security.types';
 import { PerformanceCatalogue } from './performance/performance.types';
 import { FinopsCatalogue } from './finops/finops.types';
+import { OperationsCatalogue } from './operations/operations.types';
 
 /**
  * Loads config/ai-factory.yaml (dependency graph, parameter impact map,
@@ -21,7 +22,8 @@ import { FinopsCatalogue } from './finops/finops.types';
  * config/rag-agent.yaml (RAG / agent patterns) and
  * config/security-governance.yaml (policy rules and control areas) and
  * config/performance.yaml (benchmark metrics and assumed targets) and
- * config/finops.yaml (directional unit rates). Separate from
+ * config/finops.yaml (directional unit rates) and
+ * config/operations.yaml (availability, recovery and operational-load rules). Separate from
  * PlatformConfigService so the vector engines' configuration is untouched.
  */
 @Injectable()
@@ -34,6 +36,7 @@ export class AiFactoryConfigService implements OnModuleInit {
   private security: SecurityCatalogue = {} as SecurityCatalogue;
   private performance: PerformanceCatalogue = {} as PerformanceCatalogue;
   private finops: FinopsCatalogue = {} as FinopsCatalogue;
+  private operations: OperationsCatalogue = {} as OperationsCatalogue;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -54,6 +57,8 @@ export class AiFactoryConfigService implements OnModuleInit {
     this.performance = yaml.load(fs.readFileSync(performancePath, 'utf8')) as PerformanceCatalogue;
     const finopsPath = this.config.get<string>('AI_FACTORY_FINOPS_CONFIG_PATH') ?? './config/finops.yaml';
     this.finops = yaml.load(fs.readFileSync(finopsPath, 'utf8')) as FinopsCatalogue;
+    const operationsPath = this.config.get<string>('AI_FACTORY_OPERATIONS_CONFIG_PATH') ?? './config/operations.yaml';
+    this.operations = yaml.load(fs.readFileSync(operationsPath, 'utf8')) as OperationsCatalogue;
   }
 
   /** Test seams. */
@@ -115,6 +120,14 @@ export class AiFactoryConfigService implements OnModuleInit {
 
   getFinopsCatalogue(): FinopsCatalogue {
     return this.finops;
+  }
+
+  setOperationsCatalogue(operations: OperationsCatalogue) {
+    this.operations = operations;
+  }
+
+  getOperationsCatalogue(): OperationsCatalogue {
+    return this.operations;
   }
 
   getIndexEligibilityRules(): IndexEligibilityRules {

@@ -24,6 +24,7 @@ import { AiRagAgentDesign } from './ai-factory/rag-agent/rag-agent.entity';
 import { AiSecurityAssessment } from './ai-factory/security/security.entity';
 import { AiPerformanceAssessment } from './ai-factory/performance/performance.entity';
 import { AiFinopsAssessment } from './ai-factory/finops/finops.entity';
+import { AiOperationsModel } from './ai-factory/operations/operations.entity';
 
 config();
 
@@ -71,6 +72,7 @@ export const AppDataSource = new DataSource({
     AiSecurityAssessment,
     AiPerformanceAssessment,
     AiFinopsAssessment,
+    AiOperationsModel,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,
