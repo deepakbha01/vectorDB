@@ -1,0 +1,112 @@
+# AI Factory Wave 5 - deployment targets for the Infrastructure Decision
+# Record (spec §9). Read only by the ai-factory module (the vector engines'
+# infrastructure.yaml is untouched).
+#
+# Technology-neutral: every target and platform is judged by the same rules;
+# none is preferred in code. Service names are for readability. GPU
+# availability is DIRECTIONAL - confirm regional capacity and quota (or
+# on-premises procurement lead time) before committing. Tiers are relative
+# 1-5 planning ratings (5 = most / easiest).
+
+rulesVersion: infrastructure-2026.09-1
+
+targets:
+  on_premises:
+    label: On-premises
+    platforms:
+      kubernetes: Kubernetes platform (e.g. OpenShift, Rancher, upstream)
+      vm: Virtualisation platform VMs
+    gpus: [l4, a10g, l40s, a100-40, a100-80, h100-80, h200-141]   # any, subject to procurement
+    availabilityZones: false          # failure domains depend on the customer's sites
+    multiRegion: false
+    privateNetworking: Data-centre network segmentation and firewalls
+    keyManagement: On-premises HSM / key management service
+    backup: Enterprise backup to object storage or tape
+    elasticity: 1
+    operationalSimplicity: 1
+    dataControl: 5
+  azure:
+    label: Azure
+    platforms:
+      kubernetes: Azure Kubernetes Service (AKS)
+      vm: Azure Virtual Machines
+      managed: Azure AI services / Azure managed databases
+    gpus: [a100-80, h100-80, h200-141]
+    availabilityZones: true
+    multiRegion: true
+    privateNetworking: Private Link / private endpoints
+    keyManagement: Azure Key Vault (customer-managed keys)
+    backup: Azure Backup
+    elasticity: 5
+    operationalSimplicity: 4
+    dataControl: 3
+  aws:
+    label: AWS
+    platforms:
+      kubernetes: Amazon EKS
+      vm: Amazon EC2
+      managed: AWS managed AI services / Amazon RDS
+    gpus: [l4, a10g, l40s, a100-40, a100-80, h100-80, h200-141]
+    availabilityZones: true
+    multiRegion: true
+    privateNetworking: AWS PrivateLink / VPC endpoints
+    keyManagement: AWS KMS (customer-managed keys)
+    backup: AWS Backup
+    elasticity: 5
+    operationalSimplicity: 4
+    dataControl: 3
+  oci:
+    label: OCI
+    platforms:
+      kubernetes: OCI Kubernetes Engine (OKE)
+      vm: OCI Compute
+      managed: OCI AI services / OCI managed databases
+    gpus: [l40s, a100-40, a100-80, h100-80, h200-141]
+    availabilityZones: true
+    multiRegion: true
+    privateNetworking: Private endpoints / service gateway
+    keyManagement: OCI Vault
+    backup: OCI Block Volume / Object Storage backup
+    elasticity: 4
+    operationalSimplicity: 4
+    dataControl: 3
+  gcp:
+    label: GCP
+    platforms:
+      kubernetes: Google Kubernetes Engine (GKE)
+      vm: Compute Engine
+      managed: Vertex AI / Cloud SQL
+    gpus: [l4, a100-40, a100-80, h100-80, h200-141]
+    availabilityZones: true
+    multiRegion: true
+    privateNetworking: Private Service Connect / VPC Service Controls
+    keyManagement: Cloud KMS (customer-managed keys)
+    backup: Backup and DR Service
+    elasticity: 5
+    operationalSimplicity: 4
+    dataControl: 3
+
+# Fully managed vector SaaS - where each is offered (directional).
+saasAvailability:
+  pinecone: [aws, azure, gcp]
+  mongodb_atlas: [aws, azure, gcp]
+
+# Minimum ops capability (inference assessment scale) to run a platform without it becoming a CONDITION.
+platformOpsRequirement: { kubernetes: dedicated_team, vm: part_time, managed: none, saas: none, in_app: none }
+opsCapabilityOrder: [none, part_time, dedicated_team, platform_team]
+
+scoringWeights:
+  elasticity: 0.20
+  operationalSimplicity: 0.25
+  dataControl: 0.20
+  availability: 0.15
+  coLocation: 0.20
+# Data control counts more for restricted data (weight multiplier, re-normalised).
+restrictedDataControlMultiplier: 2
+
+# Sizing assumptions for components the upstream phases do not size.
+assumptions:
+  applicationNodes: 2
+  applicationVcpusPerNode: 4
+  modelVersionsKept: 2
+  warmStandbyRtoMinutes: 60

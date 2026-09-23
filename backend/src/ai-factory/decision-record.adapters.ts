@@ -6,6 +6,7 @@ import { InferenceAssessment } from '../inference/inference-assessment.entity';
 import { DataPipelineDesign } from '../data-pipeline/data-pipeline-design.entity';
 import { AiModelSelection } from './model-selection/model-selection.entity';
 import { AiInferenceArchitecture } from './inference-architecture/inference-architecture.entity';
+import { AiInfrastructureDesign } from './infrastructure/infrastructure.entity';
 import { EmbeddingEligibilityRules, EmbeddingModelFacts, IndexEligibilityRules, embeddingEligibility, indexEligibility, scoreEmbedding } from './eligibility/eligibility.rules';
 import { DecisionAlternative, DecisionCandidate, DecisionRecord, Eligibility, EvidenceType } from './ai-factory.types';
 
@@ -405,6 +406,39 @@ export function fromInferenceArchitecture(a: AiInferenceArchitecture): DecisionR
       ...(arch?.sla.latency.map((l) => ({ label: `${l.metric} P50 / P95 / P99`, value: `${l.p50} / ${l.p95} / ${l.p99} ms`, evidenceType: 'estimated' as const })) ?? []),
       ...(arch?.cost ?? []),
     ],
+    benchmarkRequired: r.benchmarkRequired,
+    wouldChangeIf: r.wouldChangeIf,
+    gaps: [],
+  };
+}
+
+// ------------------------------------------------------------ Infrastructure
+/** Spec §9 Infrastructure Decision Record, in the standard format: the decision is the placement of each component. */
+export function fromInfrastructureDesign(d: AiInfrastructureDesign): DecisionRecord {
+  const r = d.result;
+  const all = r.placements.flatMap((p) => p.candidates.map((c) => ({ id: `${p.component}:${c.target}:${c.platform}`, label: `${p.componentLabel}: ${c.label}`, eligibility: c.eligibility, score: c.score, notes: [...c.failures, ...c.conditions, ...c.notes] })));
+  // Alternatives: the best other usable placement for each component, at most two overall (spec §17).
+  const alternatives = pickAlternatives(
+    r.placements.flatMap((p) => {
+      const alt = p.candidates.find((c) => c.eligibility !== 'not_eligible' && (c.target !== p.chosen?.target || c.platform !== p.chosen?.platform));
+      return alt ? [{ id: `${p.component}:${alt.target}:${alt.platform}`, label: `${p.componentLabel}: ${alt.label}`, eligibility: alt.eligibility, reason: [...alt.conditions, `score ${alt.score}`][0] }] : [];
+    }),
+    null,
+  );
+  return {
+    phase: 'infrastructure_design',
+    title: 'Infrastructure and deployment',
+    source: { deliverableId: d.id, version: d.version, createdAt: d.createdAt },
+    status: r.deploymentModel.kind === 'not_feasible' ? 'not_feasible' : r.placements.some((p) => p.chosen?.eligibility === 'conditional') ? 'conditional' : 'decided',
+    recommendation: r.deploymentModel.kind === 'not_feasible' ? null : { id: r.deploymentModel.targets.join('+'), label: r.deploymentModel.summary },
+    confidence: r.confidence,
+    why: r.placements.map((p) => `${p.componentLabel}: ${p.why}`),
+    candidates: all,
+    alternatives,
+    tradeoffs: [...r.sections.availability.slice(0, 2), ...r.sections.network.filter((n) => n.startsWith('Private interconnect'))],
+    risks: r.placements.flatMap((p) => (p.chosen?.conditions ?? []).map((c) => `${p.componentLabel}: ${c}`)),
+    assumptions: Object.entries(d.sources).map(([k, s]) => ({ statement: `${k}: ${s.detail}`, evidenceType: 'assumption' as const })),
+    evidence: r.sizing,
     benchmarkRequired: r.benchmarkRequired,
     wouldChangeIf: r.wouldChangeIf,
     gaps: [],

@@ -23,13 +23,19 @@ import { ModelSelectionController } from './model-selection/model-selection.cont
 import { AiInferenceArchitecture } from './inference-architecture/inference-architecture.entity';
 import { InferenceArchitectureService } from './inference-architecture/inference-architecture.service';
 import { InferenceArchitectureController } from './inference-architecture/inference-architecture.controller';
+import { AiInfrastructureDesign } from './infrastructure/infrastructure.entity';
+import { InfrastructureDesignService } from './infrastructure/infrastructure.service';
+import { InfrastructureDesignController } from './infrastructure/infrastructure.controller';
+import { InferenceModule } from '../inference/inference.module';
 
 /**
  * AI Factory foundations (Wave 1), AI Workload Profile (Wave 2), Model
- * Selection (Wave 3) and Inference Architecture (Wave 4). Registers repositories for the existing
+ * Selection (Wave 3), Inference Architecture (Wave 4) and Infrastructure
+ * (Wave 5). Registers repositories for the existing
  * deliverable entities for READ access only; the only tables this module
  * writes are ai_factory_state_snapshots, ai_workload_profiles,
- * ai_model_selections and ai_inference_architectures.
+ * ai_model_selections, ai_inference_architectures and
+ * ai_infrastructure_designs.
  */
 @Module({
   imports: [
@@ -46,11 +52,13 @@ import { InferenceArchitectureController } from './inference-architecture/infere
       AiWorkloadProfile,
       AiModelSelection,
       AiInferenceArchitecture,
+      AiInfrastructureDesign,
     ]),
     ProjectsModule,
+    InferenceModule,
   ],
-  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService, InferenceArchitectureService],
-  controllers: [AiFactoryController, WorkloadProfileController, ModelSelectionController, InferenceArchitectureController],
+  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService, InferenceArchitectureService, InfrastructureDesignService],
+  controllers: [AiFactoryController, WorkloadProfileController, ModelSelectionController, InferenceArchitectureController, InfrastructureDesignController],
   exports: [AiFactoryConfigService],
 })
 export class AiFactoryModule {}

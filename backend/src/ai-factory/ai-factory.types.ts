@@ -16,7 +16,8 @@ export type PhaseKey =
   | 'inference'
   | 'workload_profile'
   | 'model_selection'
-  | 'inference_architecture';
+  | 'inference_architecture'
+  | 'infrastructure_design';
 
 export type DependencyKind = 'hard' | 'advisory';
 
