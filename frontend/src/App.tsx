@@ -18,6 +18,7 @@ import { ReportsPage } from './pages/ReportsPage';
 import { AuditLogPage } from './pages/AuditLogPage';
 import { UsersManagementPage } from './pages/UsersManagementPage';
 import { InferencePage } from './pages/InferencePage';
+import { AiFactoryPage } from './pages/AiFactoryPage';
 
 export function App() {
   return (
@@ -42,6 +43,7 @@ export function App() {
           <Route path="/projects/:id/reports" element={<ReportsPage />} />
           <Route path="/projects/:id/audit-log" element={<AuditLogPage />} />
           <Route path="/projects/:id/inference" element={<InferencePage />} />
+          <Route path="/projects/:id/ai-factory" element={<AiFactoryPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

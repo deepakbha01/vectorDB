@@ -1,5 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { PhaseStatus, Project, ProjectPhase } from '../api/client';
+import { useFeatures } from '../api/features';
+import { PhaseKey, useLineage } from '../api/aiFactory';
 
 const PHASES: Array<{ key: ProjectPhase; label: string; path?: (projectId: string) => string }> = [
   { key: 'discovery', label: '1. Discovery', path: (id) => `/projects/${id}/discovery` },
@@ -13,6 +15,9 @@ const PHASES: Array<{ key: ProjectPhase; label: string; path?: (projectId: strin
 ];
 
 export function PhaseNav({ project }: { project: Project }) {
+  // AI Factory additions render only when the flag is on; with it off this component is unchanged.
+  const features = useFeatures();
+  const lineage = useLineage(project.id, features.aiFactory);
   return (
     <>
       <span className="status-pill" style={{ display: 'inline-block', margin: '0 8px 10px' }}>
@@ -36,6 +41,9 @@ export function PhaseNav({ project }: { project: Project }) {
               <NavLink to={phase.path(project.id)} className={({ isActive }) => (isActive ? 'active' : '')}>
                 {phase.label}
                 <span className={`status-pill ${status === 'validated' ? 'validated' : ''}`}>{status.replace('_', ' ')}</span>
+                {lineage[phase.key as PhaseKey] === 'stale' && (
+                  <span className="status-pill danger" title="An upstream phase changed since this was built - see AI Factory">out of date</span>
+                )}
               </NavLink>
             </li>
           );
@@ -44,6 +52,13 @@ export function PhaseNav({ project }: { project: Project }) {
       <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid #dfe3e8' }}>
         <div style={{ fontSize: 11, color: '#5a6472', textTransform: 'uppercase', marginBottom: 6 }}>Inference track</div>
         <ul className="phase-nav">
+          {features.aiFactory && (
+            <li>
+              <NavLink to={`/projects/${project.id}/ai-factory`} className={({ isActive }) => (isActive ? 'active' : '')}>
+                AI Factory (guided)
+              </NavLink>
+            </li>
+          )}
           <li>
             <NavLink to={`/projects/${project.id}/inference`} className={({ isActive }) => (isActive ? 'active' : '')}>
               Inference-as-a-Service
