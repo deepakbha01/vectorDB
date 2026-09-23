@@ -45,6 +45,7 @@ import { AiFactoryModule } from './ai-factory/ai-factory.module';
 import { AiFactoryStateSnapshot } from './ai-factory/ai-factory-state-snapshot.entity';
 import { AiWorkloadProfile } from './ai-factory/workload-profile/workload-profile.entity';
 import { AiModelSelection } from './ai-factory/model-selection/model-selection.entity';
+import { AiInferenceArchitecture } from './ai-factory/inference-architecture/inference-architecture.entity';
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { AiModelSelection } from './ai-factory/model-selection/model-selection.e
           AiFactoryStateSnapshot,
           AiWorkloadProfile,
           AiModelSelection,
+          AiInferenceArchitecture,
         ],
         // Sprint 1 uses schema sync for velocity. Replace with TypeORM migrations
         // before any non-development deployment (see development rule #12).

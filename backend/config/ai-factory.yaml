@@ -5,7 +5,7 @@
 # phases compute anything; it only describes how their deliverables relate so
 # the AI Factory view can show lineage, staleness and impact.
 
-rulesVersion: ai-factory-2026.09-3
+rulesVersion: ai-factory-2026.09-4
 
 # ---------------------------------------------------------------------------
 # Phase dependency graph. `dependsOn` lists the DIRECT upstream deliverables
@@ -74,6 +74,13 @@ phases:
     route: model-selection
     dependsOn:
       - { phase: workload_profile, kind: hard }   # requirements are computed from the profile
+  - key: inference_architecture
+    label: Inference architecture
+    route: inference-architecture
+    dependsOn:
+      - { phase: inference, kind: hard }          # designed around its sizing
+      - { phase: model_selection, kind: hard }    # routing uses primary / secondary / fallback
+      - { phase: workload_profile, kind: hard }   # deployment targets and data classification gate eligibility
 
 # ---------------------------------------------------------------------------
 # Parameter impact map (spec §22). Which phases must be re-run when a
@@ -165,7 +172,7 @@ steps:
   - { number: 3,  key: data_embedding,  title: Data & Embedding,      phases: [data_embeddings],                    coverage: full,    note: "Chunking and embedding design, with every catalogue embedding model checked for eligibility (input limit, self-hosting, languages, lifecycle) and scored." }
   - { number: 4,  key: vectordb_index,  title: VectorDB & Index,      phases: [index_design, vector_db_selection],  coverage: full }
   - { number: 5,  key: model,           title: Model,                 phases: [model_selection],                    coverage: full,    note: "Primary, secondary and fallback model from a technology-neutral catalogue: mandatory eligibility first, then weighted scoring." }
-  - { number: 6,  key: inference,       title: Inference,             phases: [inference],                          coverage: partial, plannedWave: 4,  note: "GPU sizing, latency and cost exist; serving-technology evaluation and gateway/router design arrive in Wave 4." }
+  - { number: 6,  key: inference,       title: Inference,             phases: [inference, inference_architecture],  coverage: full,    note: "GPU sizing, latency and cost, plus the Inference Architecture: serving option (eligibility, then score), patterns, P50/P95/P99 estimates, and gateway, policy, router, autoscaling, fallback and observability design." }
   - { number: 7,  key: infrastructure,  title: Infrastructure,        phases: [infrastructure],                     coverage: partial, plannedWave: 5,  note: "Vector-DB deployment plan exists; multi-cloud and GPU infrastructure arrive in Wave 5." }
   - { number: 8,  key: rag_agent,       title: RAG / Agent,           phases: [],                                   coverage: none,    plannedWave: 6 }
   - { number: 9,  key: security,        title: Security,              phases: [],                                   coverage: partial, plannedWave: 7,  note: "Security requirements and the compliance gate live in Discovery and the Vector DB ADR; per-component policy status arrives in Wave 7." }
