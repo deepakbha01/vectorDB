@@ -10,6 +10,7 @@ import { ServingCatalogue } from './inference-architecture/inference-architectur
 import { InfrastructureCatalogue } from './infrastructure/infrastructure.types';
 import { RagAgentCatalogue } from './rag-agent/rag-agent.types';
 import { SecurityCatalogue } from './security/security.types';
+import { PerformanceCatalogue } from './performance/performance.types';
 
 /**
  * Loads config/ai-factory.yaml (dependency graph, parameter impact map,
@@ -17,7 +18,8 @@ import { SecurityCatalogue } from './security/security.types';
  * (model catalogue), config/serving.yaml (serving options) and
  * config/infrastructure-targets.yaml (deployment targets) and
  * config/rag-agent.yaml (RAG / agent patterns) and
- * config/security-governance.yaml (policy rules and control areas). Separate from
+ * config/security-governance.yaml (policy rules and control areas) and
+ * config/performance.yaml (benchmark metrics and assumed targets). Separate from
  * PlatformConfigService so the vector engines' configuration is untouched.
  */
 @Injectable()
@@ -28,6 +30,7 @@ export class AiFactoryConfigService implements OnModuleInit {
   private infrastructure: InfrastructureCatalogue = {} as InfrastructureCatalogue;
   private ragAgent: RagAgentCatalogue = {} as RagAgentCatalogue;
   private security: SecurityCatalogue = {} as SecurityCatalogue;
+  private performance: PerformanceCatalogue = {} as PerformanceCatalogue;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -44,6 +47,8 @@ export class AiFactoryConfigService implements OnModuleInit {
     this.ragAgent = yaml.load(fs.readFileSync(ragAgentPath, 'utf8')) as RagAgentCatalogue;
     const securityPath = this.config.get<string>('AI_FACTORY_SECURITY_CONFIG_PATH') ?? './config/security-governance.yaml';
     this.security = yaml.load(fs.readFileSync(securityPath, 'utf8')) as SecurityCatalogue;
+    const performancePath = this.config.get<string>('AI_FACTORY_PERFORMANCE_CONFIG_PATH') ?? './config/performance.yaml';
+    this.performance = yaml.load(fs.readFileSync(performancePath, 'utf8')) as PerformanceCatalogue;
   }
 
   /** Test seams. */
@@ -89,6 +94,14 @@ export class AiFactoryConfigService implements OnModuleInit {
 
   getSecurityCatalogue(): SecurityCatalogue {
     return this.security;
+  }
+
+  setPerformanceCatalogue(performance: PerformanceCatalogue) {
+    this.performance = performance;
+  }
+
+  getPerformanceCatalogue(): PerformanceCatalogue {
+    return this.performance;
   }
 
   getIndexEligibilityRules(): IndexEligibilityRules {

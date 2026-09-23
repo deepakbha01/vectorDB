@@ -19,7 +19,8 @@ export type PhaseKey =
   | 'inference_architecture'
   | 'infrastructure_design'
   | 'rag_agent_architecture'
-  | 'security_governance';
+  | 'security_governance'
+  | 'performance_benchmark';
 
 export type DependencyKind = 'hard' | 'advisory';
 

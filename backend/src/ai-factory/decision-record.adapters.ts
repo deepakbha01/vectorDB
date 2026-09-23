@@ -9,6 +9,7 @@ import { AiInferenceArchitecture } from './inference-architecture/inference-arch
 import { AiInfrastructureDesign } from './infrastructure/infrastructure.entity';
 import { AiRagAgentDesign } from './rag-agent/rag-agent.entity';
 import { AiSecurityAssessment } from './security/security.entity';
+import { AiPerformanceAssessment } from './performance/performance.entity';
 import { EmbeddingEligibilityRules, EmbeddingModelFacts, IndexEligibilityRules, embeddingEligibility, indexEligibility, scoreEmbedding } from './eligibility/eligibility.rules';
 import { DecisionAlternative, DecisionCandidate, DecisionRecord, Eligibility, EvidenceType } from './ai-factory.types';
 
@@ -506,6 +507,38 @@ export function fromSecurityAssessment(d: AiSecurityAssessment): DecisionRecord 
     evidence: r.controls.filter((c) => c.status === 'addressed').map((c) => ({ label: c.label, value: c.designedIn.map((s) => s.source).filter((s, i, a) => a.indexOf(s) === i).join('; '), evidenceType: 'assumption' as const })),
     benchmarkRequired: r.verificationRequired,
     wouldChangeIf: r.wouldChangeIf,
+    gaps: r.gaps,
+  };
+}
+
+// ------------------------------------------------------ Performance & benchmark
+const METRIC_ELIGIBILITY = { pass: 'eligible', pass_with_conditions: 'conditional', fail: 'not_eligible', requires_benchmark: 'not_assessed', not_applicable: 'not_assessed' } as const;
+
+/** Spec §11 Performance & Benchmark Assessment in the standard format: the verdict on the chosen architecture, measured evidence only. */
+export function fromPerformanceAssessment(d: AiPerformanceAssessment): DecisionRecord {
+  const r = d.result;
+  const metrics = r.groups.flatMap((g) => g.metrics).filter((m) => m.status !== 'not_applicable');
+  const unit = (v: number, u: string) => `${v}${u ? (u === '%' ? '%' : ` ${u}`) : ''}`;
+  return {
+    phase: 'performance_benchmark',
+    title: 'Performance and benchmark',
+    source: { deliverableId: d.id, version: d.version, createdAt: d.createdAt },
+    status: r.status.status === 'fail' ? 'not_feasible' : r.status.status === 'pass' ? 'decided' : 'conditional',
+    recommendation: { id: r.status.status, label: r.status.label },
+    // Confidence reflects how much is measured, not how good the estimates look.
+    confidence: r.counts.requires_benchmark === 0 ? 'high' : r.counts.pass + r.counts.pass_with_conditions + r.counts.fail > 0 ? 'medium' : 'low',
+    why: r.status.reasons,
+    candidates: metrics.map((m) => ({ id: m.id, label: m.label, eligibility: METRIC_ELIGIBILITY[m.status], score: null, notes: [...m.reasons, ...m.conditions] })),
+    alternatives: [],
+    tradeoffs: [],
+    risks: metrics.filter((m) => m.status === 'fail' || (m.status === 'requires_benchmark' && m.estimateMeetsTarget === false)).map((m) => `${m.label}: ${m.reasons[m.reasons.length - 1]}`),
+    assumptions: metrics.filter((m) => m.target?.assumed).map((m) => ({ statement: `${m.label} target ${unit(m.target!.value, m.unit)} - ${m.target!.source}`, evidenceType: 'assumption' as const })),
+    evidence: [
+      ...metrics.filter((m) => m.measured).map((m) => ({ label: m.label, value: `${unit(m.measured!.value, m.unit)} (${m.measured!.source})`, evidenceType: 'measured' as const })),
+      ...metrics.filter((m) => !m.measured && m.estimate).map((m) => ({ label: m.label, value: `${unit(m.estimate!.value, m.unit)} (${m.estimate!.source})`, evidenceType: m.estimate!.evidenceType })),
+    ],
+    benchmarkRequired: r.benchmarkPlan.map((b) => `${b.metric}: ${b.how}${b.warning ? ` - ${b.warning}` : ''}`),
+    wouldChangeIf: ['Recording measured results (with their source) turns REQUIRES BENCHMARK into PASS / PASS WITH CONDITIONS / FAIL.'],
     gaps: r.gaps,
   };
 }

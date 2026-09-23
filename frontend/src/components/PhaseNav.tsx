@@ -112,6 +112,14 @@ export function PhaseNav({ project }: { project: Project }) {
               </NavLink>
             </li>
           )}
+          {features.aiFactory && (
+            <li>
+              <NavLink to={`/projects/${project.id}/performance`} className={({ isActive }) => (isActive ? 'active' : '')}>
+                Performance &amp; Benchmark
+                {lineage.performance_benchmark === 'stale' && <span className="status-pill danger" title="A target, a design or a benchmark changed since this assessment">out of date</span>}
+              </NavLink>
+            </li>
+          )}
         </ul>
       </div>
       <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid #dfe3e8' }}>
