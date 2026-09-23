@@ -1,0 +1,161 @@
+# AI Factory - Wave 1 foundations: phase dependency graph, parameter impact
+# map, and the guided 01-13 workflow.
+#
+# Read only by the ai-factory module. It never changes how the existing
+# phases compute anything; it only describes how their deliverables relate so
+# the AI Factory view can show lineage, staleness and impact.
+
+rulesVersion: ai-factory-2026.09-1
+
+# ---------------------------------------------------------------------------
+# Phase dependency graph. `dependsOn` lists the DIRECT upstream deliverables
+# each phase's service actually reads when it runs (verified from the code):
+#   hard     - the phase's output is computed from that upstream deliverable
+#   advisory - the upstream only pre-fills suggestions the user can override
+# Staleness propagates downstream through hard edges only.
+# ---------------------------------------------------------------------------
+phases:
+  - key: discovery
+    label: Discovery assessment
+    route: discovery
+    dependsOn: []
+  - key: data_embeddings
+    label: Data & Embedding design
+    route: data-pipeline
+    dependsOn:
+      - { phase: discovery, kind: hard }
+  - key: index_design
+    label: Index design
+    route: index-design
+    dependsOn:
+      - { phase: data_embeddings, kind: hard }
+  - key: vector_db_selection
+    label: Vector DB selection (ADR)
+    route: vector-db-selection
+    dependsOn:
+      - { phase: discovery, kind: hard }
+      - { phase: data_embeddings, kind: hard }
+      - { phase: index_design, kind: hard }
+  - key: infrastructure
+    label: Deployment plan
+    route: deployment
+    dependsOn:
+      - { phase: data_embeddings, kind: hard }
+      - { phase: index_design, kind: hard }
+      - { phase: vector_db_selection, kind: hard }   # target platform
+  - key: optimization
+    label: Optimization report (vector benchmark)
+    route: optimization
+    dependsOn:
+      - { phase: index_design, kind: hard }
+      - { phase: vector_db_selection, kind: hard }
+  - key: capacity
+    label: Capacity plan
+    route: capacity
+    dependsOn:
+      - { phase: discovery, kind: hard }
+      - { phase: index_design, kind: hard }
+      - { phase: vector_db_selection, kind: hard }
+  - key: inference
+    label: Inference assessment
+    route: inference
+    dependsOn:
+      - { phase: discovery, kind: advisory }
+      - { phase: data_embeddings, kind: advisory }
+
+# ---------------------------------------------------------------------------
+# Parameter impact map (spec §22). Which phases must be re-run when a
+# Discovery answer changes. Downstream phases are added automatically through
+# the hard edges above, so only list the phases that read the field directly.
+# `none` marks fields reviewed and found to affect no computed decision.
+# Every Discovery field must appear here - a unit test enforces it.
+# ---------------------------------------------------------------------------
+parameterImpact:
+  # Verified against the code: data_embeddings reads Discovery in
+  # DataPipelineDesignService; vector_db_selection passes the assessment into
+  # RecommendationEngineService (AssessmentInput fields); capacity and
+  # inference read the fields listed. "none" = captured but not read by any
+  # engine today (a Wave 2 input to revisit, not a bug in this map).
+  # corpus & scale
+  environment: none
+  documentCount: none
+  documentGrowthPercentPerMonth: [capacity]
+  avgDocumentSizeKb: none
+  chunksPerDocument: none
+  estimatedVectorCount: [data_embeddings, vector_db_selection]
+  embeddingDimension: [data_embeddings, vector_db_selection]
+  similarityMetric: [data_embeddings]
+  # performance & SLAs
+  qps: [data_embeddings, vector_db_selection, inference]
+  peakQps: [data_embeddings, vector_db_selection, inference]
+  qpsScope: [vector_db_selection]
+  concurrentUsers: none
+  targetP95LatencyMs: [data_embeddings, vector_db_selection]
+  targetP99LatencyMs: [vector_db_selection]
+  availabilityTargetPercent: [capacity, inference]
+  rpoMinutes: [vector_db_selection, capacity]
+  rtoMinutes: [vector_db_selection, capacity]
+  retentionDays: [vector_db_selection]
+  # search capabilities
+  requiresSimilaritySearch: none
+  requiresSemanticSearch: none
+  requiresHybridSearch: [data_embeddings, vector_db_selection]
+  requiresMetadataFiltering: [vector_db_selection]
+  requiresFullTextSearch: [vector_db_selection]
+  topK: [data_embeddings, inference]
+  recallTarget: [data_embeddings, vector_db_selection]
+  precisionTarget: [vector_db_selection]
+  requiresReranking: [data_embeddings, vector_db_selection]
+  ndcgTarget: [vector_db_selection]
+  mrrTarget: [vector_db_selection]
+  # existing platforms & deployment
+  hasExistingOracle: [vector_db_selection]
+  hasExistingPostgres: [vector_db_selection]
+  hasExistingKubernetes: [vector_db_selection]
+  existingPlatforms: [vector_db_selection]
+  deploymentEnvironment: none
+  availableCpuCores: [capacity]
+  availableRamGb: [data_embeddings]
+  availableStorageGb: [capacity]
+  hasGpu: none
+  operationalCapability: [vector_db_selection]
+  monthlyBudgetUsd: [vector_db_selection, inference]
+  # multi-region & tenancy
+  requiresMultiRegion: [vector_db_selection]
+  deploymentRegionCount: [vector_db_selection]
+  trafficDistributionPercent: [vector_db_selection]
+  dataReplicationModel: [vector_db_selection]
+  regionalFailoverRequired: [vector_db_selection]
+  crossRegionReplicationRequired: [vector_db_selection]
+  tenancyModel: [vector_db_selection]
+  # security & compliance
+  requiresAuthentication: [vector_db_selection]
+  requiresRbac: [vector_db_selection]
+  requiresEncryptionAtRest: [vector_db_selection]
+  requiresEncryptionInTransit: [vector_db_selection]
+  requiresKeyManagement: [vector_db_selection]
+  requiresTenantIsolation: [vector_db_selection]
+  requiresAuditLogging: [vector_db_selection]
+  dataResidencyRequirement: [vector_db_selection, inference]
+  containsPii: [vector_db_selection, inference]
+  regulatoryRequirements: none
+
+# ---------------------------------------------------------------------------
+# Guided workflow (spec §20). `phases` are the existing deliverables backing a
+# step; `coverage` says how much of the spec's scope for that step exists
+# today; `plannedWave` is where the remaining scope lands.
+# ---------------------------------------------------------------------------
+steps:
+  - { number: 1,  key: use_case,        title: Use Case,              phases: [],                                   coverage: partial, plannedWave: 2,  note: "Project name, business use case, industry and pattern today; business criticality, users and workload type arrive with the AI Workload Profile." }
+  - { number: 2,  key: scale,           title: Scale,                 phases: [discovery],                          coverage: partial, plannedWave: 2,  note: "Vector-DB Discovery covers scale, SLAs and compliance; workload/architecture classification and named clouds arrive in Wave 2." }
+  - { number: 3,  key: data_embedding,  title: Data & Embedding,      phases: [data_embeddings],                    coverage: partial, plannedWave: 3,  note: "Chunking and embedding design exist; embedding-model eligibility and scoring arrive in Wave 3." }
+  - { number: 4,  key: vectordb_index,  title: VectorDB & Index,      phases: [index_design, vector_db_selection],  coverage: full }
+  - { number: 5,  key: model,           title: Model,                 phases: [],                                   coverage: none,    plannedWave: 3 }
+  - { number: 6,  key: inference,       title: Inference,             phases: [inference],                          coverage: partial, plannedWave: 4,  note: "GPU sizing, latency and cost exist; serving-technology evaluation and gateway/router design arrive in Wave 4." }
+  - { number: 7,  key: infrastructure,  title: Infrastructure,        phases: [infrastructure],                     coverage: partial, plannedWave: 5,  note: "Vector-DB deployment plan exists; multi-cloud and GPU infrastructure arrive in Wave 5." }
+  - { number: 8,  key: rag_agent,       title: RAG / Agent,           phases: [],                                   coverage: none,    plannedWave: 6 }
+  - { number: 9,  key: security,        title: Security,              phases: [],                                   coverage: partial, plannedWave: 7,  note: "Security requirements and the compliance gate live in Discovery and the Vector DB ADR; per-component policy status arrives in Wave 7." }
+  - { number: 10, key: performance,     title: Performance,           phases: [optimization],                       coverage: partial, plannedWave: 8,  note: "Measured vector benchmark exists; LLM/embedding benchmarks and PASS/FAIL status arrive in Wave 8." }
+  - { number: 11, key: cost,            title: Cost,                  phases: [],                                   coverage: partial, plannedWave: 9,  note: "Budget feasibility (ADR) and inference cost exist; the consolidated FinOps view arrives in Wave 9." }
+  - { number: 12, key: operations,      title: Operations,            phases: [capacity],                           coverage: partial, plannedWave: 10, note: "Capacity, HA and DR exist; model versioning and observability arrive in Wave 10." }
+  - { number: 13, key: final,           title: Final Recommendation,  phases: [],                                   coverage: none,    plannedWave: 11 }
