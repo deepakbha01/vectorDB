@@ -48,7 +48,7 @@ API keys, a CI runner with historical data) to close responsibly.
 | 9. Automated tests for every major component | Done - 208 unit tests across all engines/services; see §3 for what they don't cover |
 | 10. Identify customer-specific configuration | Done - `TARGET_*` env vars documented as "the customer's database," distinct from `APP_DB_*` |
 | 11. No destructive ops without confirmation | Done - every adapter's `dropSchema` requires `confirm: true`; `deployment/execute` never calls it |
-| 12. Backward-compatible DB migrations | **Gap** - see §3 |
+| 12. Backward-compatible DB migrations | **Partial** - baseline migration added (Wave 0); see §3 |
 | 13. Log administrative actions | Done - `AuditLoggingInterceptor` persists every mutating request |
 | 14. Design for horizontal scalability | Partial - the API is stateless (JWT, no server-side session) so it scales horizontally; the app's own Postgres metadata store is a single instance (see §3) |
 | 15. Design APIs for future automation | Done - every phase is a REST resource with a stable shape, not just UI-driven |
@@ -70,7 +70,13 @@ in the code comment nearest the limitation.
    `execute` action against a real staging instance of the target platform
    and confirm the health check, schema creation, and index creation succeed.
 
-2. **No database migrations.** The app runs with TypeORM's `synchronize:
+2. **Database migrations - baseline added (AI Factory Wave 0).**
+   `backend/src/migrations/*-InitialSchema.ts` now creates every table; it was
+   generated from the entities in an empty scratch schema and verified by
+   applying it to a second empty schema (zero real differences; `down()`
+   removes everything) and to a `synchronize`-created schema (no-op, only
+   recorded). Remaining step: run `npm run migration:run` on deploy.
+   Original note, kept for history: The app runs with TypeORM's `synchronize:
    true` outside `NODE_ENV=production` (see `app.module.ts`) and has never
    been pointed at production. Generating real migrations requires
    `typeorm migration:generate` to diff against a live database - this
