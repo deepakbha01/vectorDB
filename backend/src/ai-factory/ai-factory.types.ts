@@ -22,7 +22,8 @@ export type PhaseKey =
   | 'security_governance'
   | 'performance_benchmark'
   | 'finops'
-  | 'operations_model';
+  | 'operations_model'
+  | 'final_recommendation';
 
 export type DependencyKind = 'hard' | 'advisory';
 

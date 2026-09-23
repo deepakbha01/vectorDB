@@ -24,6 +24,7 @@ import { AiSecurityAssessment } from './security/security.entity';
 import { AiPerformanceAssessment } from './performance/performance.entity';
 import { AiFinopsAssessment } from './finops/finops.entity';
 import { AiOperationsModel } from './operations/operations.entity';
+import { AiFinalRecommendation } from './final/final.entity';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 import { ChunkingStrategy } from '../chunking/enums/chunking-strategy.enum';
 import { EmbeddingModelFacts } from './eligibility/eligibility.rules';
@@ -77,6 +78,7 @@ export class AiFactoryService {
     @InjectRepository(AiPerformanceAssessment) private readonly performanceAssessments: Repository<AiPerformanceAssessment>,
     @InjectRepository(AiFinopsAssessment) private readonly finopsAssessments: Repository<AiFinopsAssessment>,
     @InjectRepository(AiOperationsModel) private readonly operationsModels: Repository<AiOperationsModel>,
+    @InjectRepository(AiFinalRecommendation) private readonly finalRecommendations: Repository<AiFinalRecommendation>,
     private readonly platformConfig: PlatformConfigService,
   ) {}
 
@@ -100,6 +102,7 @@ export class AiFactoryService {
       performance_benchmark: this.performanceAssessments,
       finops: this.finopsAssessments,
       operations_model: this.operationsModels,
+      final_recommendation: this.finalRecommendations,
     }[phase];
   }
 
@@ -303,7 +306,7 @@ export class AiFactoryService {
     };
     const later = (wave: number): StateSection => ({ status: 'not_yet_available', coverage: 'none', source: null, summary: {}, plannedWave: wave });
 
-    const [d, p, i, adr, dep, opt, cap, inf, wp, ms, ia, infra, ra, sec, perf, fin, ops] = await Promise.all([
+    const [d, p, i, adr, dep, opt, cap, inf, wp, ms, ia, infra, ra, sec, perf, fin, ops, fr] = await Promise.all([
       this.latest<DiscoveryAssessment>('discovery', project.id),
       this.latest<DataPipelineDesign>('data_embeddings', project.id),
       this.latest<IndexDesign>('index_design', project.id),
@@ -321,6 +324,7 @@ export class AiFactoryService {
       this.latest<AiPerformanceAssessment>('performance_benchmark', project.id),
       this.latest<AiFinopsAssessment>('finops', project.id),
       this.latest<AiOperationsModel>('operations_model', project.id),
+      this.latest<AiFinalRecommendation>('final_recommendation', project.id),
     ]);
     const profileValue = (k: keyof AiWorkloadProfile['inputs']) => wp?.inputs[k]?.value ?? null;
     const wpResult = wp?.result;
@@ -408,6 +412,7 @@ export class AiFactoryService {
       performance: perf
         ? section('performance_benchmark', 'full', {
             status: perf.result.status.label,
+            statusKey: perf.result.status.status,
             measured: perf.result.counts.pass + perf.result.counts.pass_with_conditions + perf.result.counts.fail,
             requiresBenchmark: perf.result.counts.requires_benchmark,
             failing: perf.result.groups.flatMap((g) => g.metrics).filter((k) => k.status === 'fail').map((k) => k.label),
@@ -437,7 +442,14 @@ export class AiFactoryService {
             gaps: ops.result.gaps.length,
           })
         : { ...section('capacity', 'partial', cap ? { sharding: cap.shardingRecommendation.strategy, horizonsMonths: cap.forecast.map((f) => f.horizonMonths), ha: cap.haRecommendation.length, dr: cap.drRecommendation.length } : {}), plannedWave: 10 },
-      recommendation: later(11),
+      recommendation: fr
+        ? section('final_recommendation', 'full', {
+            readiness: fr.result.readiness.label,
+            confidence: fr.result.executiveSummary.confidence,
+            stages: Object.fromEntries(fr.result.readiness.stages.map((g) => [g.stage, g.status])),
+            alternatives: fr.result.alternatives.options.length,
+          })
+        : later(11),
     };
   }
 

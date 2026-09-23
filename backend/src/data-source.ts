@@ -25,6 +25,7 @@ import { AiSecurityAssessment } from './ai-factory/security/security.entity';
 import { AiPerformanceAssessment } from './ai-factory/performance/performance.entity';
 import { AiFinopsAssessment } from './ai-factory/finops/finops.entity';
 import { AiOperationsModel } from './ai-factory/operations/operations.entity';
+import { AiFinalRecommendation } from './ai-factory/final/final.entity';
 
 config();
 
@@ -73,6 +74,7 @@ export const AppDataSource = new DataSource({
     AiPerformanceAssessment,
     AiFinopsAssessment,
     AiOperationsModel,
+    AiFinalRecommendation,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,
