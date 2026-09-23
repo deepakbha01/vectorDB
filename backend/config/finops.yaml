@@ -1,0 +1,95 @@
+# AI Factory Wave 9 - Cost & FinOps Assessment (spec §13).
+# Read only by the ai-factory module.
+#
+# DIRECTIONAL PLANNING RATES, NOT QUOTES. Every unit price below is an
+# assumption made to compare options on a like-for-like basis; real prices
+# vary by region, contract, commitment and time. Replace them with the
+# customer's rate card (or a vendor calculator / quote) before any figure is
+# used for budgeting. The assessment labels every figure accordingly and never
+# presents an estimate as guaranteed pricing (spec §13).
+
+rulesVersion: finops-2026.09-1
+lastReviewed: '2026-09-01'
+currency: USD
+hoursPerMonth: 730
+
+# Per-target unit rates. gpuFactor multiplies the per-GPU list price in
+# config/inference.yaml (a generic on-demand cloud rate). On-premises rates
+# are amortised: 3-year hardware, power, cooling and space - they exclude
+# procurement lead time and any data-centre build-out.
+targets:
+  on_premises:
+    vcpuHour: 0.012
+    ramGbHour: 0.0015
+    blockStorageGbMonth: 0.05
+    objectStorageGbMonth: 0.01
+    egressGb: 0.0
+    gpuFactor: 0.5
+    supportPercent: 12        # hardware and software support contracts
+    monitoringPercent: 3
+  azure:
+    vcpuHour: 0.033
+    ramGbHour: 0.0044
+    blockStorageGbMonth: 0.09
+    objectStorageGbMonth: 0.018
+    egressGb: 0.087
+    gpuFactor: 1.0
+    supportPercent: 7
+    monitoringPercent: 5
+  aws:
+    vcpuHour: 0.033
+    ramGbHour: 0.0044
+    blockStorageGbMonth: 0.08
+    objectStorageGbMonth: 0.023
+    egressGb: 0.09
+    gpuFactor: 1.0
+    supportPercent: 7
+    monitoringPercent: 5
+  oci:
+    vcpuHour: 0.0125
+    ramGbHour: 0.0015
+    blockStorageGbMonth: 0.0425
+    objectStorageGbMonth: 0.0255
+    egressGb: 0.0085
+    gpuFactor: 0.85
+    supportPercent: 0          # included with the subscription
+    monitoringPercent: 4
+  gcp:
+    vcpuHour: 0.0316
+    ramGbHour: 0.0042
+    blockStorageGbMonth: 0.10
+    objectStorageGbMonth: 0.02
+    egressGb: 0.085
+    gpuFactor: 1.0
+    supportPercent: 7
+    monitoringPercent: 5
+
+# Managed and SaaS vector databases cost more than the raw compute they run
+# on. SaaS pricing is vendor-specific - use the vendor's calculator.
+platformPremium: { kubernetes: 1.0, vm: 1.0, managed: 1.4, saas: 1.8, in_app: 1.0 }
+
+vectorReplicas:          # by availability target (first match wins)
+  - { minAvailability: 99.95, replicas: 3 }
+  - { minAvailability: 99.9, replicas: 2 }
+  - { minAvailability: 0, replicas: 1 }
+
+application: { ramGbPerVcpu: 4 }
+embedding:
+  avgQueryTokens: 30                # per request, embedded at query time
+  selfHostedTokensPerSecPerGpu: 3000
+  selfHostedGpuId: l4
+  reembedHorizonMonths: 24          # re-embedding cost is priced at this corpus size
+
+operations:
+  backupRetentionMultiplier: 2      # full + incrementals held, as a multiple of primary storage
+  # Share of primary infrastructure kept running for DR. Cold = restore from
+  # backup: no standby capacity, the backups priced above are the DR copy.
+  drFactor: { cold: 0, warm: 0.5, active: 1.0 }
+  selfManagedDbOpsMonthlyUsd: 1200  # ~0.1 FTE to run a self-managed vector database
+network:
+  responseKbPerRequest: 4           # response payload leaving the platform
+  retrievalKbPerRequest: 16         # retrieved chunks crossing targets in a hybrid design
+  hybridInterconnectMonthlyUsd: 1500  # dedicated link (port + circuit), both ends
+
+budget:
+  withinMarginPercent: 10           # within this of the budget → pass with conditions, not fail

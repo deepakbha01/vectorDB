@@ -11,6 +11,7 @@ import { InfrastructureCatalogue } from './infrastructure/infrastructure.types';
 import { RagAgentCatalogue } from './rag-agent/rag-agent.types';
 import { SecurityCatalogue } from './security/security.types';
 import { PerformanceCatalogue } from './performance/performance.types';
+import { FinopsCatalogue } from './finops/finops.types';
 
 /**
  * Loads config/ai-factory.yaml (dependency graph, parameter impact map,
@@ -19,7 +20,8 @@ import { PerformanceCatalogue } from './performance/performance.types';
  * config/infrastructure-targets.yaml (deployment targets) and
  * config/rag-agent.yaml (RAG / agent patterns) and
  * config/security-governance.yaml (policy rules and control areas) and
- * config/performance.yaml (benchmark metrics and assumed targets). Separate from
+ * config/performance.yaml (benchmark metrics and assumed targets) and
+ * config/finops.yaml (directional unit rates). Separate from
  * PlatformConfigService so the vector engines' configuration is untouched.
  */
 @Injectable()
@@ -31,6 +33,7 @@ export class AiFactoryConfigService implements OnModuleInit {
   private ragAgent: RagAgentCatalogue = {} as RagAgentCatalogue;
   private security: SecurityCatalogue = {} as SecurityCatalogue;
   private performance: PerformanceCatalogue = {} as PerformanceCatalogue;
+  private finops: FinopsCatalogue = {} as FinopsCatalogue;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -49,6 +52,8 @@ export class AiFactoryConfigService implements OnModuleInit {
     this.security = yaml.load(fs.readFileSync(securityPath, 'utf8')) as SecurityCatalogue;
     const performancePath = this.config.get<string>('AI_FACTORY_PERFORMANCE_CONFIG_PATH') ?? './config/performance.yaml';
     this.performance = yaml.load(fs.readFileSync(performancePath, 'utf8')) as PerformanceCatalogue;
+    const finopsPath = this.config.get<string>('AI_FACTORY_FINOPS_CONFIG_PATH') ?? './config/finops.yaml';
+    this.finops = yaml.load(fs.readFileSync(finopsPath, 'utf8')) as FinopsCatalogue;
   }
 
   /** Test seams. */
@@ -102,6 +107,14 @@ export class AiFactoryConfigService implements OnModuleInit {
 
   getPerformanceCatalogue(): PerformanceCatalogue {
     return this.performance;
+  }
+
+  setFinopsCatalogue(finops: FinopsCatalogue) {
+    this.finops = finops;
+  }
+
+  getFinopsCatalogue(): FinopsCatalogue {
+    return this.finops;
   }
 
   getIndexEligibilityRules(): IndexEligibilityRules {
