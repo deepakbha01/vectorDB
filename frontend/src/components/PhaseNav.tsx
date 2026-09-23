@@ -80,6 +80,14 @@ export function PhaseNav({ project }: { project: Project }) {
               Inference-as-a-Service
             </NavLink>
           </li>
+          {features.aiFactory && (
+            <li>
+              <NavLink to={`/projects/${project.id}/inference-architecture`} className={({ isActive }) => (isActive ? 'active' : '')}>
+                Inference Architecture
+                {lineage.inference_architecture === 'stale' && <span className="status-pill danger" title="The inference sizing, model selection or workload profile changed since this design">out of date</span>}
+              </NavLink>
+            </li>
+          )}
         </ul>
       </div>
       <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid #dfe3e8' }}>

@@ -21,6 +21,7 @@ import { InferencePage } from './pages/InferencePage';
 import { AiFactoryPage } from './pages/AiFactoryPage';
 import { WorkloadProfilePage } from './pages/WorkloadProfilePage';
 import { ModelSelectionPage } from './pages/ModelSelectionPage';
+import { InferenceArchitecturePage } from './pages/InferenceArchitecturePage';
 
 export function App() {
   return (
@@ -48,6 +49,7 @@ export function App() {
           <Route path="/projects/:id/ai-factory" element={<AiFactoryPage />} />
           <Route path="/projects/:id/workload-profile" element={<WorkloadProfilePage />} />
           <Route path="/projects/:id/model-selection" element={<ModelSelectionPage />} />
+          <Route path="/projects/:id/inference-architecture" element={<InferenceArchitecturePage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
