@@ -16,9 +16,13 @@ import { InferenceAssessment } from '../inference/inference-assessment.entity';
 import { AiFactoryConfigService } from './ai-factory-config.service';
 import { AiFactoryStateSnapshot } from './ai-factory-state-snapshot.entity';
 import { AiWorkloadProfile } from './workload-profile/workload-profile.entity';
+import { AiModelSelection } from './model-selection/model-selection.entity';
+import { PlatformConfigService } from '../common/config/platform-config.service';
+import { ChunkingStrategy } from '../chunking/enums/chunking-strategy.enum';
+import { EmbeddingModelFacts } from './eligibility/eligibility.rules';
 import { computeLineage } from './lineage.engine';
 import { analyseImpact } from './impact.engine';
-import { fromIndexDesign, fromInferenceAssessment, fromVectorDbSelection } from './decision-record.adapters';
+import { fromDataPipelineDesign, fromIndexDesign, fromInferenceAssessment, fromModelSelection, fromVectorDbSelection } from './decision-record.adapters';
 import {
   AiFactoryOverview,
   AssessmentState,
@@ -58,6 +62,8 @@ export class AiFactoryService {
     @InjectRepository(InferenceAssessment) private readonly inference: Repository<InferenceAssessment>,
     @InjectRepository(AiFactoryStateSnapshot) private readonly snapshots: Repository<AiFactoryStateSnapshot>,
     @InjectRepository(AiWorkloadProfile) private readonly profiles: Repository<AiWorkloadProfile>,
+    @InjectRepository(AiModelSelection) private readonly modelSelections: Repository<AiModelSelection>,
+    private readonly platformConfig: PlatformConfigService,
   ) {}
 
   // ---------------------------------------------------------------- loading
@@ -72,6 +78,7 @@ export class AiFactoryService {
       capacity: this.capacity,
       inference: this.inference,
       workload_profile: this.profiles,
+      model_selection: this.modelSelections,
     }[phase];
   }
 
@@ -160,16 +167,59 @@ export class AiFactoryService {
     await this.projectsService.findOne(projectId, requester);
     const records: DecisionRecord[] = [];
 
+    const margin = this.cfg.getModelCatalogue().confidenceMargin ?? 0.05;
+    const [pipeline, profile, modelSelection] = await Promise.all([
+      this.latest<DataPipelineDesign>('data_embeddings', projectId),
+      this.latest<AiWorkloadProfile>('workload_profile', projectId),
+      this.latest<AiModelSelection>('model_selection', projectId),
+    ]);
+
+    if (pipeline) records.push(fromDataPipelineDesign(pipeline, this.embeddingCatalogue(), this.embeddingContext(pipeline, profile, modelSelection), this.cfg.getEmbeddingEligibilityRules(), margin));
+
     const index = await this.latest<IndexDesign>('index_design', projectId);
-    if (index) records.push(fromIndexDesign(index, await this.latest<OptimizationReport>('optimization', projectId)));
+    if (index) records.push(fromIndexDesign(index, await this.latest<OptimizationReport>('optimization', projectId), this.cfg.getIndexEligibilityRules(), margin));
 
     const adr = await this.latest<ArchitectureDecisionRecord>('vector_db_selection', projectId);
     if (adr) records.push(fromVectorDbSelection(adr, (await this.history('vector_db_selection', projectId)).length));
 
     const inference = await this.latest<InferenceAssessment>('inference', projectId);
+    if (modelSelection) records.push(fromModelSelection(modelSelection));
+
     if (inference) records.push(fromInferenceAssessment(inference));
 
     return records;
+  }
+
+  /** Embedding catalogue flattened for the eligibility layer (read from the existing embeddings.yaml). */
+  private embeddingCatalogue(): EmbeddingModelFacts[] {
+    return this.platformConfig.getEmbeddingProviders().flatMap((p) =>
+      (p.models ?? []).map((m: Record<string, any>) => ({
+        providerId: p.id,
+        modelId: m.id,
+        label: `${p.label} ${m.label}`,
+        dimension: m.dimension,
+        maxInputTokens: m.maxInputTokens,
+        costPerMillionTokens: m.costPerMillionTokens,
+        languageSupport: m.languageSupport ?? [],
+        qualityTier: m.qualityTier,
+        status: m.status ?? 'active',
+      })),
+    );
+  }
+
+  /** Requirements the embedding choice is judged against, with where each came from. */
+  private embeddingContext(pipeline: DataPipelineDesign, profile: AiWorkloadProfile | null, ms: AiModelSelection | null) {
+    const rules = this.cfg.getEmbeddingEligibilityRules();
+    const chunkTokens = pipeline.chunkingStrategy === ChunkingStrategy.TOKEN_BASED ? pipeline.chunkSize : Math.ceil(pipeline.chunkSize / rules.charsPerToken);
+    const targets = (profile?.inputs.deploymentTargets.value ?? []) as string[];
+    const selfHostingRequired = ms ? ms.requirements.selfHostingRequired : targets.length === 1 && targets[0] === 'on_premises';
+    const multilingual = ms?.requirements.multilingual ?? false;
+    const basis = [
+      `Self-hosting required: ${selfHostingRequired ? 'yes' : 'no'} (${ms ? `Model Selection v${ms.version}` : profile ? `Workload Profile v${profile.version} deployment targets` : 'no Workload Profile - assumed not required'})`,
+      `Multilingual: ${multilingual ? 'yes' : 'no'} (${ms ? `Model Selection v${ms.version}` : 'not stated - assumed single language'})`,
+      `Chunk size ~${chunkTokens.toLocaleString()} tokens (${pipeline.chunkSize} ${pipeline.chunkingStrategy === ChunkingStrategy.TOKEN_BASED ? 'tokens' : `characters ÷ ${rules.charsPerToken}`})`,
+    ];
+    return { chunkTokens, selfHostingRequired, multilingual, basis };
   }
 
   // -------------------------------------------------------------- overview
@@ -211,7 +261,7 @@ export class AiFactoryService {
     };
     const later = (wave: number): StateSection => ({ status: 'not_yet_available', coverage: 'none', source: null, summary: {}, plannedWave: wave });
 
-    const [d, p, i, adr, dep, opt, cap, inf, wp] = await Promise.all([
+    const [d, p, i, adr, dep, opt, cap, inf, wp, ms] = await Promise.all([
       this.latest<DiscoveryAssessment>('discovery', project.id),
       this.latest<DataPipelineDesign>('data_embeddings', project.id),
       this.latest<IndexDesign>('index_design', project.id),
@@ -221,6 +271,7 @@ export class AiFactoryService {
       this.latest<CapacityPlan>('capacity', project.id),
       this.latest<InferenceAssessment>('inference', project.id),
       this.latest<AiWorkloadProfile>('workload_profile', project.id),
+      this.latest<AiModelSelection>('model_selection', project.id),
     ]);
     const profileValue = (k: keyof AiWorkloadProfile['inputs']) => wp?.inputs[k]?.value ?? null;
     const wpResult = wp?.result;
@@ -261,10 +312,10 @@ export class AiFactoryService {
           })
         : { ...section('discovery', 'partial', d ? { estimatedVectorCount: d.estimatedVectorCount, documentCount: d.documentCount, qps: d.qps, peakQps: d.peakQps, targetP95LatencyMs: d.targetP95LatencyMs, recallTarget: d.recallTarget, availabilityTargetPercent: d.availabilityTargetPercent, deploymentEnvironment: d.deploymentEnvironment } : {}), plannedWave: 2 },
       data: section('data_embeddings', 'partial', p ? { chunkingStrategy: p.chunkingStrategy, chunkSize: p.chunkSize, chunkOverlap: p.chunkOverlap, metadataFields: (p.metadataFields ?? []).length } : {}),
-      embedding: { ...section('data_embeddings', 'partial', p ? { provider: p.embeddingProviderId, model: p.embeddingModelId, dimension: p.embeddingDimension, similarityMetric: p.similarityMetric, costPerMillionTokens: p.costPerMillionTokens } : {}), plannedWave: 3 },
+      embedding: section('data_embeddings', 'full', p ? { provider: p.embeddingProviderId, model: p.embeddingModelId, dimension: p.embeddingDimension, similarityMetric: p.similarityMetric, costPerMillionTokens: p.costPerMillionTokens } : {}),
       vectorDB: section('vector_db_selection', 'full', adr ? { platform: adr.decision, decisionStatus: adr.decisionStatus, confidence: adr.confidence, projectPlatform: project.platform, manualOverride: project.platformIsManualOverride } : {}),
       index: section('index_design', 'full', i ? { index: i.decision, configuration: Object.fromEntries(i.configuration.map((c) => [c.name, c.value])) } : {}),
-      model: later(3),
+      model: section('model_selection', 'full', ms ? { primary: ms.result.primary?.label ?? null, secondary: ms.result.secondary?.label ?? null, fallback: ms.result.fallback?.label ?? null, confidence: ms.result.confidence, eligibleCandidates: ms.result.candidates.filter((c) => c.eligibility !== 'not_eligible').length, candidates: ms.result.candidates.length } : {}),
       inference: { ...section('inference', 'partial', inf ? { decision: inf.decision, recommended: inf.result.recommendedGpuOption ? `${inf.result.recommendedGpuOption.totalGpusAtPeak} × ${inf.result.recommendedGpuOption.gpuLabel}` : null, selfHostedMonthlyUsd: inf.result.recommendedGpuOption?.monthlyTotalUsd ?? null, managedApiMonthlyUsd: inf.result.managedApi.monthlyUsd } : {}), plannedWave: 4 },
       infrastructure: { ...section('infrastructure', 'partial', dep ? { platform: dep.platform, executed: dep.executed, hasKubernetes: !!dep.kubernetesArtifacts } : {}), plannedWave: 5 },
       rag: later(6),

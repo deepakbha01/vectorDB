@@ -5,7 +5,7 @@ import { InferenceAssessment } from './inference-assessment.entity';
 import { CreateInferenceAssessmentDto, CUSTOM_MODEL_ID } from './dto/create-inference-assessment.dto';
 import { InferenceEngineService } from './inference-engine.service';
 import { InferenceConfigService } from './inference-config.service';
-import { GpuPricingModel, InferenceDefaultsSuggestion, InferenceEngineInput, InferenceWorkloadType, ModelSpec } from './inference.types';
+import { GpuPricingModel, InferenceDefaultsSuggestion, InferenceEngineInput, InferenceWorkloadType, ModelSourcing, ModelSpec } from './inference.types';
 import { ProjectsService } from '../projects/projects.service';
 import { DiscoveryService } from '../discovery/discovery.service';
 import { DataPipelineDesignService } from '../data-pipeline/data-pipeline-design.service';
@@ -13,6 +13,7 @@ import { ChunkingStrategy } from '../chunking/enums/chunking-strategy.enum';
 import { AuthenticatedUser } from '../auth/auth.service';
 import { AiWorkloadProfile } from '../ai-factory/workload-profile/workload-profile.entity';
 import { DeploymentTarget } from '../ai-factory/workload-profile/workload-profile.types';
+import { AiModelSelection } from '../ai-factory/model-selection/model-selection.entity';
 import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
 
@@ -28,6 +29,7 @@ export class InferenceService {
     private readonly engine: InferenceEngineService,
     private readonly cfg: InferenceConfigService,
     @InjectRepository(AiWorkloadProfile) private readonly profiles: Repository<AiWorkloadProfile>,
+    @InjectRepository(AiModelSelection) private readonly modelSelections: Repository<AiModelSelection>,
   ) {}
 
   async submit(projectId: string, requester: AuthenticatedUser, dto: CreateInferenceAssessmentDto): Promise<InferenceAssessment> {
@@ -114,6 +116,24 @@ export class InferenceService {
       const targets = v.deploymentTargets.value ?? [];
       // On-premises only: data may not leave for a third-party model API.
       if (targets.length === 1 && targets[0] === DeploymentTarget.ON_PREMISES) suggestion.allowThirdPartyApi = false;
+    }
+
+    // Model Selection (AI Factory Wave 3): pre-fill which model to size - never the serving design itself (spec §8).
+    const selection = await this.modelSelections.findOne({ where: { project: { id: projectId } }, order: { version: 'DESC' } });
+    const primary = selection?.result.primary;
+    if (selection && primary) {
+      const r = selection.result;
+      const ranked = [primary, r.secondary, r.fallback].filter((x): x is NonNullable<typeof x> => !!x);
+      const openWeight = ranked.find((x) => x.inferenceModelId && this.cfg.getModels().some((m) => m.id === x.inferenceModelId));
+      const api = ranked.find((x) => x.managedApiTierId && this.cfg.getManagedApiTiers().some((t) => t.id === x.managedApiTierId));
+      suggestion.source.push(`Model Selection v${selection.version}`);
+      if (openWeight) suggestion.modelId = openWeight.inferenceModelId;
+      if (api) suggestion.managedApiTierId = api.managedApiTierId;
+      if (selection.requirements.selfHostingRequired) {
+        suggestion.modelSourcing = ModelSourcing.SELF_HOSTED;
+        suggestion.allowThirdPartyApi = false;
+      } else if (openWeight && api) suggestion.modelSourcing = ModelSourcing.EVALUATE_BOTH;
+      else if (primary.family === 'proprietary_api' && !openWeight) suggestion.modelSourcing = ModelSourcing.MANAGED_API;
     }
     return suggestion;
   }

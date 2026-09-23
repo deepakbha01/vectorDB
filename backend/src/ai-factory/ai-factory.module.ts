@@ -17,11 +17,16 @@ import { AiFactoryEnabledGuard } from './ai-factory-enabled.guard';
 import { AiWorkloadProfile } from './workload-profile/workload-profile.entity';
 import { WorkloadProfileService } from './workload-profile/workload-profile.service';
 import { WorkloadProfileController } from './workload-profile/workload-profile.controller';
+import { AiModelSelection } from './model-selection/model-selection.entity';
+import { ModelSelectionService } from './model-selection/model-selection.service';
+import { ModelSelectionController } from './model-selection/model-selection.controller';
 
 /**
- * AI Factory foundations (Wave 1) and AI Workload Profile (Wave 2). Registers repositories for the existing
+ * AI Factory foundations (Wave 1), AI Workload Profile (Wave 2) and Model
+ * Selection (Wave 3). Registers repositories for the existing
  * deliverable entities for READ access only; the only tables this module
- * writes are ai_factory_state_snapshots and ai_workload_profiles.
+ * writes are ai_factory_state_snapshots, ai_workload_profiles and
+ * ai_model_selections.
  */
 @Module({
   imports: [
@@ -36,11 +41,12 @@ import { WorkloadProfileController } from './workload-profile/workload-profile.c
       InferenceAssessment,
       AiFactoryStateSnapshot,
       AiWorkloadProfile,
+      AiModelSelection,
     ]),
     ProjectsModule,
   ],
-  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService],
-  controllers: [AiFactoryController, WorkloadProfileController],
+  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService],
+  controllers: [AiFactoryController, WorkloadProfileController, ModelSelectionController],
   exports: [AiFactoryConfigService],
 })
 export class AiFactoryModule {}

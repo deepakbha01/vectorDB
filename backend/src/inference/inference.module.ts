@@ -11,6 +11,7 @@ import { DataPipelineDesignModule } from '../data-pipeline/data-pipeline-design.
 import { PdfRendererService } from '../reporting/pdf-renderer.service';
 import { DocxRendererService } from '../reporting/docx-renderer.service';
 import { AiWorkloadProfile } from '../ai-factory/workload-profile/workload-profile.entity';
+import { AiModelSelection } from '../ai-factory/model-selection/model-selection.entity';
 
 /**
  * Inference-as-a-Service assessment track. Self-contained: own config file,
@@ -19,7 +20,7 @@ import { AiWorkloadProfile } from '../ai-factory/workload-profile/workload-profi
  * stateless report renderers.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([InferenceAssessment, AiWorkloadProfile]), ProjectsModule, DiscoveryModule, DataPipelineDesignModule],
+  imports: [TypeOrmModule.forFeature([InferenceAssessment, AiWorkloadProfile, AiModelSelection]), ProjectsModule, DiscoveryModule, DataPipelineDesignModule],
   providers: [InferenceConfigService, InferenceEngineService, InferenceService, PdfRendererService, DocxRendererService],
   controllers: [InferenceController],
   exports: [InferenceService, InferenceEngineService],
