@@ -175,6 +175,9 @@ export interface InferenceDefaultsSuggestion {
   dataResidencyRequirement?: string;
   monthlyBudgetUsd?: number;
   workloadType?: InferenceWorkloadType;
+  /** From the AI Workload Profile (AI Factory Wave 2), when one exists. */
+  ttftTargetMs?: number;
+  allowThirdPartyApi?: boolean;
 }
 
 export const DECISION_LABELS: Record<InferenceDecision, string> = {
