@@ -9,6 +9,7 @@ import { UsersModule } from './users/users.module';
 import { ProjectsModule } from './projects/projects.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthController } from './health/health.controller';
+import { FeaturesController } from './features/features.controller';
 import { DatabaseAdaptersModule } from './database-adapters/database-adapters.module';
 import { RecommendationEngineModule } from './recommendation-engine/recommendation-engine.module';
 import { DiscoveryModule } from './discovery/discovery.module';
@@ -111,7 +112,7 @@ import { InferenceAssessment } from './inference/inference-assessment.entity';
     AuditModule,
     InferenceModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, FeaturesController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
