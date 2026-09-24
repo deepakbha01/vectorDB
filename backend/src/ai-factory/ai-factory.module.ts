@@ -20,13 +20,16 @@ import { WorkloadProfileController } from './workload-profile/workload-profile.c
 import { AiModelSelection } from './model-selection/model-selection.entity';
 import { ModelSelectionService } from './model-selection/model-selection.service';
 import { ModelSelectionController } from './model-selection/model-selection.controller';
+import { AiInferenceArchitecture } from './inference-architecture/inference-architecture.entity';
+import { InferenceArchitectureService } from './inference-architecture/inference-architecture.service';
+import { InferenceArchitectureController } from './inference-architecture/inference-architecture.controller';
 
 /**
- * AI Factory foundations (Wave 1), AI Workload Profile (Wave 2) and Model
- * Selection (Wave 3). Registers repositories for the existing
+ * AI Factory foundations (Wave 1), AI Workload Profile (Wave 2), Model
+ * Selection (Wave 3) and Inference Architecture (Wave 4). Registers repositories for the existing
  * deliverable entities for READ access only; the only tables this module
- * writes are ai_factory_state_snapshots, ai_workload_profiles and
- * ai_model_selections.
+ * writes are ai_factory_state_snapshots, ai_workload_profiles,
+ * ai_model_selections and ai_inference_architectures.
  */
 @Module({
   imports: [
@@ -42,11 +45,12 @@ import { ModelSelectionController } from './model-selection/model-selection.cont
       AiFactoryStateSnapshot,
       AiWorkloadProfile,
       AiModelSelection,
+      AiInferenceArchitecture,
     ]),
     ProjectsModule,
   ],
-  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService],
-  controllers: [AiFactoryController, WorkloadProfileController, ModelSelectionController],
+  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService, InferenceArchitectureService],
+  controllers: [AiFactoryController, WorkloadProfileController, ModelSelectionController, InferenceArchitectureController],
   exports: [AiFactoryConfigService],
 })
 export class AiFactoryModule {}

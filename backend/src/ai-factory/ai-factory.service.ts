@@ -17,12 +17,13 @@ import { AiFactoryConfigService } from './ai-factory-config.service';
 import { AiFactoryStateSnapshot } from './ai-factory-state-snapshot.entity';
 import { AiWorkloadProfile } from './workload-profile/workload-profile.entity';
 import { AiModelSelection } from './model-selection/model-selection.entity';
+import { AiInferenceArchitecture } from './inference-architecture/inference-architecture.entity';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 import { ChunkingStrategy } from '../chunking/enums/chunking-strategy.enum';
 import { EmbeddingModelFacts } from './eligibility/eligibility.rules';
 import { computeLineage } from './lineage.engine';
 import { analyseImpact } from './impact.engine';
-import { fromDataPipelineDesign, fromIndexDesign, fromInferenceAssessment, fromModelSelection, fromVectorDbSelection } from './decision-record.adapters';
+import { fromDataPipelineDesign, fromIndexDesign, fromInferenceArchitecture, fromInferenceAssessment, fromModelSelection, fromVectorDbSelection } from './decision-record.adapters';
 import {
   AiFactoryOverview,
   AssessmentState,
@@ -63,6 +64,7 @@ export class AiFactoryService {
     @InjectRepository(AiFactoryStateSnapshot) private readonly snapshots: Repository<AiFactoryStateSnapshot>,
     @InjectRepository(AiWorkloadProfile) private readonly profiles: Repository<AiWorkloadProfile>,
     @InjectRepository(AiModelSelection) private readonly modelSelections: Repository<AiModelSelection>,
+    @InjectRepository(AiInferenceArchitecture) private readonly inferenceArchitectures: Repository<AiInferenceArchitecture>,
     private readonly platformConfig: PlatformConfigService,
   ) {}
 
@@ -79,6 +81,7 @@ export class AiFactoryService {
       inference: this.inference,
       workload_profile: this.profiles,
       model_selection: this.modelSelections,
+      inference_architecture: this.inferenceArchitectures,
     }[phase];
   }
 
@@ -187,6 +190,9 @@ export class AiFactoryService {
 
     if (inference) records.push(fromInferenceAssessment(inference));
 
+    const architecture = await this.latest<AiInferenceArchitecture>('inference_architecture', projectId);
+    if (architecture) records.push(fromInferenceArchitecture(architecture));
+
     return records;
   }
 
@@ -261,7 +267,7 @@ export class AiFactoryService {
     };
     const later = (wave: number): StateSection => ({ status: 'not_yet_available', coverage: 'none', source: null, summary: {}, plannedWave: wave });
 
-    const [d, p, i, adr, dep, opt, cap, inf, wp, ms] = await Promise.all([
+    const [d, p, i, adr, dep, opt, cap, inf, wp, ms, ia] = await Promise.all([
       this.latest<DiscoveryAssessment>('discovery', project.id),
       this.latest<DataPipelineDesign>('data_embeddings', project.id),
       this.latest<IndexDesign>('index_design', project.id),
@@ -272,6 +278,7 @@ export class AiFactoryService {
       this.latest<InferenceAssessment>('inference', project.id),
       this.latest<AiWorkloadProfile>('workload_profile', project.id),
       this.latest<AiModelSelection>('model_selection', project.id),
+      this.latest<AiInferenceArchitecture>('inference_architecture', project.id),
     ]);
     const profileValue = (k: keyof AiWorkloadProfile['inputs']) => wp?.inputs[k]?.value ?? null;
     const wpResult = wp?.result;
@@ -316,7 +323,17 @@ export class AiFactoryService {
       vectorDB: section('vector_db_selection', 'full', adr ? { platform: adr.decision, decisionStatus: adr.decisionStatus, confidence: adr.confidence, projectPlatform: project.platform, manualOverride: project.platformIsManualOverride } : {}),
       index: section('index_design', 'full', i ? { index: i.decision, configuration: Object.fromEntries(i.configuration.map((c) => [c.name, c.value])) } : {}),
       model: section('model_selection', 'full', ms ? { primary: ms.result.primary?.label ?? null, secondary: ms.result.secondary?.label ?? null, fallback: ms.result.fallback?.label ?? null, confidence: ms.result.confidence, eligibleCandidates: ms.result.candidates.filter((c) => c.eligibility !== 'not_eligible').length, candidates: ms.result.candidates.length } : {}),
-      inference: { ...section('inference', 'partial', inf ? { decision: inf.decision, recommended: inf.result.recommendedGpuOption ? `${inf.result.recommendedGpuOption.totalGpusAtPeak} × ${inf.result.recommendedGpuOption.gpuLabel}` : null, selfHostedMonthlyUsd: inf.result.recommendedGpuOption?.monthlyTotalUsd ?? null, managedApiMonthlyUsd: inf.result.managedApi.monthlyUsd } : {}), plannedWave: 4 },
+      inference: section('inference', ia ? 'full' : 'partial', inf
+        ? {
+            decision: inf.decision,
+            recommended: inf.result.recommendedGpuOption ? `${inf.result.recommendedGpuOption.totalGpusAtPeak} × ${inf.result.recommendedGpuOption.gpuLabel}` : null,
+            selfHostedMonthlyUsd: inf.result.recommendedGpuOption?.monthlyTotalUsd ?? null,
+            managedApiMonthlyUsd: inf.result.managedApi.monthlyUsd,
+            servingRuntime: ia?.result.recommended?.label ?? null,
+            patterns: ia?.context.patterns ?? null,
+            architectureVersion: ia?.version ?? null,
+          }
+        : {}),
       infrastructure: { ...section('infrastructure', 'partial', dep ? { platform: dep.platform, executed: dep.executed, hasKubernetes: !!dep.kubernetesArtifacts } : {}), plannedWave: 5 },
       rag: later(6),
       security: {

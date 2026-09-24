@@ -1,0 +1,182 @@
+# AI Factory Wave 4 - serving technology catalogue for the Inference
+# Architecture (spec §8). Read only by the ai-factory module.
+#
+# Technology-neutral: every option is judged by the same eligibility rules and
+# weighted score; none is preferred in code. Tiers are RELATIVE 1-5 planning
+# ratings (5 = best / simplest / cheapest), not benchmark results. Feature
+# support is directional - confirm against the version you will deploy.
+
+rulesVersion: serving-2026.09-1
+
+servingOptions:
+  - id: vllm-k8s
+    label: vLLM on Kubernetes (KServe / Helm)
+    runtime: vLLM
+    modelFamilies: [open_weight]
+    runsOn: [on_premises, azure, aws, oci, gcp]
+    requiresKubernetes: true
+    requiresGpu: true
+    patterns: [synchronous, streaming, asynchronous, batch, real_time]
+    precisions: [fp16, fp8, int8, int4]
+    multiGpuTensorParallel: true
+    features: [continuous_batching, prefix_caching, multi_lora, openai_compatible_api, speculative_decoding]
+    gpuVendors: [nvidia, amd]
+    opsComplexity: 3
+    performanceTier: 4
+    maturityTier: 4
+    costTier: 4
+    licence: Apache 2.0
+  - id: tgi-k8s
+    label: Hugging Face TGI on Kubernetes
+    runtime: Text Generation Inference
+    modelFamilies: [open_weight]
+    runsOn: [on_premises, azure, aws, oci, gcp]
+    requiresKubernetes: true
+    requiresGpu: true
+    patterns: [synchronous, streaming, asynchronous, real_time]
+    precisions: [fp16, fp8, int8, int4]
+    multiGpuTensorParallel: true
+    features: [continuous_batching, prefix_caching, multi_lora, openai_compatible_api]
+    gpuVendors: [nvidia, amd]
+    opsComplexity: 3
+    performanceTier: 3
+    maturityTier: 4
+    costTier: 4
+    licence: Apache 2.0
+  - id: triton-trtllm-k8s
+    label: NVIDIA Triton + TensorRT-LLM on Kubernetes
+    runtime: Triton Inference Server with TensorRT-LLM
+    modelFamilies: [open_weight]
+    runsOn: [on_premises, azure, aws, oci, gcp]
+    requiresKubernetes: true
+    requiresGpu: true
+    patterns: [synchronous, streaming, asynchronous, batch, real_time]
+    precisions: [fp16, fp8, int8, int4]
+    multiGpuTensorParallel: true
+    features: [continuous_batching, prefix_caching, multi_lora, speculative_decoding]
+    gpuVendors: [nvidia]
+    opsComplexity: 5
+    performanceTier: 5
+    maturityTier: 4
+    costTier: 4
+    licence: BSD-3 (Triton) / Apache 2.0 (TensorRT-LLM)
+    note: Engines must be compiled per model, precision and GPU type - adds build pipeline work.
+  - id: vllm-vm
+    label: vLLM on virtual machines (containers, no Kubernetes)
+    runtime: vLLM
+    modelFamilies: [open_weight]
+    runsOn: [on_premises, azure, aws, oci, gcp]
+    requiresKubernetes: false
+    requiresGpu: true
+    patterns: [synchronous, streaming, batch, real_time]
+    precisions: [fp16, fp8, int8, int4]
+    multiGpuTensorParallel: true
+    features: [continuous_batching, prefix_caching, multi_lora, openai_compatible_api]
+    gpuVendors: [nvidia, amd]
+    opsComplexity: 2
+    performanceTier: 4
+    maturityTier: 3
+    costTier: 4
+    licence: Apache 2.0
+    note: Autoscaling and failover are manual or scripted - suits small, steady fleets.
+  - id: managed-endpoint
+    label: Cloud managed inference endpoint (open-weight models)
+    runtime: Provider-managed serving stack
+    modelFamilies: [open_weight]
+    runsOn: [azure, aws, oci, gcp]
+    requiresKubernetes: false
+    requiresGpu: false
+    patterns: [synchronous, streaming, asynchronous, batch, real_time]
+    precisions: [fp16, fp8, int8]
+    multiGpuTensorParallel: true
+    features: [continuous_batching, openai_compatible_api, managed_autoscaling]
+    gpuVendors: [provider]
+    opsComplexity: 1
+    performanceTier: 3
+    maturityTier: 4
+    costTier: 2
+    licence: Provider terms of service
+  - id: managed-api
+    label: Cloud model service (managed API)
+    runtime: Provider-hosted model API
+    modelFamilies: [proprietary_api]
+    runsOn: [azure, aws, oci, gcp]
+    requiresKubernetes: false
+    requiresGpu: false
+    patterns: [synchronous, streaming, asynchronous, batch, real_time]
+    precisions: [provider]
+    multiGpuTensorParallel: true
+    features: [openai_compatible_api, managed_autoscaling]
+    gpuVendors: [provider]
+    opsComplexity: 1
+    performanceTier: 3
+    maturityTier: 5
+    costTier: 3
+    licence: Provider terms of service
+  - id: cpu-runtime
+    label: CPU inference runtime (llama.cpp-class, quantised)
+    runtime: CPU runtime (GGUF / quantised)
+    modelFamilies: [open_weight]
+    runsOn: [on_premises, azure, aws, oci, gcp]
+    requiresKubernetes: false
+    requiresGpu: false
+    patterns: [synchronous, streaming, batch]
+    precisions: [int8, int4]
+    multiGpuTensorParallel: false
+    maxModelParamsB: 14
+    features: [openai_compatible_api]
+    gpuVendors: []
+    opsComplexity: 2
+    performanceTier: 1
+    maturityTier: 3
+    costTier: 5
+    licence: MIT
+    note: Only for small models at low traffic - throughput is a fraction of GPU serving.
+  - id: custom-runtime
+    label: Custom inference runtime
+    runtime: In-house serving code
+    modelFamilies: [open_weight]
+    runsOn: [on_premises, azure, aws, oci, gcp]
+    requiresKubernetes: false
+    requiresGpu: true
+    patterns: [synchronous, streaming, asynchronous, batch, real_time]
+    precisions: [fp16, fp8, int8, int4]
+    multiGpuTensorParallel: true
+    features: []
+    gpuVendors: [nvidia, amd]
+    opsComplexity: 5
+    performanceTier: 2
+    maturityTier: 1
+    costTier: 2
+    licence: In-house
+    note: Only justified by requirements no maintained runtime meets - the team owns batching, caching and upgrades.
+
+# Largest operational complexity (1-5) each ops capability can run without it
+# becoming a CONDITION of the recommendation (keys match the inference assessment).
+opsCapacity: { none: 1, part_time: 2, dedicated_team: 4, platform_team: 5 }
+
+scoringWeights:
+  performance: 0.30
+  operationalSimplicity: 0.25
+  maturity: 0.20
+  cost: 0.15
+  featureFit: 0.10
+
+# Features the architecture wants given the requirements (each missing one lowers featureFit, never eligibility).
+desiredFeatures:
+  streaming: [continuous_batching]
+  highConcurrency: [continuous_batching, prefix_caching]
+  multiModelRouting: [openai_compatible_api]
+
+# Latency percentile estimates from the sizing model's (mean-ish) figures.
+# Applied at the target utilisation used for sizing - ESTIMATES that a load
+# test must confirm (spec §11: never present estimates as measurements).
+latencyTailFactors: { p50: 1.0, p95: 1.6, p99: 2.3 }
+
+# Autoscaling signal per inference pattern.
+autoscalingSignals:
+  synchronous: Concurrent requests per replica (in-flight) with KV-cache utilisation as a guard
+  streaming: Concurrent streams per replica and KV-cache utilisation
+  asynchronous: Queue depth and oldest-message age
+  batch: Queue depth (scale to zero between batches)
+  real_time: Concurrent requests per replica, with warm minimum replicas (no scale to zero)

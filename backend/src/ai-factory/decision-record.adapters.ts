@@ -5,6 +5,7 @@ import { OptimizationReport } from '../benchmark/optimization-report.entity';
 import { InferenceAssessment } from '../inference/inference-assessment.entity';
 import { DataPipelineDesign } from '../data-pipeline/data-pipeline-design.entity';
 import { AiModelSelection } from './model-selection/model-selection.entity';
+import { AiInferenceArchitecture } from './inference-architecture/inference-architecture.entity';
 import { EmbeddingEligibilityRules, EmbeddingModelFacts, IndexEligibilityRules, embeddingEligibility, indexEligibility, scoreEmbedding } from './eligibility/eligibility.rules';
 import { DecisionAlternative, DecisionCandidate, DecisionRecord, Eligibility, EvidenceType } from './ai-factory.types';
 
@@ -372,6 +373,40 @@ export function fromInferenceAssessment(a: InferenceAssessment): DecisionRecord 
       'Run the customer evaluation set on the self-hosted model and the API tier - quality equivalence is not assessed.',
     ],
     wouldChangeIf: [r.breakEven.note, 'Latency targets, request volume, tokens per request, or the third-party API policy change.'],
-    gaps: ['Serving-technology evaluation (vLLM, Triton, managed endpoints) and gateway/router design arrive in Wave 4.'],
+    // Serving technology, patterns and gateway / router design live in the Inference Architecture record (Wave 4).
+    gaps: [],
+  };
+}
+
+// ---------------------------------------------------- Inference architecture
+/** Spec §8 Inference Architecture Decision Record, in the standard format. */
+export function fromInferenceArchitecture(a: AiInferenceArchitecture): DecisionRecord {
+  const r = a.result;
+  const arch = r.architecture;
+  const alternatives = pickAlternatives(
+    r.candidates.map((c) => ({ id: c.id, label: c.label, eligibility: c.eligibility, reason: [...c.conditions, ...c.notes][0] ?? `score ${c.score}` })),
+    r.recommended?.id ?? null,
+  );
+  const missedTargets = (arch?.sla.latency ?? []).filter((l) => l.meetsTargetAtP95 === false).map((l) => `Estimated P95 ${l.metric.toLowerCase()} ${l.p95} ms exceeds the ${l.targetMs} ms target.`);
+  return {
+    phase: 'inference_architecture',
+    title: 'Inference serving architecture',
+    source: { deliverableId: a.id, version: a.version, createdAt: a.createdAt },
+    status: !r.recommended ? 'not_feasible' : r.recommended.eligibility === 'conditional' ? 'conditional' : 'decided',
+    recommendation: r.recommended ? { id: r.recommended.id, label: r.recommended.label } : null,
+    confidence: r.confidence,
+    why: r.why,
+    candidates: r.candidates.map((c) => ({ id: c.id, label: c.label, eligibility: c.eligibility, score: c.score, notes: [...c.failures, ...c.conditions, ...c.notes] })),
+    alternatives,
+    tradeoffs: [...(arch?.loadBalancing.slice(0, 1) ?? []), ...(arch?.autoscaling.slice(0, 1) ?? []), ...alternatives.map((x) => `${x.label}: ${x.reason}`)],
+    risks: r.recommended ? [...r.recommended.conditions, ...missedTargets] : [],
+    assumptions: Object.entries(a.sources).map(([k, s]) => ({ statement: `${k}: ${s.detail}`, evidenceType: 'assumption' as const })),
+    evidence: [
+      ...(arch?.sla.latency.map((l) => ({ label: `${l.metric} P50 / P95 / P99`, value: `${l.p50} / ${l.p95} / ${l.p99} ms`, evidenceType: 'estimated' as const })) ?? []),
+      ...(arch?.cost ?? []),
+    ],
+    benchmarkRequired: r.benchmarkRequired,
+    wouldChangeIf: r.wouldChangeIf,
+    gaps: [],
   };
 }

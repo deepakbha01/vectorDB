@@ -18,6 +18,7 @@ import { InferenceAssessment } from './inference/inference-assessment.entity';
 import { AiFactoryStateSnapshot } from './ai-factory/ai-factory-state-snapshot.entity';
 import { AiWorkloadProfile } from './ai-factory/workload-profile/workload-profile.entity';
 import { AiModelSelection } from './ai-factory/model-selection/model-selection.entity';
+import { AiInferenceArchitecture } from './ai-factory/inference-architecture/inference-architecture.entity';
 
 config();
 
@@ -59,6 +60,7 @@ export const AppDataSource = new DataSource({
     AiFactoryStateSnapshot,
     AiWorkloadProfile,
     AiModelSelection,
+    AiInferenceArchitecture,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,
