@@ -178,6 +178,10 @@ export interface InferenceDefaultsSuggestion {
   /** From the AI Workload Profile (AI Factory Wave 2), when one exists. */
   ttftTargetMs?: number;
   allowThirdPartyApi?: boolean;
+  /** From Model Selection (AI Factory Wave 3), when one exists - suggestions only. */
+  modelId?: string;
+  managedApiTierId?: string;
+  modelSourcing?: ModelSourcing;
 }
 
 export const DECISION_LABELS: Record<InferenceDecision, string> = {

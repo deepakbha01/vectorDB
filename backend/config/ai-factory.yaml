@@ -5,7 +5,7 @@
 # phases compute anything; it only describes how their deliverables relate so
 # the AI Factory view can show lineage, staleness and impact.
 
-rulesVersion: ai-factory-2026.09-2
+rulesVersion: ai-factory-2026.09-3
 
 # ---------------------------------------------------------------------------
 # Phase dependency graph. `dependsOn` lists the DIRECT upstream deliverables
@@ -63,11 +63,17 @@ phases:
       - { phase: discovery, kind: advisory }
       - { phase: data_embeddings, kind: advisory }
       - { phase: workload_profile, kind: advisory }
+      - { phase: model_selection, kind: advisory }   # model choice pre-fills, never fixes, the inference design (spec §8)
   - key: workload_profile
     label: AI Workload Profile
     route: workload-profile
     dependsOn:
       - { phase: discovery, kind: advisory }   # Discovery answers only pre-fill blanks
+  - key: model_selection
+    label: Model selection
+    route: model-selection
+    dependsOn:
+      - { phase: workload_profile, kind: hard }   # requirements are computed from the profile
 
 # ---------------------------------------------------------------------------
 # Parameter impact map (spec §22). Which phases must be re-run when a
@@ -156,9 +162,9 @@ parameterImpact:
 steps:
   - { number: 1,  key: use_case,        title: Use Case,              phases: [workload_profile],                   coverage: full,    note: "Business objective, criticality, users, applications, workload types and data sources - captured in the AI Workload Profile." }
   - { number: 2,  key: scale,           title: Scale,                 phases: [workload_profile, discovery],        coverage: full,    note: "Workload size and architecture classification, named deployment targets and data classification (AI Workload Profile), built on the vector Discovery answers." }
-  - { number: 3,  key: data_embedding,  title: Data & Embedding,      phases: [data_embeddings],                    coverage: partial, plannedWave: 3,  note: "Chunking and embedding design exist; embedding-model eligibility and scoring arrive in Wave 3." }
+  - { number: 3,  key: data_embedding,  title: Data & Embedding,      phases: [data_embeddings],                    coverage: full,    note: "Chunking and embedding design, with every catalogue embedding model checked for eligibility (input limit, self-hosting, languages, lifecycle) and scored." }
   - { number: 4,  key: vectordb_index,  title: VectorDB & Index,      phases: [index_design, vector_db_selection],  coverage: full }
-  - { number: 5,  key: model,           title: Model,                 phases: [],                                   coverage: none,    plannedWave: 3 }
+  - { number: 5,  key: model,           title: Model,                 phases: [model_selection],                    coverage: full,    note: "Primary, secondary and fallback model from a technology-neutral catalogue: mandatory eligibility first, then weighted scoring." }
   - { number: 6,  key: inference,       title: Inference,             phases: [inference],                          coverage: partial, plannedWave: 4,  note: "GPU sizing, latency and cost exist; serving-technology evaluation and gateway/router design arrive in Wave 4." }
   - { number: 7,  key: infrastructure,  title: Infrastructure,        phases: [infrastructure],                     coverage: partial, plannedWave: 5,  note: "Vector-DB deployment plan exists; multi-cloud and GPU infrastructure arrive in Wave 5." }
   - { number: 8,  key: rag_agent,       title: RAG / Agent,           phases: [],                                   coverage: none,    plannedWave: 6 }
@@ -238,3 +244,32 @@ workloadProfile:
 
   # Answers the profile needs before it counts as complete (spec §27.19: validate before proceeding).
   requiredInputs: [businessObjective, businessCriticality, workloadTypes, dataTypes, deploymentTargets, dailyRequests, expectedVectorCount]
+
+# ---------------------------------------------------------------------------
+# Wave 3 - eligibility layers for choices the existing engines make without
+# one (spec §3). Applied in the AI Factory decision records only: the index
+# and embedding engines are unchanged. When an existing choice fails a
+# mandatory rule, the decision record flags the conflict for review instead
+# of silently changing the deliverable.
+# ---------------------------------------------------------------------------
+indexEligibility:
+  # Estimated index memory ÷ available memory.
+  memoryNotEligibleAbove: 1.0
+  memoryConditionalAbove: 0.8
+  # Highest recall each family typically reaches with sensible tuning.
+  maxTypicalRecall: { hnsw: 0.99, ivf_flat: 0.97, pq: 0.92 }
+  # Within this distance of the ceiling the target is reachable but needs aggressive tuning → conditional.
+  recallConditionalMargin: 0.02
+  # Update frequencies at which a family needs periodic re-clustering / re-training → conditional.
+  updateSensitive: { ivf_flat: [high], pq: [moderate, high] }
+
+embeddingEligibility:
+  # Relative quality score per catalogue qualityTier.
+  qualityScore: { highest: 1.0, high: 0.8, medium: 0.6, low: 0.4 }
+  # Providers that can run inside the customer's boundary (self-hosted).
+  selfHostableProviders: [open_source]
+  scoringWeights: { quality: 0.5, cost: 0.3, dimensionEfficiency: 0.2 }
+  # Dimension at which the efficiency score is 1.0 (smaller vectors = less memory and faster search).
+  referenceDimension: 768
+  # Converts character-based chunk sizes to tokens (token_based chunking is used as-is).
+  charsPerToken: 4

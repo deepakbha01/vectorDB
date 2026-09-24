@@ -1,0 +1,165 @@
+# AI Factory Wave 3 - model catalogue for Model Selection (spec §7).
+#
+# Technology-neutral by construction:
+#  - open-weight models use the SAME ids as config/inference.yaml, so a chosen
+#    model can be sized for serving without re-entry;
+#  - proprietary models are represented as vendor-neutral API TIERS matching
+#    inference.yaml's managedApiTiers (small / mid / frontier), not named
+#    products, so no vendor is ever the hard-coded winner.
+#
+# Tiers are RELATIVE 1-5 planning ratings (5 = best / fastest / cheapest),
+# not benchmark results - every recommendation that uses them says so and
+# asks for an evaluation on the customer's own data. Context windows and
+# capabilities are directional; verify against the model card / provider
+# documentation before committing.
+
+rulesVersion: models-2026.09-1
+
+licences:
+  apache_2: { label: Apache 2.0, permissive: true, note: "Permissive; commercial use allowed." }
+  llama_community: { label: Llama Community License, permissive: false, note: "Commercial use allowed with an acceptable-use policy and a 700M monthly-active-user threshold." }
+  qwen: { label: Qwen License, permissive: false, note: "Commercial use allowed; separate terms above 100M monthly active users." }
+  commercial_api: { label: Provider terms of service, permissive: false, note: "Usage governed by the API provider's terms and data-processing agreement." }
+
+# capabilities: tool_calling | structured_output | multilingual | vision | code
+# category: slm (small language model) | llm | reasoning (flagged via reasoningTier)
+models:
+  - id: llama-3.1-8b
+    label: Llama 3.1 8B Instruct
+    family: open_weight
+    category: slm
+    paramsB: 8.03
+    contextWindow: 131072
+    capabilities: [tool_calling, structured_output, multilingual]
+    qualityTier: 2
+    reasoningTier: 1
+    latencyTier: 5
+    costTier: 5
+    licence: llama_community
+    fineTunable: true
+    inferenceModelId: llama-3.1-8b
+  - id: qwen2.5-7b
+    label: Qwen2.5 7B Instruct
+    family: open_weight
+    category: slm
+    paramsB: 7.6
+    contextWindow: 32768
+    capabilities: [tool_calling, structured_output, multilingual, code]
+    qualityTier: 2
+    reasoningTier: 2
+    latencyTier: 5
+    costTier: 5
+    licence: apache_2
+    fineTunable: true
+    inferenceModelId: qwen2.5-7b
+  - id: mistral-small-24b
+    label: Mistral Small 3 (24B)
+    family: open_weight
+    category: llm
+    paramsB: 23.6
+    contextWindow: 32768
+    capabilities: [tool_calling, structured_output, multilingual, code]
+    qualityTier: 3
+    reasoningTier: 2
+    latencyTier: 4
+    costTier: 4
+    licence: apache_2
+    fineTunable: true
+    inferenceModelId: mistral-small-24b
+  - id: mixtral-8x7b
+    label: Mixtral 8x7B Instruct (MoE)
+    family: open_weight
+    category: llm
+    paramsB: 46.7
+    contextWindow: 32768
+    capabilities: [structured_output, multilingual, code]
+    qualityTier: 3
+    reasoningTier: 2
+    latencyTier: 4
+    costTier: 3
+    licence: apache_2
+    fineTunable: true
+    inferenceModelId: mixtral-8x7b
+  - id: llama-3.3-70b
+    label: Llama 3.3 70B Instruct
+    family: open_weight
+    category: llm
+    paramsB: 70.6
+    contextWindow: 131072
+    capabilities: [tool_calling, structured_output, multilingual, code]
+    qualityTier: 4
+    reasoningTier: 3
+    latencyTier: 3
+    costTier: 2
+    licence: llama_community
+    fineTunable: true
+    inferenceModelId: llama-3.3-70b
+  - id: qwen2.5-72b
+    label: Qwen2.5 72B Instruct
+    family: open_weight
+    category: llm
+    paramsB: 72.7
+    contextWindow: 32768
+    capabilities: [tool_calling, structured_output, multilingual, code]
+    qualityTier: 4
+    reasoningTier: 3
+    latencyTier: 3
+    costTier: 2
+    licence: qwen
+    fineTunable: true
+    inferenceModelId: qwen2.5-72b
+  - id: api-small
+    label: Managed API - small / fast model tier
+    family: proprietary_api
+    category: slm
+    contextWindow: 128000
+    capabilities: [tool_calling, structured_output, multilingual, vision, code]
+    qualityTier: 3
+    reasoningTier: 2
+    latencyTier: 5
+    costTier: 5
+    licence: commercial_api
+    fineTunable: false
+    managedApiTierId: small
+  - id: api-mid
+    label: Managed API - mid-size general model tier
+    family: proprietary_api
+    category: llm
+    contextWindow: 200000
+    capabilities: [tool_calling, structured_output, multilingual, vision, code]
+    qualityTier: 4
+    reasoningTier: 4
+    latencyTier: 4
+    costTier: 3
+    licence: commercial_api
+    fineTunable: false
+    managedApiTierId: mid
+  - id: api-frontier
+    label: Managed API - frontier / reasoning model tier
+    family: proprietary_api
+    category: reasoning
+    contextWindow: 200000
+    capabilities: [tool_calling, structured_output, multilingual, vision, code]
+    qualityTier: 5
+    reasoningTier: 5
+    latencyTier: 2
+    costTier: 1
+    licence: commercial_api
+    fineTunable: false
+    managedApiTierId: frontier
+
+# Weighted scoring AFTER eligibility (spec §3: eligibility is separate from scoring).
+scoringWeights:
+  quality: 0.30
+  reasoning: 0.15
+  latency: 0.15
+  cost: 0.20
+  contextHeadroom: 0.10
+  deploymentFlexibility: 0.10
+# A priority set to "high" multiplies that criterion's weight (weights are re-normalised).
+priorityMultiplier: 1.6
+# Minimum relative tiers per requirement level (below → CONDITIONAL, never silently accepted).
+accuracyMinQualityTier: { standard: 2, high: 3, critical: 4 }
+reasoningMinTier: { low: 1, medium: 2, high: 3 }
+# Primary vs runner-up score gap below which confidence drops to medium.
+confidenceMargin: 0.05

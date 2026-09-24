@@ -216,4 +216,8 @@ export interface InferenceDefaultsSuggestion {
   workloadType?: InferenceWorkloadType;
   ttftTargetMs?: number;
   allowThirdPartyApi?: boolean;
+  /** From Model Selection (AI Factory Wave 3), when one exists - suggestions only. */
+  modelId?: string;
+  managedApiTierId?: string;
+  modelSourcing?: ModelSourcing;
 }

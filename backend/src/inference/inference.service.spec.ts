@@ -34,7 +34,7 @@ function dto(overrides: Partial<CreateInferenceAssessmentDto> = {}): CreateInfer
   };
 }
 
-function setup(opts: { discovery?: any; pipeline?: any; profile?: any } = {}) {
+function setup(opts: { discovery?: any; pipeline?: any; profile?: any; modelSelection?: any } = {}) {
   const cfg = new InferenceConfigService({} as ConfigService);
   cfg.setCatalogue(catalogue);
   const saved: any[] = [];
@@ -49,7 +49,8 @@ function setup(opts: { discovery?: any; pipeline?: any; profile?: any } = {}) {
   const discovery = { getLatest: jest.fn(async () => (opts.discovery ? { assessment: opts.discovery } : null)) };
   const pipeline = { getLatest: jest.fn(async () => opts.pipeline ?? null) };
   const profiles = { findOne: jest.fn(async () => opts.profile ?? null) };
-  const service = new InferenceService(repo as any, projects as any, discovery as any, pipeline as any, new InferenceEngineService(cfg), cfg, profiles as any);
+  const modelSelections = { findOne: jest.fn(async () => opts.modelSelection ?? null) };
+  const service = new InferenceService(repo as any, projects as any, discovery as any, pipeline as any, new InferenceEngineService(cfg), cfg, profiles as any, modelSelections as any);
   return { service, repo, projects, discovery, pipeline };
 }
 
@@ -166,6 +167,35 @@ describe('InferenceService', () => {
       const s = await service.getDefaults('p1', user);
       expect(s.allowThirdPartyApi).toBeUndefined();
       expect(s.workloadType).toBeUndefined();
+    });
+
+    it('pre-fills the model to size from Model Selection without fixing the serving design', async () => {
+      const pick = (id: string, family: string, extra: Record<string, string>) => ({ id, family, ...extra });
+      const { service } = setup({
+        modelSelection: {
+          version: 4,
+          requirements: { selfHostingRequired: false },
+          result: {
+            primary: pick('api-mid', 'proprietary_api', { managedApiTierId: 'mid' }),
+            secondary: pick('llama-3.3-70b', 'open_weight', { inferenceModelId: 'llama-3.3-70b' }),
+            fallback: null,
+          },
+        },
+      });
+      const s = await service.getDefaults('p1', user);
+      expect(s).toMatchObject({ modelId: 'llama-3.3-70b', managedApiTierId: 'mid', modelSourcing: ModelSourcing.EVALUATE_BOTH });
+      expect(s.source).toEqual(['Model Selection v4']);
+    });
+
+    it('forces self-hosted sizing when Model Selection requires self-hosting', async () => {
+      const { service } = setup({
+        modelSelection: {
+          version: 1,
+          requirements: { selfHostingRequired: true },
+          result: { primary: { id: 'llama-3.1-8b', family: 'open_weight', inferenceModelId: 'llama-3.1-8b' }, secondary: null, fallback: null },
+        },
+      });
+      expect(await service.getDefaults('p1', user)).toMatchObject({ modelId: 'llama-3.1-8b', modelSourcing: ModelSourcing.SELF_HOSTED, allowThirdPartyApi: false });
     });
 
     it('uses token-based chunk sizes as-is', async () => {
