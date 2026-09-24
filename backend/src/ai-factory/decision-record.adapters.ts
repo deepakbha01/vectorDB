@@ -8,6 +8,7 @@ import { AiModelSelection } from './model-selection/model-selection.entity';
 import { AiInferenceArchitecture } from './inference-architecture/inference-architecture.entity';
 import { AiInfrastructureDesign } from './infrastructure/infrastructure.entity';
 import { AiRagAgentDesign } from './rag-agent/rag-agent.entity';
+import { AiSecurityAssessment } from './security/security.entity';
 import { EmbeddingEligibilityRules, EmbeddingModelFacts, IndexEligibilityRules, embeddingEligibility, indexEligibility, scoreEmbedding } from './eligibility/eligibility.rules';
 import { DecisionAlternative, DecisionCandidate, DecisionRecord, Eligibility, EvidenceType } from './ai-factory.types';
 
@@ -476,6 +477,34 @@ export function fromRagAgentDesign(d: AiRagAgentDesign): DecisionRecord {
       ...r.latencyBudget.lines.map((l) => ({ label: `Latency: ${l.stage}`, value: `${l.ms.toLocaleString()} ms`, evidenceType: l.evidenceType })),
     ],
     benchmarkRequired: r.benchmarkRequired,
+    wouldChangeIf: r.wouldChangeIf,
+    gaps: r.gaps,
+  };
+}
+
+// ------------------------------------------------------ Security & governance
+const POLICY_ELIGIBILITY = { approved: 'eligible', approved_with_conditions: 'conditional', restricted: 'conditional', not_eligible: 'not_eligible' } as const;
+
+/** Spec §12 AI Security & Governance Assessment in the standard format: the "decision" is the verdict on the chosen architecture. */
+export function fromSecurityAssessment(d: AiSecurityAssessment): DecisionRecord {
+  const r = d.result;
+  const v = r.validation.status;
+  return {
+    phase: 'security_governance',
+    title: 'Security and governance',
+    source: { deliverableId: d.id, version: d.version, createdAt: d.createdAt },
+    status: v === 'fail' ? 'not_feasible' : v === 'pass' ? 'decided' : 'conditional',
+    recommendation: { id: r.overall.status, label: `${r.overall.label} - security validation: ${v.replace(/_/g, ' ')}` },
+    confidence: d.context.missingDesigns.length ? 'low' : r.gaps.length ? 'medium' : 'high',
+    why: [r.overall.summary, ...r.validation.reasons],
+    candidates: r.components.map((c) => ({ id: c.id, label: `${c.label}: ${c.choice}`, eligibility: POLICY_ELIGIBILITY[c.status], score: null, notes: [...c.reasons, ...c.conditions] })),
+    // An assessment, not a choice between options - alternatives live in the phases that made each choice.
+    alternatives: [],
+    tradeoffs: r.components.filter((c) => c.status === 'restricted').map((c) => `${c.label} (${c.choice}) is usable only for non-restricted data.`),
+    risks: [...r.components.flatMap((c) => c.conditions.map((k) => `${c.label}: ${k}`)), ...r.gaps],
+    assumptions: Object.entries(d.sources).map(([k, s]) => ({ statement: `${k}: ${s.detail}`, evidenceType: 'assumption' as const })),
+    evidence: r.controls.filter((c) => c.status === 'addressed').map((c) => ({ label: c.label, value: c.designedIn.map((s) => s.source).filter((s, i, a) => a.indexOf(s) === i).join('; '), evidenceType: 'assumption' as const })),
+    benchmarkRequired: r.verificationRequired,
     wouldChangeIf: r.wouldChangeIf,
     gaps: r.gaps,
   };

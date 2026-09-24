@@ -21,6 +21,7 @@ import { AiModelSelection } from './ai-factory/model-selection/model-selection.e
 import { AiInferenceArchitecture } from './ai-factory/inference-architecture/inference-architecture.entity';
 import { AiInfrastructureDesign } from './ai-factory/infrastructure/infrastructure.entity';
 import { AiRagAgentDesign } from './ai-factory/rag-agent/rag-agent.entity';
+import { AiSecurityAssessment } from './ai-factory/security/security.entity';
 
 config();
 
@@ -65,6 +66,7 @@ export const AppDataSource = new DataSource({
     AiInferenceArchitecture,
     AiInfrastructureDesign,
     AiRagAgentDesign,
+    AiSecurityAssessment,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,

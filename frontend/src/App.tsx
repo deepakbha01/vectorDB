@@ -24,6 +24,7 @@ import { ModelSelectionPage } from './pages/ModelSelectionPage';
 import { InferenceArchitecturePage } from './pages/InferenceArchitecturePage';
 import { InfrastructureDesignPage } from './pages/InfrastructureDesignPage';
 import { RagAgentPage } from './pages/RagAgentPage';
+import { SecurityGovernancePage } from './pages/SecurityGovernancePage';
 
 export function App() {
   return (
@@ -54,6 +55,7 @@ export function App() {
           <Route path="/projects/:id/inference-architecture" element={<InferenceArchitecturePage />} />
           <Route path="/projects/:id/infrastructure-design" element={<InfrastructureDesignPage />} />
           <Route path="/projects/:id/rag-agent" element={<RagAgentPage />} />
+          <Route path="/projects/:id/security-governance" element={<SecurityGovernancePage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
