@@ -15,6 +15,7 @@ import { CapacityPlan } from '../capacity-planning/capacity-plan.entity';
 import { InferenceAssessment } from '../inference/inference-assessment.entity';
 import { AiFactoryConfigService } from './ai-factory-config.service';
 import { AiFactoryStateSnapshot } from './ai-factory-state-snapshot.entity';
+import { AiWorkloadProfile } from './workload-profile/workload-profile.entity';
 import { computeLineage } from './lineage.engine';
 import { analyseImpact } from './impact.engine';
 import { fromIndexDesign, fromInferenceAssessment, fromVectorDbSelection } from './decision-record.adapters';
@@ -56,6 +57,7 @@ export class AiFactoryService {
     @InjectRepository(CapacityPlan) private readonly capacity: Repository<CapacityPlan>,
     @InjectRepository(InferenceAssessment) private readonly inference: Repository<InferenceAssessment>,
     @InjectRepository(AiFactoryStateSnapshot) private readonly snapshots: Repository<AiFactoryStateSnapshot>,
+    @InjectRepository(AiWorkloadProfile) private readonly profiles: Repository<AiWorkloadProfile>,
   ) {}
 
   // ---------------------------------------------------------------- loading
@@ -69,6 +71,7 @@ export class AiFactoryService {
       optimization: this.optimizations,
       capacity: this.capacity,
       inference: this.inference,
+      workload_profile: this.profiles,
     }[phase];
   }
 
@@ -189,7 +192,7 @@ export class AiFactoryService {
         return { phase: k, label: l.label, route: l.route, status: l.status };
       });
       let status: StepStatus;
-      if (step.key === 'use_case') status = project.businessUseCase ? 'current' : 'in_progress';
+      if (!phaseStatuses.length && step.key === 'use_case') status = project.businessUseCase ? 'current' : 'in_progress';
       else if (!phaseStatuses.length) status = 'not_yet_available';
       else if (phaseStatuses.some((p) => p.status === 'stale')) status = 'stale';
       else if (phaseStatuses.every((p) => p.status === 'not_started')) status = 'not_started';
@@ -208,7 +211,7 @@ export class AiFactoryService {
     };
     const later = (wave: number): StateSection => ({ status: 'not_yet_available', coverage: 'none', source: null, summary: {}, plannedWave: wave });
 
-    const [d, p, i, adr, dep, opt, cap, inf] = await Promise.all([
+    const [d, p, i, adr, dep, opt, cap, inf, wp] = await Promise.all([
       this.latest<DiscoveryAssessment>('discovery', project.id),
       this.latest<DataPipelineDesign>('data_embeddings', project.id),
       this.latest<IndexDesign>('index_design', project.id),
@@ -217,17 +220,46 @@ export class AiFactoryService {
       this.latest<OptimizationReport>('optimization', project.id),
       this.latest<CapacityPlan>('capacity', project.id),
       this.latest<InferenceAssessment>('inference', project.id),
+      this.latest<AiWorkloadProfile>('workload_profile', project.id),
     ]);
+    const profileValue = (k: keyof AiWorkloadProfile['inputs']) => wp?.inputs[k]?.value ?? null;
+    const wpResult = wp?.result;
 
     return {
-      useCase: {
-        status: project.businessUseCase ? 'current' : 'not_started',
-        coverage: 'partial',
-        source: null,
-        summary: { name: project.name, businessUseCase: project.businessUseCase ?? null, industry: project.industry ?? null, patternId: project.patternId ?? null, customerMode: project.customerMode },
-        plannedWave: 2,
-      },
-      scale: { ...section('discovery', 'partial', d ? { estimatedVectorCount: d.estimatedVectorCount, documentCount: d.documentCount, qps: d.qps, peakQps: d.peakQps, targetP95LatencyMs: d.targetP95LatencyMs, recallTarget: d.recallTarget, availabilityTargetPercent: d.availabilityTargetPercent, deploymentEnvironment: d.deploymentEnvironment } : {}), plannedWave: 2 },
+      // With a Workload Profile these two sections come from it (full coverage); without one, from the project and Discovery as before.
+      useCase: wp
+        ? section('workload_profile', 'full', {
+            name: project.name,
+            businessObjective: profileValue('businessObjective'),
+            businessDomain: profileValue('businessDomain'),
+            businessCriticality: profileValue('businessCriticality'),
+            workloadTypes: profileValue('workloadTypes'),
+            expectedUsers: profileValue('expectedUsers'),
+            applications: profileValue('numberOfApplications'),
+            dataSources: profileValue('dataSources'),
+            profileStatus: wpResult?.status,
+          })
+        : {
+            status: project.businessUseCase ? 'current' : 'not_started',
+            coverage: 'partial',
+            source: null,
+            summary: { name: project.name, businessUseCase: project.businessUseCase ?? null, industry: project.industry ?? null, patternId: project.patternId ?? null, customerMode: project.customerMode },
+            plannedWave: 2,
+          },
+      scale: wp
+        ? section('workload_profile', 'full', {
+            workloadSize: wpResult?.workloadSize.tier,
+            architecture: wpResult?.architecture.label,
+            dataClassification: wpResult?.dataClassification.level,
+            deploymentTargets: wpResult?.deploymentRequirements.targets,
+            hybrid: wpResult?.deploymentRequirements.hybrid,
+            expectedVectorCount: profileValue('expectedVectorCount'),
+            dailyRequests: profileValue('dailyRequests'),
+            peakQps: profileValue('peakQps'),
+            targetTtftMs: profileValue('targetTtftMs'),
+            availabilityTargetPercent: profileValue('availabilityTargetPercent'),
+          })
+        : { ...section('discovery', 'partial', d ? { estimatedVectorCount: d.estimatedVectorCount, documentCount: d.documentCount, qps: d.qps, peakQps: d.peakQps, targetP95LatencyMs: d.targetP95LatencyMs, recallTarget: d.recallTarget, availabilityTargetPercent: d.availabilityTargetPercent, deploymentEnvironment: d.deploymentEnvironment } : {}), plannedWave: 2 },
       data: section('data_embeddings', 'partial', p ? { chunkingStrategy: p.chunkingStrategy, chunkSize: p.chunkSize, chunkOverlap: p.chunkOverlap, metadataFields: (p.metadataFields ?? []).length } : {}),
       embedding: { ...section('data_embeddings', 'partial', p ? { provider: p.embeddingProviderId, model: p.embeddingModelId, dimension: p.embeddingDimension, similarityMetric: p.similarityMetric, costPerMillionTokens: p.costPerMillionTokens } : {}), plannedWave: 3 },
       vectorDB: section('vector_db_selection', 'full', adr ? { platform: adr.decision, decisionStatus: adr.decisionStatus, confidence: adr.confidence, projectPlatform: project.platform, manualOverride: project.platformIsManualOverride } : {}),
@@ -237,7 +269,7 @@ export class AiFactoryService {
       infrastructure: { ...section('infrastructure', 'partial', dep ? { platform: dep.platform, executed: dep.executed, hasKubernetes: !!dep.kubernetesArtifacts } : {}), plannedWave: 5 },
       rag: later(6),
       security: {
-        ...section('discovery', 'partial', d ? { containsPii: d.containsPii, dataResidency: d.dataResidencyRequirement ?? null, encryptionAtRest: d.requiresEncryptionAtRest, encryptionInTransit: d.requiresEncryptionInTransit, keyManagement: d.requiresKeyManagement, rbac: d.requiresRbac, auditLogging: d.requiresAuditLogging, tenantIsolation: d.requiresTenantIsolation, complianceGate: adr?.complianceGate?.status ?? null } : {}),
+        ...section('discovery', 'partial', d ? { containsPii: d.containsPii, dataResidency: d.dataResidencyRequirement ?? null, encryptionAtRest: d.requiresEncryptionAtRest, encryptionInTransit: d.requiresEncryptionInTransit, keyManagement: d.requiresKeyManagement, rbac: d.requiresRbac, auditLogging: d.requiresAuditLogging, tenantIsolation: d.requiresTenantIsolation, complianceGate: adr?.complianceGate?.status ?? null, ...(wp ? { dataClassification: wpResult?.dataClassification.level, containsPhi: profileValue('containsPhi'), containsPci: profileValue('containsPci'), requiredControls: wpResult?.securityRequirements.controls.length } : {}) } : {}),
         plannedWave: 7,
       },
       performance: { ...section('optimization', 'partial', opt ? { recall: opt.recommendedVariant.avgRecall, p95LatencyMs: opt.recommendedVariant.p95LatencyMs, achievedQps: opt.recommendedVariant.achievedQps, evidence: 'measured (vector benchmark sample)' } : {}), plannedWave: 8 },

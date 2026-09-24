@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { apiClient } from './client';
 
-export type PhaseKey = 'discovery' | 'data_embeddings' | 'index_design' | 'vector_db_selection' | 'infrastructure' | 'optimization' | 'capacity' | 'inference';
+export type PhaseKey = 'discovery' | 'data_embeddings' | 'index_design' | 'vector_db_selection' | 'infrastructure' | 'optimization' | 'capacity' | 'inference' | 'workload_profile';
 export type LineageStatus = 'current' | 'stale' | 'review' | 'not_started';
 export type StepStatus = LineageStatus | 'in_progress' | 'not_yet_available';
 export type SectionStatus = LineageStatus | 'not_yet_available';

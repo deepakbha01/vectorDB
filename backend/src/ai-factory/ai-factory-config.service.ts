@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as yaml from 'js-yaml';
 import { PhaseDefinition, PhaseKey, StepDefinition } from './ai-factory.types';
+import { WorkloadProfileRules } from './workload-profile/workload-profile.engine';
 
 /**
  * Loads config/ai-factory.yaml (dependency graph, parameter impact map,
@@ -39,6 +40,10 @@ export class AiFactoryConfigService implements OnModuleInit {
 
   getSteps(): StepDefinition[] {
     return this.cfg.steps ?? [];
+  }
+
+  getWorkloadProfileRules(): WorkloadProfileRules {
+    return this.cfg.workloadProfile;
   }
 
   /** Discovery field → phases that read it directly ([] for fields reviewed as driving no decision). */
