@@ -41,6 +41,8 @@ import { AuditModule } from './audit/audit.module';
 import { AuditLogEntry } from './audit/audit-log-entry.entity';
 import { InferenceModule } from './inference/inference.module';
 import { InferenceAssessment } from './inference/inference-assessment.entity';
+import { AiFactoryModule } from './ai-factory/ai-factory.module';
+import { AiFactoryStateSnapshot } from './ai-factory/ai-factory-state-snapshot.entity';
 
 @Module({
   imports: [
@@ -70,6 +72,7 @@ import { InferenceAssessment } from './inference/inference-assessment.entity';
           CapacityPlan,
           AuditLogEntry,
           InferenceAssessment,
+          AiFactoryStateSnapshot,
         ],
         // Sprint 1 uses schema sync for velocity. Replace with TypeORM migrations
         // before any non-development deployment (see development rule #12).
@@ -111,6 +114,7 @@ import { InferenceAssessment } from './inference/inference-assessment.entity';
     ReportingModule,
     AuditModule,
     InferenceModule,
+    AiFactoryModule,
   ],
   controllers: [HealthController, FeaturesController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
