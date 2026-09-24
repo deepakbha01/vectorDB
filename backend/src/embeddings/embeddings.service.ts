@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 import { EmbeddingProviderCatalogEntry, ResolvedEmbeddingModel } from './embedding.types';
 
@@ -18,6 +18,11 @@ export class EmbeddingsService {
     const model = provider.models.find((m) => m.id === modelId);
     if (!model) {
       throw new NotFoundException(`Unknown model '${modelId}' for provider '${providerId}'.`);
+    }
+    if (model.status === 'retired') {
+      throw new BadRequestException(
+        `Model '${modelId}' (${provider.label}) is retired and can no longer be selected for a new design. Choose an active model from the catalog.`,
+      );
     }
     return { ...model, providerId: provider.id, providerLabel: provider.label };
   }

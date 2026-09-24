@@ -77,7 +77,7 @@ describe('OracleVectorAdapter', () => {
   it('createVectorIndex executes the generated index statement', async () => {
     mockConnection.execute.mockResolvedValue({});
     await adapter.createVectorIndex('docs', IndexType.HNSW, [{ name: 'M', value: 16 }]);
-    expect(schemaGenerator.generateIndexArtifact).toHaveBeenCalledWith('oracle', 'docs', IndexType.HNSW, [{ name: 'M', value: 16 }]);
+    expect(schemaGenerator.generateIndexArtifact).toHaveBeenCalledWith('oracle', 'docs', IndexType.HNSW, [{ name: 'M', value: 16 }], undefined);
     expect(mockConnection.execute).toHaveBeenCalledWith('CREATE VECTOR INDEX docs_vec_idx ...', [], { autoCommit: true });
   });
 });

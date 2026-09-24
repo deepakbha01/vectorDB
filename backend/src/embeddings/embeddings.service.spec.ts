@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { EmbeddingsService } from './embeddings.service';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 
@@ -7,7 +7,10 @@ const catalog = [
   {
     id: 'openai',
     label: 'OpenAI',
-    models: [{ id: 'text-embedding-3-small', label: 'small', dimension: 1536, maxInputTokens: 8191, costPerMillionTokens: 0.02, languageSupport: ['en'], qualityTier: 'high', modelVersion: '3-small' }],
+    models: [
+      { id: 'text-embedding-3-small', label: 'small', dimension: 1536, maxInputTokens: 8191, costPerMillionTokens: 0.02, languageSupport: ['en'], qualityTier: 'high', modelVersion: '3-small', status: 'active' },
+      { id: 'text-embedding-ada-002', label: 'ada-002', dimension: 1536, maxInputTokens: 8191, costPerMillionTokens: 0.1, languageSupport: ['en'], qualityTier: 'medium', modelVersion: 'ada-002', status: 'retired' },
+    ],
   },
 ];
 
@@ -44,5 +47,9 @@ describe('EmbeddingsService', () => {
   it('validates a matching dimension', () => {
     const result = service.validateDimension('openai', 'text-embedding-3-small', 1536);
     expect(result.valid).toBe(true);
+  });
+
+  it('rejects a retired model', () => {
+    expect(() => service.resolveModel('openai', 'text-embedding-ada-002')).toThrow(BadRequestException);
   });
 });

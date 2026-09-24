@@ -12,6 +12,7 @@ import { SchemaGeneratorService } from '../../schema-generator/schema-generator.
 import { IndexTuningParameter, MetadataFieldDefinition } from '../../schema-generator/schema-generator.types';
 import { IndexType } from '../../index-recommendation-engine/enums/index-type.enum';
 import { VectorPlatform } from '../../projects/enums/platform.enum';
+import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
 
 /**
@@ -114,6 +115,7 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, OnModuleDes
       const { postgres_pgvector } = this.schemaGenerator.generateAll({
         collectionName: definition.collectionOrTableName,
         dimension: definition.dimension,
+        metric: definition.metric,
         metadataFields: definition.metadataFields as SchemaDefinition['metadataFields'] as any,
       });
       await this.getPool().query(postgres_pgvector.ddl);
@@ -149,7 +151,7 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, OnModuleDes
    * ingestion batch normally does); Sprint 6's ingestion pipeline is
    * responsible for grouping batches accordingly.
    */
-  async createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[]): Promise<void> {
+  async createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[], metric?: SimilarityMetric): Promise<void> {
     if (!(await this.hasPgvector())) {
       this.logger.warn(
         `Skipping ANN index creation on '${collectionOrTableName}' - pgvector is not available on this target server. ` +
@@ -157,7 +159,7 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, OnModuleDes
       );
       return;
     }
-    const artifact = this.schemaGenerator.generateIndexArtifact(VectorPlatform.POSTGRES_PGVECTOR, collectionOrTableName, indexType, parameters);
+    const artifact = this.schemaGenerator.generateIndexArtifact(VectorPlatform.POSTGRES_PGVECTOR, collectionOrTableName, indexType, parameters, metric);
     await this.getPool().query(artifact.statement);
     if (artifact.notes.length > 0) {
       this.logger.log(`Vector index created on '${collectionOrTableName}'. Notes: ${artifact.notes.join(' ')}`);

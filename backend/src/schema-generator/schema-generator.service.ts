@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { VectorPlatform } from '../projects/enums/platform.enum';
 import { IndexType } from '../index-recommendation-engine/enums/index-type.enum';
+import { SimilarityMetric } from '../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../common/identifier-sanitizer';
 import {
   GeneratedSchemas,
@@ -11,6 +12,41 @@ import {
   SchemaGenerationInput,
   SqlSchemaOutput,
 } from './schema-generator.types';
+
+type MetricPlatformKey =
+  | 'oracle'
+  | 'postgres'
+  | 'milvus'
+  | 'pinecone'
+  | 'qdrant'
+  | 'weaviate'
+  | 'chroma'
+  | 'elasticsearch'
+  | 'redis'
+  | 'mongodb_atlas'
+  | 'lancedb'
+  | 'actian';
+
+/**
+ * Every platform's native literal for each SimilarityMetric - the single
+ * source of truth every generator below reads from instead of assuming
+ * cosine. Verify against each vendor's current docs before relying on this
+ * for a metric this file hasn't been exercised against in production.
+ */
+const METRIC_LITERALS: Record<MetricPlatformKey, Record<SimilarityMetric, string>> = {
+  oracle: { cosine: 'COSINE', dot_product: 'DOT', euclidean: 'EUCLIDEAN' },
+  postgres: { cosine: 'vector_cosine_ops', dot_product: 'vector_ip_ops', euclidean: 'vector_l2_ops' },
+  milvus: { cosine: 'COSINE', dot_product: 'IP', euclidean: 'L2' },
+  pinecone: { cosine: 'cosine', dot_product: 'dotproduct', euclidean: 'euclidean' },
+  qdrant: { cosine: 'Cosine', dot_product: 'Dot', euclidean: 'Euclid' },
+  weaviate: { cosine: 'cosine', dot_product: 'dot', euclidean: 'l2-squared' },
+  chroma: { cosine: 'cosine', dot_product: 'ip', euclidean: 'l2' },
+  elasticsearch: { cosine: 'cosine', dot_product: 'dot_product', euclidean: 'l2_norm' },
+  redis: { cosine: 'COSINE', dot_product: 'IP', euclidean: 'L2' },
+  mongodb_atlas: { cosine: 'cosine', dot_product: 'dotProduct', euclidean: 'euclidean' },
+  lancedb: { cosine: 'cosine', dot_product: 'dot', euclidean: 'l2' },
+  actian: { cosine: 'COSINE', dot_product: 'DOT', euclidean: 'EUCLIDEAN' },
+};
 
 /**
  * Generates database-specific schemas for every supported platform from the
@@ -28,25 +64,30 @@ import {
  */
 @Injectable()
 export class SchemaGeneratorService {
+  private metricLiteral(platform: MetricPlatformKey, metric: SimilarityMetric): string {
+    return METRIC_LITERALS[platform][metric];
+  }
+
   generateAll(input: SchemaGenerationInput): GeneratedSchemas {
     const collectionName = sanitizeSqlIdentifier(input.collectionName, 'collectionName');
     const fields = input.metadataFields.map((f) => ({ ...f, name: sanitizeSqlIdentifier(f.name, `metadataField '${f.name}'`) }));
+    const metric = input.metric ?? SimilarityMetric.COSINE;
 
     if (input.dimension <= 0) {
       throw new BadRequestException('dimension must be a positive integer.');
     }
 
     return {
-      oracle: this.generateOracle(collectionName, input.dimension, fields),
-      postgres_pgvector: this.generatePostgres(collectionName, input.dimension, fields),
+      oracle: this.generateOracle(collectionName, input.dimension, fields, metric),
+      postgres_pgvector: this.generatePostgres(collectionName, input.dimension, fields, metric),
       milvus: this.generateMilvus(collectionName, input.dimension, fields),
-      pinecone: this.generatePinecone(collectionName, input.dimension, fields),
-      qdrant: this.generateQdrant(collectionName, input.dimension, fields),
-      weaviate: this.generateWeaviate(collectionName, input.dimension, fields),
-      chroma: this.generateChroma(collectionName, input.dimension, fields),
-      elasticsearch: this.generateElasticsearch(collectionName, input.dimension, fields),
-      redis: this.generateRedis(collectionName, input.dimension, fields),
-      mongodb_atlas: this.generateMongoAtlas(collectionName, input.dimension, fields),
+      pinecone: this.generatePinecone(collectionName, input.dimension, fields, metric),
+      qdrant: this.generateQdrant(collectionName, input.dimension, fields, metric),
+      weaviate: this.generateWeaviate(collectionName, input.dimension, fields, metric),
+      chroma: this.generateChroma(collectionName, input.dimension, fields, metric),
+      elasticsearch: this.generateElasticsearch(collectionName, input.dimension, fields, metric),
+      redis: this.generateRedis(collectionName, input.dimension, fields, metric),
+      mongodb_atlas: this.generateMongoAtlas(collectionName, input.dimension, fields, metric),
       lancedb: this.generateLanceDb(collectionName, input.dimension, fields),
       actian: this.generateActian(collectionName, input.dimension, fields),
     };
@@ -79,9 +120,10 @@ export class SchemaGeneratorService {
     return table[type];
   }
 
-  private generateOracle(collectionName: string, dimension: number, fields: MetadataFieldDefinition[]): SqlSchemaOutput {
+  private generateOracle(collectionName: string, dimension: number, fields: MetadataFieldDefinition[], metric: SimilarityMetric): SqlSchemaOutput {
     const tableName = collectionName;
     const columns = fields.map((f) => `  ${f.name} ${this.sqlColumnType('oracle', f.type)}`).join(',\n');
+    const distance = this.metricLiteral('oracle', metric);
     const ddl = [
       `CREATE TABLE ${tableName} (`,
       `  id VARCHAR2(64) PRIMARY KEY,`,
@@ -93,7 +135,7 @@ export class SchemaGeneratorService {
       `-- Vector index deferred to Phase 3 (Index Design). Example HNSW-style index:`,
       `-- CREATE VECTOR INDEX ${tableName}_vec_idx ON ${tableName}(embedding)`,
       `--   ORGANIZATION INMEMORY NEIGHBOR GRAPH`,
-      `--   DISTANCE COSINE`,
+      `--   DISTANCE ${distance}`,
       `--   WITH TARGET ACCURACY 95;`,
     ]
       .filter((line) => line !== '')
@@ -108,9 +150,10 @@ export class SchemaGeneratorService {
     };
   }
 
-  private generatePostgres(collectionName: string, dimension: number, fields: MetadataFieldDefinition[]): SqlSchemaOutput {
+  private generatePostgres(collectionName: string, dimension: number, fields: MetadataFieldDefinition[], metric: SimilarityMetric): SqlSchemaOutput {
     const tableName = collectionName;
     const columns = fields.map((f) => `  ${f.name} ${this.sqlColumnType('postgres', f.type)}`).join(',\n');
+    const ops = this.metricLiteral('postgres', metric);
     const ddl = [
       `CREATE EXTENSION IF NOT EXISTS vector;`,
       ``,
@@ -126,7 +169,7 @@ export class SchemaGeneratorService {
       ``,
       `-- Vector index deferred to Phase 3 (Index Design). Example HNSW index:`,
       `-- CREATE INDEX ${tableName}_embedding_hnsw_idx ON ${tableName}`,
-      `--   USING hnsw (embedding vector_cosine_ops);`,
+      `--   USING hnsw (embedding ${ops});`,
     ]
       .filter((line) => line !== '')
       .join('\n');
@@ -162,12 +205,12 @@ export class SchemaGeneratorService {
     };
   }
 
-  private generatePinecone(collectionName: string, dimension: number, fields: MetadataFieldDefinition[]): JsonConfigSchemaOutput {
+  private generatePinecone(collectionName: string, dimension: number, fields: MetadataFieldDefinition[], metric: SimilarityMetric): JsonConfigSchemaOutput {
     return {
       schema: {
         name: collectionName,
         dimension,
-        metric: 'cosine',
+        metric: this.metricLiteral('pinecone', metric),
         spec: { serverless: { cloud: 'aws', region: 'us-east-1' } },
       },
       notes: [
@@ -179,7 +222,7 @@ export class SchemaGeneratorService {
     };
   }
 
-  private generateQdrant(collectionName: string, dimension: number, fields: MetadataFieldDefinition[]): JsonConfigSchemaOutput {
+  private generateQdrant(collectionName: string, dimension: number, fields: MetadataFieldDefinition[], metric: SimilarityMetric): JsonConfigSchemaOutput {
     const qdrantTypes: Record<MetadataFieldDefinition['type'], string> = {
       string: 'keyword',
       number: 'float',
@@ -187,22 +230,24 @@ export class SchemaGeneratorService {
       date: 'datetime',
       json: 'keyword',
     };
+    const filterableFields = fields.filter((f) => f.filterable !== false);
     return {
       schema: {
         collection: collectionName,
         create_collection_request: {
-          vectors: { size: dimension, distance: 'Cosine' },
+          vectors: { size: dimension, distance: this.metricLiteral('qdrant', metric) },
         },
-        payload_indexes: fields.map((f) => ({ field_name: f.name, field_schema: qdrantTypes[f.type] })),
+        payload_indexes: filterableFields.map((f) => ({ field_name: f.name, field_schema: qdrantTypes[f.type] })),
       },
       notes: [
         'The vectors config creates the collection; each payload_indexes entry is a separate PUT /collections/{name}/index call for efficient filtering.',
         'json fields are indexed as keyword (exact match on the stringified value) - Qdrant has no native JSON/object payload index type.',
+        `Fields marked non-filterable are stored in the payload but not indexed: ${fields.filter((f) => f.filterable === false).map((f) => f.name).join(', ') || '(none)'}.`,
       ],
     };
   }
 
-  private generateWeaviate(collectionName: string, dimension: number, fields: MetadataFieldDefinition[]): JsonConfigSchemaOutput {
+  private generateWeaviate(collectionName: string, dimension: number, fields: MetadataFieldDefinition[], metric: SimilarityMetric): JsonConfigSchemaOutput {
     const weaviateTypes: Record<MetadataFieldDefinition['type'], string> = {
       string: 'text',
       number: 'number',
@@ -216,6 +261,7 @@ export class SchemaGeneratorService {
         class: className,
         vectorizer: 'none', // embeddings are supplied by this platform's own Phase 2 embedding model choice, not Weaviate's built-in vectorizers
         vectorIndexType: 'hnsw',
+        vectorIndexConfig: { distance: this.metricLiteral('weaviate', metric) },
         properties: fields.map((f) => ({ name: f.name, dataType: [weaviateTypes[f.type]] })),
       },
       notes: [
@@ -226,11 +272,11 @@ export class SchemaGeneratorService {
     };
   }
 
-  private generateChroma(collectionName: string, dimension: number, fields: MetadataFieldDefinition[]): JsonConfigSchemaOutput {
+  private generateChroma(collectionName: string, dimension: number, fields: MetadataFieldDefinition[], metric: SimilarityMetric): JsonConfigSchemaOutput {
     return {
       schema: {
         name: collectionName,
-        metadata: { 'hnsw:space': 'cosine' },
+        metadata: { 'hnsw:space': this.metricLiteral('chroma', metric) },
         embedding_dimension: dimension,
       },
       notes: [
@@ -241,7 +287,7 @@ export class SchemaGeneratorService {
     };
   }
 
-  private generateElasticsearch(collectionName: string, dimension: number, fields: MetadataFieldDefinition[]): JsonConfigSchemaOutput {
+  private generateElasticsearch(collectionName: string, dimension: number, fields: MetadataFieldDefinition[], metric: SimilarityMetric): JsonConfigSchemaOutput {
     const esTypes: Record<MetadataFieldDefinition['type'], string> = {
       string: 'keyword',
       number: 'double',
@@ -250,7 +296,7 @@ export class SchemaGeneratorService {
       json: 'object',
     };
     const properties: Record<string, unknown> = {
-      embedding: { type: 'dense_vector', dims: dimension, index: true, similarity: 'cosine' },
+      embedding: { type: 'dense_vector', dims: dimension, index: true, similarity: this.metricLiteral('elasticsearch', metric) },
     };
     for (const f of fields) {
       properties[f.name] = { type: esTypes[f.type] };
@@ -264,7 +310,7 @@ export class SchemaGeneratorService {
     };
   }
 
-  private generateRedis(collectionName: string, dimension: number, fields: MetadataFieldDefinition[]): SqlSchemaOutput {
+  private generateRedis(collectionName: string, dimension: number, fields: MetadataFieldDefinition[], metric: SimilarityMetric): SqlSchemaOutput {
     const redisTypes: Record<MetadataFieldDefinition['type'], string> = {
       string: 'TAG',
       number: 'NUMERIC',
@@ -272,11 +318,13 @@ export class SchemaGeneratorService {
       date: 'NUMERIC',
       json: 'TEXT',
     };
-    const fieldLines = fields.map((f) => `    ${f.name} ${redisTypes[f.type]}`);
+    const filterableFields = fields.filter((f) => f.filterable !== false);
+    const fieldLines = filterableFields.map((f) => `    ${f.name} ${redisTypes[f.type]}`);
+    const distanceMetric = this.metricLiteral('redis', metric);
     const ddl = [
       `FT.CREATE ${collectionName}_idx ON HASH PREFIX 1 ${collectionName}: SCHEMA`,
       `    id TAG`,
-      `    embedding VECTOR HNSW 6 TYPE FLOAT32 DIM ${dimension} DISTANCE_METRIC COSINE`,
+      `    embedding VECTOR HNSW 6 TYPE FLOAT32 DIM ${dimension} DISTANCE_METRIC ${distanceMetric}`,
       ...fieldLines,
     ].join('\n');
     return {
@@ -284,11 +332,13 @@ export class SchemaGeneratorService {
       notes: [
         'Requires the RediSearch module (Redis Stack, or Redis Enterprise with the Search module enabled) - plain open-source Redis has no vector index support.',
         'Records are stored as Redis Hashes under the "<collectionName>:<id>" key prefix; boolean/date fields are stored as their string/numeric representation.',
+        `Fields marked non-filterable are stored on the hash but not declared in the search schema (unsearchable): ${fields.filter((f) => f.filterable === false).map((f) => f.name).join(', ') || '(none)'}.`,
       ],
     };
   }
 
-  private generateMongoAtlas(collectionName: string, dimension: number, fields: MetadataFieldDefinition[]): JsonConfigSchemaOutput {
+  private generateMongoAtlas(collectionName: string, dimension: number, fields: MetadataFieldDefinition[], metric: SimilarityMetric): JsonConfigSchemaOutput {
+    const filterableFields = fields.filter((f) => f.filterable !== false);
     return {
       schema: {
         collectionName,
@@ -296,14 +346,14 @@ export class SchemaGeneratorService {
         type: 'vectorSearch',
         definition: {
           fields: [
-            { type: 'vector', path: 'embedding', numDimensions: dimension, similarity: 'cosine' },
-            ...fields.map((f) => ({ type: 'filter', path: f.name })),
+            { type: 'vector', path: 'embedding', numDimensions: dimension, similarity: this.metricLiteral('mongodb_atlas', metric) },
+            ...filterableFields.map((f) => ({ type: 'filter', path: f.name })),
           ],
         },
       },
       notes: [
         'MongoDB Atlas Vector Search indexes are created via the Atlas API/UI, not a SQL-like DDL statement - this is the search index definition body.',
-        'Each metadata field is added as a "filter" field so it can be used in a $vectorSearch pre-filter; this requires MongoDB 7.0+/Atlas Vector Search.',
+        'Each filterable metadata field is added as a "filter" field so it can be used in a $vectorSearch pre-filter; this requires MongoDB 7.0+/Atlas Vector Search.',
       ],
     };
   }
@@ -365,17 +415,18 @@ export class SchemaGeneratorService {
     tableName: string,
     indexType: IndexType,
     parameters: IndexTuningParameter[],
+    metric: SimilarityMetric = SimilarityMetric.COSINE,
   ): IndexArtifact {
     const sanitizedTable = sanitizeSqlIdentifier(tableName, 'tableName');
     const p = (name: string) => parameters.find((x) => x.name === name)?.value;
 
     switch (platform) {
       case VectorPlatform.ORACLE:
-        return this.generateOracleIndexArtifact(sanitizedTable, indexType, p);
+        return this.generateOracleIndexArtifact(sanitizedTable, indexType, p, metric);
       case VectorPlatform.POSTGRES_PGVECTOR:
-        return this.generatePostgresIndexArtifact(sanitizedTable, indexType, p);
+        return this.generatePostgresIndexArtifact(sanitizedTable, indexType, p, metric);
       case VectorPlatform.MILVUS:
-        return this.generateMilvusIndexArtifact(indexType, p);
+        return this.generateMilvusIndexArtifact(indexType, p, metric);
       case VectorPlatform.PINECONE:
         return this.generatePineconeIndexArtifact(indexType);
       case VectorPlatform.QDRANT:
@@ -387,25 +438,26 @@ export class SchemaGeneratorService {
       case VectorPlatform.ELASTICSEARCH:
         return this.generateElasticsearchIndexArtifact(sanitizedTable, indexType, p);
       case VectorPlatform.REDIS:
-        return this.generateRedisIndexArtifact(sanitizedTable, indexType, p);
+        return this.generateRedisIndexArtifact(sanitizedTable, indexType, p, metric);
       case VectorPlatform.MONGODB_ATLAS:
         return this.generateMongoAtlasIndexArtifact(indexType);
       case VectorPlatform.LANCEDB:
-        return this.generateLanceDbIndexArtifact(indexType, p);
+        return this.generateLanceDbIndexArtifact(indexType, p, metric);
       case VectorPlatform.ACTIAN:
-        return this.generateActianIndexArtifact(sanitizedTable, indexType, p);
+        return this.generateActianIndexArtifact(sanitizedTable, indexType, p, metric);
       default:
         throw new BadRequestException(`No index artifact generator is registered for platform '${platform}'.`);
     }
   }
 
-  private generateOracleIndexArtifact(tableName: string, indexType: IndexType, p: (name: string) => number | undefined): IndexArtifact {
+  private generateOracleIndexArtifact(tableName: string, indexType: IndexType, p: (name: string) => number | undefined, metric: SimilarityMetric): IndexArtifact {
+    const distance = this.metricLiteral('oracle', metric);
     if (indexType === IndexType.HNSW) {
       return {
         statement: [
           `CREATE VECTOR INDEX ${tableName}_vec_idx ON ${tableName}(embedding)`,
           `  ORGANIZATION INMEMORY NEIGHBOR GRAPH`,
-          `  DISTANCE COSINE`,
+          `  DISTANCE ${distance}`,
           `  PARAMETERS (TYPE HNSW, NEIGHBORS ${p('M')}, EFCONSTRUCTION ${p('efConstruction')});`,
         ].join('\n'),
         notes: [`Set the query-time search width via a hint or session parameter equivalent to efSearch=${p('efSearch')}.`],
@@ -417,7 +469,7 @@ export class SchemaGeneratorService {
       statement: [
         `CREATE VECTOR INDEX ${tableName}_vec_idx ON ${tableName}(embedding)`,
         `  ORGANIZATION NEIGHBOR PARTITIONS`,
-        `  DISTANCE COSINE`,
+        `  DISTANCE ${distance}`,
         `  PARAMETERS (TYPE IVF, NEIGHBOR PARTITIONS ${p('nlist')});`,
       ].join('\n'),
       notes: [
@@ -429,16 +481,17 @@ export class SchemaGeneratorService {
     };
   }
 
-  private generatePostgresIndexArtifact(tableName: string, indexType: IndexType, p: (name: string) => number | undefined): IndexArtifact {
+  private generatePostgresIndexArtifact(tableName: string, indexType: IndexType, p: (name: string) => number | undefined, metric: SimilarityMetric): IndexArtifact {
+    const ops = this.metricLiteral('postgres', metric);
     if (indexType === IndexType.HNSW) {
       return {
-        statement: `CREATE INDEX IF NOT EXISTS ${tableName}_embedding_hnsw_idx ON ${tableName} USING hnsw (embedding vector_cosine_ops) WITH (m = ${p('M')}, ef_construction = ${p('efConstruction')});`,
+        statement: `CREATE INDEX IF NOT EXISTS ${tableName}_embedding_hnsw_idx ON ${tableName} USING hnsw (embedding ${ops}) WITH (m = ${p('M')}, ef_construction = ${p('efConstruction')});`,
         notes: [`Set 'SET hnsw.ef_search = ${p('efSearch')};' per session/query for the configured recall/latency trade-off.`],
       };
     }
     // pgvector has no native Product Quantization support - approximate PQ with ivfflat and flag the gap.
     return {
-      statement: `CREATE INDEX IF NOT EXISTS ${tableName}_embedding_ivfflat_idx ON ${tableName} USING ivfflat (embedding vector_cosine_ops) WITH (lists = ${p('nlist')});`,
+      statement: `CREATE INDEX IF NOT EXISTS ${tableName}_embedding_ivfflat_idx ON ${tableName} USING ivfflat (embedding ${ops}) WITH (lists = ${p('nlist')});`,
       notes: [
         `Set 'SET ivfflat.probes = ${p('nprobe')};' per session/query for the configured recall/latency trade-off.`,
         indexType === IndexType.PQ
@@ -448,21 +501,22 @@ export class SchemaGeneratorService {
     };
   }
 
-  private generateMilvusIndexArtifact(indexType: IndexType, p: (name: string) => number | undefined): IndexArtifact {
+  private generateMilvusIndexArtifact(indexType: IndexType, p: (name: string) => number | undefined, metric: SimilarityMetric): IndexArtifact {
+    const metricType = this.metricLiteral('milvus', metric);
     const byType: Record<IndexType, Record<string, unknown>> = {
       [IndexType.HNSW]: {
         index_type: 'HNSW',
-        metric_type: 'COSINE',
+        metric_type: metricType,
         params: { M: p('M'), efConstruction: p('efConstruction') },
       },
       [IndexType.IVF_FLAT]: {
         index_type: 'IVF_FLAT',
-        metric_type: 'COSINE',
+        metric_type: metricType,
         params: { nlist: p('nlist') },
       },
       [IndexType.PQ]: {
         index_type: 'IVF_PQ',
-        metric_type: 'COSINE',
+        metric_type: metricType,
         params: { nlist: p('nlist'), m: p('m'), nbits: p('nbits') },
       },
     };
@@ -563,16 +617,17 @@ export class SchemaGeneratorService {
     };
   }
 
-  private generateRedisIndexArtifact(tableName: string, indexType: IndexType, p: (name: string) => number | undefined): IndexArtifact {
+  private generateRedisIndexArtifact(tableName: string, indexType: IndexType, p: (name: string) => number | undefined, metric: SimilarityMetric): IndexArtifact {
     // RediSearch bakes the vector algorithm/params into the field definition at FT.CREATE
     // time (see generateRedis above) - there is no in-place FT.ALTER for an existing vector
     // field's algorithm. Applying a Phase 3 decision made after Phase 2's schema preview
     // means dropping and recreating the index with these algorithm/params substituted into
     // the embedding field of that FT.CREATE command (DIM comes from the Phase 2 schema).
+    const distanceMetric = this.metricLiteral('redis', metric);
     const algorithm =
       indexType === IndexType.IVF_FLAT
-        ? 'FLAT 6 TYPE FLOAT32 DISTANCE_METRIC COSINE'
-        : `HNSW 8 TYPE FLOAT32 DISTANCE_METRIC COSINE M ${p('M')} EF_CONSTRUCTION ${p('efConstruction')}`;
+        ? `FLAT 6 TYPE FLOAT32 DISTANCE_METRIC ${distanceMetric}`
+        : `HNSW 8 TYPE FLOAT32 DISTANCE_METRIC ${distanceMetric} M ${p('M')} EF_CONSTRUCTION ${p('efConstruction')}`;
     return {
       statement: `-- Substitute into the embedding field of FT.CREATE ${tableName}_idx (see Phase 2 schema):\nembedding VECTOR ${algorithm}`,
       notes: [
@@ -591,28 +646,34 @@ export class SchemaGeneratorService {
     };
   }
 
-  private generateLanceDbIndexArtifact(indexType: IndexType, p: (name: string) => number | undefined): IndexArtifact {
+  private generateLanceDbIndexArtifact(indexType: IndexType, p: (name: string) => number | undefined, metric: SimilarityMetric): IndexArtifact {
+    const distance = this.metricLiteral('lancedb', metric);
     if (indexType === IndexType.HNSW) {
       return {
-        statement: JSON.stringify({ index_type: 'IVF_HNSW_SQ', m: p('M'), ef_construction: p('efConstruction') }, null, 2),
-        notes: ['LanceDB\'s HNSW variant is layered over IVF partitioning (IVF_HNSW_SQ) rather than a pure flat-graph HNSW index.'],
+        statement: JSON.stringify({ index_type: 'IVF_HNSW_SQ', metric, m: p('M'), ef_construction: p('efConstruction') }, null, 2),
+        notes: [
+          'LanceDB\'s HNSW variant is layered over IVF partitioning (IVF_HNSW_SQ) rather than a pure flat-graph HNSW index.',
+          `metric maps to LanceDB's distance_type parameter ('${distance}') - verify the exact parameter name against your LanceDB SDK version.`,
+        ],
       };
     }
     return {
-      statement: JSON.stringify({ index_type: 'IVF_PQ', num_partitions: p('nlist'), num_sub_vectors: p('m') }, null, 2),
+      statement: JSON.stringify({ index_type: 'IVF_PQ', metric, num_partitions: p('nlist'), num_sub_vectors: p('m') }, null, 2),
       notes: [
         indexType === IndexType.IVF_FLAT ? 'num_sub_vectors is omitted/ignored for a flat (non-quantized) IVF index.' : '',
         `At query time, set nprobes = ${p('nprobe') ?? 'n/a'} for the configured recall/latency trade-off.`,
+        `metric maps to LanceDB's distance_type parameter ('${distance}') - verify the exact parameter name against your LanceDB SDK version.`,
       ].filter(Boolean),
     };
   }
 
-  private generateActianIndexArtifact(tableName: string, indexType: IndexType, p: (name: string) => number | undefined): IndexArtifact {
+  private generateActianIndexArtifact(tableName: string, indexType: IndexType, p: (name: string) => number | undefined, metric: SimilarityMetric): IndexArtifact {
+    const distance = this.metricLiteral('actian', metric);
     return {
       statement: [
         `-- Best-effort: verify exact vector index syntax for your Actian Vector version.`,
         `CREATE INDEX ${tableName}_vec_idx ON ${tableName}(embedding)`,
-        `  WITH (INDEX_TYPE = '${indexType.toUpperCase()}', M = ${p('M') ?? 'n/a'}, NLIST = ${p('nlist') ?? 'n/a'});`,
+        `  WITH (INDEX_TYPE = '${indexType.toUpperCase()}', DISTANCE = '${distance}', M = ${p('M') ?? 'n/a'}, NLIST = ${p('nlist') ?? 'n/a'});`,
       ].join('\n'),
       notes: ['Actian Vector\'s ANN index syntax and tunable parameters were not independently verified - confirm against your version\'s documentation before applying.'],
     };

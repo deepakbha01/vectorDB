@@ -26,10 +26,15 @@ export class ProjectsController {
     return this.platformConfig.getSupportedPlatforms();
   }
 
+  @Get('pattern-catalog')
+  getPatternCatalog() {
+    return this.platformConfig.getPatternCatalog();
+  }
+
   @Post()
   @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateProjectDto) {
-    return this.projectsService.create(user, dto.name, dto.businessUseCase, dto.industry);
+    return this.projectsService.create(user, dto.name, dto.businessUseCase, dto.industry, dto.patternId, dto.customerMode);
   }
 
   @Get()

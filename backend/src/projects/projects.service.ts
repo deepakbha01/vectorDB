@@ -5,26 +5,45 @@ import { Project, initialPhaseStatuses } from './project.entity';
 import { User, UserRole } from '../users/user.entity';
 import { VectorPlatform } from './enums/platform.enum';
 import { PhaseStatus, ProjectPhase } from './enums/project-status.enum';
+import { CustomerMode } from './enums/customer-mode.enum';
 import { AuthenticatedUser } from '../auth/auth.service';
+import { PlatformConfigService } from '../common/config/platform-config.service';
 
 @Injectable()
 export class ProjectsService {
   private readonly logger = new Logger(ProjectsService.name);
 
-  constructor(@InjectRepository(Project) private readonly projects: Repository<Project>) {}
+  constructor(
+    @InjectRepository(Project) private readonly projects: Repository<Project>,
+    private readonly platformConfig: PlatformConfigService,
+  ) {}
 
-  async create(owner: AuthenticatedUser, name: string, businessUseCase?: string, industry?: string): Promise<Project> {
+  async create(
+    owner: AuthenticatedUser,
+    name: string,
+    businessUseCase?: string,
+    industry?: string,
+    patternId?: string,
+    customerMode: CustomerMode = CustomerMode.NEW,
+  ): Promise<Project> {
+    if (patternId && !this.platformConfig.getPatternCatalog().some((p) => p.id === patternId)) {
+      throw new BadRequestException(`Unknown pattern '${patternId}'.`);
+    }
     const project = this.projects.create({
       name,
       businessUseCase,
       industry,
+      patternId,
+      customerMode,
       owner: { id: owner.id } as User,
       platform: VectorPlatform.UNDETERMINED,
       phaseStatuses: initialPhaseStatuses(),
       assessmentVersion: 1,
     });
     const saved = await this.projects.save(project);
-    this.logger.log(`user=${owner.email} action=create_project projectId=${saved.id}`);
+    this.logger.log(
+      `user=${owner.email} action=create_project projectId=${saved.id} patternId=${patternId ?? 'none'} customerMode=${customerMode}`,
+    );
     return saved;
   }
 
@@ -42,9 +61,9 @@ export class ProjectsService {
   }
 
   /**
-   * Manual platform selection/override. Phase 1's Recommendation Engine (Sprint 2)
-   * will populate `platform` automatically from the discovery assessment; this path
-   * exists for explicit user overrides and always requires a rationale for auditability.
+   * Manual platform selection/override. Phase 4 (Vector DB Selection)'s Recommendation
+   * Engine normally populates `platform` automatically; this path exists for explicit
+   * user overrides and always requires a rationale for auditability.
    */
   async selectPlatform(id: string, requester: AuthenticatedUser, platform: VectorPlatform, rationale?: string): Promise<Project> {
     const project = await this.findOne(id, requester);
@@ -67,10 +86,12 @@ export class ProjectsService {
   }
 
   /**
-   * Called by the Discovery flow (Phase 1) once the Recommendation Engine has
+   * Called by Phase 4 (Vector DB Selection) once the Recommendation Engine has
    * produced an Architecture Decision Record. Distinct from `selectPlatform`
    * (a manual override) so the audit trail can tell an automated decision
-   * from a human one.
+   * from a human one. `phase` is the calling phase to mark COMPLETED - always
+   * `ProjectPhase.VECTOR_DB_SELECTION` today, but left as a parameter rather
+   * than hardcoded so this method stays reusable.
    */
   async applyEngineRecommendation(
     id: string,
@@ -78,13 +99,14 @@ export class ProjectsService {
     platform: VectorPlatform,
     rationale: string,
     assessmentVersion: number,
+    phase: ProjectPhase,
   ): Promise<Project> {
     const project = await this.findOne(id, requester);
     project.platform = platform;
     project.platformIsManualOverride = false;
     project.platformDecisionRationale = rationale;
     project.assessmentVersion = assessmentVersion;
-    project.phaseStatuses = { ...project.phaseStatuses, discovery: PhaseStatus.COMPLETED };
+    project.phaseStatuses = { ...project.phaseStatuses, [phase]: PhaseStatus.COMPLETED };
     const saved = await this.projects.save(project);
 
     this.logger.log(

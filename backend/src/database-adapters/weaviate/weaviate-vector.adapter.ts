@@ -12,6 +12,7 @@ import { SchemaGeneratorService } from '../../schema-generator/schema-generator.
 import { IndexTuningParameter } from '../../schema-generator/schema-generator.types';
 import { IndexType } from '../../index-recommendation-engine/enums/index-type.enum';
 import { VectorPlatform } from '../../projects/enums/platform.enum';
+import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
 
 /**
@@ -71,6 +72,7 @@ export class WeaviateVectorAdapter implements VectorDatabaseAdapter {
     const { weaviate: schemaOutput } = this.schemaGenerator.generateAll({
       collectionName: definition.collectionOrTableName,
       dimension: definition.dimension,
+      metric: definition.metric,
       metadataFields: definition.metadataFields as SchemaDefinition['metadataFields'] as any,
     });
     // createFromJson accepts the classic REST-style class schema this platform already generates,
@@ -78,11 +80,11 @@ export class WeaviateVectorAdapter implements VectorDatabaseAdapter {
     await (await this.getClient()).collections.createFromJson(schemaOutput.schema as any);
   }
 
-  async createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[]): Promise<void> {
+  async createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[], metric?: SimilarityMetric): Promise<void> {
     // Weaviate's HNSW/PQ parameters are set at class-creation time (see createSchema) and
     // cannot be changed via a separate call without recreating the class - log the intended
     // config for operator visibility rather than silently no-op-ing.
-    const artifact = this.schemaGenerator.generateIndexArtifact(VectorPlatform.WEAVIATE, collectionOrTableName, indexType, parameters);
+    const artifact = this.schemaGenerator.generateIndexArtifact(VectorPlatform.WEAVIATE, collectionOrTableName, indexType, parameters, metric);
     this.logger.log(
       `Weaviate's vectorIndexConfig for '${collectionOrTableName}' must be set when the class is created; recreate the class with ` +
         `this configuration to apply Phase 3's ${indexType} decision: ${artifact.statement}`,

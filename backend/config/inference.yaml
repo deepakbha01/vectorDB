@@ -1,0 +1,223 @@
+# Inference-as-a-Service assessment catalogue.
+#
+# Loaded only by the inference module (InferenceConfigService) - the vector
+# database engines never read this file. Every figure below is a DIRECTIONAL
+# planning value: validate GPU prices against the customer's cloud contract,
+# model architecture against the model's config.json, and API prices against
+# the provider's current price sheet before quoting.
+
+rulesVersion: inference-2026.09-1
+
+# ---------------------------------------------------------------------------
+# GPU catalogue - per-GPU figures. fp16Tflops / fp8Tflops are DENSE tensor
+# throughput (not the 2x sparsity marketing number). hourlyUsd is an
+# on-demand, per-GPU cloud list price; reserved/spot use the factors under
+# `pricing`. interconnect: nvlink | pcie - PCIe-only cards pay a tensor-parallel
+# penalty (sizing.pcieTensorParallelFactor) when a model is split across GPUs.
+# ---------------------------------------------------------------------------
+gpus:
+  - id: l4
+    label: NVIDIA L4 (24 GB)
+    memoryGb: 24
+    bandwidthGbps: 300
+    fp16Tflops: 121
+    fp8Tflops: 242
+    hourlyUsd: 0.80
+    interconnect: pcie
+  - id: a10g
+    label: NVIDIA A10G (24 GB)
+    memoryGb: 24
+    bandwidthGbps: 600
+    fp16Tflops: 70
+    hourlyUsd: 1.01
+    interconnect: pcie
+  - id: l40s
+    label: NVIDIA L40S (48 GB)
+    memoryGb: 48
+    bandwidthGbps: 864
+    fp16Tflops: 362
+    fp8Tflops: 733
+    hourlyUsd: 1.90
+    interconnect: pcie
+  - id: a100-40
+    label: NVIDIA A100 (40 GB)
+    memoryGb: 40
+    bandwidthGbps: 1555
+    fp16Tflops: 312
+    hourlyUsd: 3.00
+    interconnect: nvlink
+  - id: a100-80
+    label: NVIDIA A100 (80 GB)
+    memoryGb: 80
+    bandwidthGbps: 2039
+    fp16Tflops: 312
+    hourlyUsd: 3.70
+    interconnect: nvlink
+  - id: h100-80
+    label: NVIDIA H100 SXM (80 GB)
+    memoryGb: 80
+    bandwidthGbps: 3350
+    fp16Tflops: 989
+    fp8Tflops: 1979
+    hourlyUsd: 6.90
+    interconnect: nvlink
+  - id: h200-141
+    label: NVIDIA H200 (141 GB)
+    memoryGb: 141
+    bandwidthGbps: 4800
+    fp16Tflops: 989
+    fp8Tflops: 1979
+    hourlyUsd: 8.00
+    interconnect: nvlink
+
+# ---------------------------------------------------------------------------
+# Reference open-weight models. paramsB drives weight memory; activeParamsB
+# drives compute/bandwidth per token (differs only for Mixture-of-Experts).
+# layers / kvHeads / headDim drive the KV-cache size per token.
+# ---------------------------------------------------------------------------
+models:
+  - id: llama-3.1-8b
+    label: Llama 3.1 8B Instruct
+    paramsB: 8.03
+    activeParamsB: 8.03
+    layers: 32
+    kvHeads: 8
+    headDim: 128
+    maxContextTokens: 131072
+    licence: Llama 3.1 Community License (acceptable-use policy; 700M MAU clause)
+  - id: qwen2.5-7b
+    label: Qwen2.5 7B Instruct
+    paramsB: 7.6
+    activeParamsB: 7.6
+    layers: 28
+    kvHeads: 4
+    headDim: 128
+    maxContextTokens: 32768
+    licence: Apache 2.0
+  - id: mistral-small-24b
+    label: Mistral Small 3 (24B)
+    paramsB: 23.6
+    activeParamsB: 23.6
+    layers: 40
+    kvHeads: 8
+    headDim: 128
+    maxContextTokens: 32768
+    licence: Apache 2.0
+  - id: mixtral-8x7b
+    label: Mixtral 8x7B Instruct (MoE)
+    paramsB: 46.7
+    activeParamsB: 12.9
+    layers: 32
+    kvHeads: 8
+    headDim: 128
+    maxContextTokens: 32768
+    licence: Apache 2.0
+  - id: llama-3.3-70b
+    label: Llama 3.3 70B Instruct
+    paramsB: 70.6
+    activeParamsB: 70.6
+    layers: 80
+    kvHeads: 8
+    headDim: 128
+    maxContextTokens: 131072
+    licence: Llama 3.3 Community License (acceptable-use policy; 700M MAU clause)
+  - id: qwen2.5-72b
+    label: Qwen2.5 72B Instruct
+    paramsB: 72.7
+    activeParamsB: 72.7
+    layers: 80
+    kvHeads: 8
+    headDim: 128
+    maxContextTokens: 32768
+    licence: Qwen License (commercial terms apply above 100M MAU)
+
+# ---------------------------------------------------------------------------
+# Serving precision. bytesPerParam includes quantisation scale overhead.
+# computeUsesFp8: prefill runs on FP8 tensor cores (needs fp8Tflops on the GPU).
+# ---------------------------------------------------------------------------
+precisions:
+  - id: fp16
+    label: FP16 / BF16
+    bytesPerParam: 2
+    kvBytes: 2
+    requiresFp8Hardware: false
+    computeUsesFp8: false
+    qualityNote: Reference quality.
+  - id: fp8
+    label: FP8 (W8A8)
+    bytesPerParam: 1
+    kvBytes: 1
+    requiresFp8Hardware: true
+    computeUsesFp8: true
+    qualityNote: Near-lossless on most benchmarks; validate on the customer's eval set.
+  - id: int8
+    label: INT8 weight-only
+    bytesPerParam: 1.05
+    kvBytes: 2
+    requiresFp8Hardware: false
+    computeUsesFp8: false
+    qualityNote: Small quality loss; validate on the customer's eval set.
+  - id: int4
+    label: INT4 weight-only (AWQ / GPTQ)
+    bytesPerParam: 0.55
+    kvBytes: 2
+    requiresFp8Hardware: false
+    computeUsesFp8: false
+    qualityNote: Noticeable quality loss on reasoning/code for smaller models - evaluate before committing.
+# 'auto' evaluates only these (quality-preserving) precisions; int8/int4 must be chosen explicitly.
+autoPrecisions: [fp16, fp8]
+
+# ---------------------------------------------------------------------------
+# Managed pay-per-token API tiers - USD per 1M tokens. Representative list
+# prices for a typical model in each tier; the assessment accepts contracted
+# prices as overrides.
+# ---------------------------------------------------------------------------
+managedApiTiers:
+  - id: small
+    label: Small / fast model tier
+    inputPer1M: 0.15
+    outputPer1M: 0.60
+  - id: mid
+    label: Mid-size general model tier
+    inputPer1M: 3.00
+    outputPer1M: 15.00
+  - id: frontier
+    label: Frontier / largest model tier
+    inputPer1M: 15.00
+    outputPer1M: 75.00
+
+# ---------------------------------------------------------------------------
+# Serving-performance model (roofline approximation - see inference-engine.service.ts)
+# ---------------------------------------------------------------------------
+sizing:
+  gpuMemoryUtilization: 0.90       # share of GPU memory the server may use (vLLM default)
+  runtimeOverheadGbPerGpu: 2       # CUDA context, activations, graph capture
+  bandwidthEfficiency: 0.70        # achieved vs peak HBM bandwidth during decode
+  prefillMfu: 0.40                 # achieved vs peak tensor FLOPS during prefill
+  tensorParallelOptions: [1, 2, 4, 8]
+  tensorParallelEfficiency: { "1": 1.0, "2": 0.92, "4": 0.85, "8": 0.75 }
+  pcieTensorParallelFactor: 0.75   # extra all-reduce cost when TP > 1 on GPUs without NVLink
+  maxBatchPerReplica: 256          # scheduler cap on concurrent sequences
+  targetUtilization: 0.70          # headroom so queues do not grow unbounded at peak
+  ttftContentionFactor: 1.5        # prefill interleaving with running decodes under load
+  haAvailabilityThreshold: 99.9    # at or above this, keep >= 2 replicas
+  charsPerToken: 4                 # used to convert character-based chunk sizes to tokens
+  ragPromptOverheadTokens: 500     # system prompt + user question on top of retrieved chunks (RAG defaults)
+
+pricing:
+  hoursPerMonth: 730
+  daysPerMonth: 30.4
+  reserved1yrFactor: 0.60          # 1-year commitment vs on-demand
+  spotFactor: 0.40                 # interruptible capacity - not advised for latency SLOs
+  peakHoursFraction: 0.20          # share of the month running at peak replica count (autoscaled)
+  selfHostedOverheadPercent: 20    # storage, networking, load balancing, observability on top of GPUs
+  platformFixedMonthlyUsd: 4000    # ~0.25 FTE of MLOps/platform engineering to run self-hosted serving
+  decisionMarginPercent: 20        # cost difference below which the decision is called "either"
+
+forecast:
+  horizonsMonths: [6, 12, 24]
+
+breakEven:
+  minScale: 0.01
+  maxScale: 100
+  points: 61

@@ -5,7 +5,7 @@ import { VectorPlatform } from '../projects/enums/platform.enum';
 import { HealthCheckDefinition, KubernetesArtifacts } from './iac-generator.types';
 
 /**
- * Phase 4 deliverable: "Running DB Instance plus IaC, deployment scripts,
+ * Phase 5 (Implementation) deliverable: "Running DB Instance plus IaC, deployment scripts,
  * configuration, health checks, and rollback procedure." This entity is the
  * generated plan/scripts; `execute` (DeploymentPlanController) is the
  * separate, explicit step that actually runs the schema/index creation

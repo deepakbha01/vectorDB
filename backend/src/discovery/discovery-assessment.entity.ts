@@ -7,6 +7,7 @@ import {
   Environment,
   OperationalCapability,
   QpsScope,
+  SimilarityMetric,
   TenancyModel,
 } from './enums/discovery.enum';
 import { VectorPlatform } from '../projects/enums/platform.enum';
@@ -14,8 +15,8 @@ import { VectorPlatform } from '../projects/enums/platform.enum';
 /**
  * A single, immutable Phase 1 Discovery submission. Projects may accumulate many
  * of these over time (assessment inputs can change) - `version` and `createdAt`
- * give a full audit trail, and each one has exactly one derived
- * ArchitectureDecisionRecord.
+ * give a full audit trail. Once Phases 2-3 are also complete, Phase 4 (Vector DB
+ * Selection) can derive an ArchitectureDecisionRecord from the latest one.
  */
 @Entity({ name: 'discovery_assessments' })
 export class DiscoveryAssessment {
@@ -52,6 +53,10 @@ export class DiscoveryAssessment {
 
   @Column()
   embeddingDimension: number;
+
+  /** Drives Phase 2/3 schema and index generation - every platform generator reads this instead of assuming cosine. */
+  @Column({ type: 'enum', enum: SimilarityMetric, default: SimilarityMetric.COSINE })
+  similarityMetric: SimilarityMetric;
 
   @Column('float')
   qps: number;

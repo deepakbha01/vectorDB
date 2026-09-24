@@ -37,16 +37,23 @@ control), and confirm `NODE_ENV=production` is set.
 The app currently runs with `synchronize: true` outside production, which
 creates/updates its own metadata schema automatically on boot - convenient
 for development, but **not** what should run in production. Before a
-production deployment:
+production deployment, apply the committed migrations (with
+`NODE_ENV=production` the app does not create its schema itself):
 
 ```
 cd backend
-npm run migration:generate -- src/migrations/Initial   # requires a live dev DB to diff against
 npm run migration:run
 ```
 
-See `PRODUCTION_READINESS.md` §3.2 for why no migration exists yet in this
-repository as delivered.
+`src/migrations/*-InitialSchema.ts` is the baseline for every table. On a
+database that was already created by `synchronize` (e.g. local development) it
+detects the existing tables and only records itself as applied, so running it
+there is safe. For later schema changes, generate a new migration against a
+database that is at the current baseline:
+
+```
+npm run migration:generate -- src/migrations/<Name>
+```
 
 ## 4. Docker Compose (fastest path for a full local/staging stack)
 

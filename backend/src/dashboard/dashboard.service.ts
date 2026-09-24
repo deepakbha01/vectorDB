@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ProjectsService } from '../projects/projects.service';
 import { DiscoveryService } from '../discovery/discovery.service';
+import { VectorDbSelectionService } from '../vector-db-selection/vector-db-selection.service';
 import { PhaseStatus } from '../projects/enums/project-status.enum';
+import { CustomerMode } from '../projects/enums/customer-mode.enum';
 import { AuthenticatedUser } from '../auth/auth.service';
 
 /**
@@ -15,6 +17,7 @@ import { AuthenticatedUser } from '../auth/auth.service';
 export interface ProjectDashboardSummary {
   projectId: string;
   projectName: string;
+  customerMode: CustomerMode;
   assessmentStatus: PhaseStatus;
   recommendedPlatform: string;
   platformIsManualOverride: boolean;
@@ -35,6 +38,7 @@ export class DashboardService {
   constructor(
     private readonly projectsService: ProjectsService,
     private readonly discoveryService: DiscoveryService,
+    private readonly vectorDbSelectionService: VectorDbSelectionService,
   ) {}
 
   async getSummary(userId: string): Promise<ProjectDashboardSummary[]> {
@@ -45,10 +49,19 @@ export class DashboardService {
         // findAllForUser already scoped to this owner, so they always pass the access check.
         const requester: AuthenticatedUser = { id: userId, email: project.owner.email, role: project.owner.role };
         const outcome = await this.discoveryService.getLatest(project.id, requester);
+        const vectorDbSelection = await this.vectorDbSelectionService.getLatest(project.id, requester);
+
+        let recommendations: string[] = [];
+        if (project.phaseStatuses.discovery !== PhaseStatus.COMPLETED) {
+          recommendations = ['Complete the Phase 1 Discovery assessment.'];
+        } else if (project.platform === 'undetermined') {
+          recommendations = ['Run Phase 4 Vector DB Selection to receive a platform recommendation.'];
+        }
 
         return {
           projectId: project.id,
           projectName: project.name,
+          customerMode: project.customerMode,
           assessmentStatus: project.phaseStatuses.discovery,
           recommendedPlatform: project.platform,
           platformIsManualOverride: project.platformIsManualOverride,
@@ -62,11 +75,8 @@ export class DashboardService {
           targetRecallAtK: outcome?.assessment.recallTarget ?? null,
           measuredRecallAtK: null,
           capacityUtilizationPercent: null,
-          risks: outcome?.adr.risks ?? [],
-          recommendations:
-            project.platform === 'undetermined'
-              ? ['Run the Phase 1 Discovery assessment to receive a platform recommendation.']
-              : [],
+          risks: vectorDbSelection?.adr.risks.map((r) => r.description) ?? [],
+          recommendations,
         };
       }),
     );

@@ -51,6 +51,32 @@ describe('GlobalExceptionFilter', () => {
     expect(body.message).toBe('An unexpected error occurred. Please retry or contact an administrator.');
   });
 
+  it('passes through errorCode/details when an exception body includes them, for flows the frontend must react to structurally', () => {
+    const { host, response } = makeHost();
+    filter.catch(
+      new BadRequestException({
+        message: 'Selected model dimension (3072) does not match Discovery (768). Confirm this is intentional.',
+        errorCode: 'DIMENSION_MISMATCH_CONFIRMATION_REQUIRED',
+        details: { discoveryDimension: 768, selectedDimension: 3072 },
+      }),
+      host,
+    );
+
+    const body = response.json.mock.calls[0][0];
+    expect(body.errorCode).toBe('DIMENSION_MISMATCH_CONFIRMATION_REQUIRED');
+    expect(body.details).toEqual({ discoveryDimension: 768, selectedDimension: 3072 });
+    expect(typeof body.message).toBe('string');
+  });
+
+  it('omits errorCode/details for every ordinary exception', () => {
+    const { host, response } = makeHost();
+    filter.catch(new BadRequestException('Plain error.'), host);
+
+    const body = response.json.mock.calls[0][0];
+    expect(body.errorCode).toBeUndefined();
+    expect(body.details).toBeUndefined();
+  });
+
   it('always includes path and a timestamp', () => {
     const { host, response } = makeHost({ method: 'GET', url: '/api/health' });
     filter.catch(new NotFoundException('not found'), host);

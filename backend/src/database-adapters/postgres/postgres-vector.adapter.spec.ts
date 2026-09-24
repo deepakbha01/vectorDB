@@ -121,9 +121,13 @@ describe('PostgresVectorAdapter', () => {
   it('createVectorIndex delegates to the schema generator and executes the result', async () => {
     mockPoolInstance.query.mockResolvedValue({});
     await adapter.createVectorIndex('docs', IndexType.HNSW, [{ name: 'M', value: 16 }]);
-    expect(schemaGenerator.generateIndexArtifact).toHaveBeenCalledWith('postgres_pgvector', 'docs', IndexType.HNSW, [
-      { name: 'M', value: 16 },
-    ]);
+    expect(schemaGenerator.generateIndexArtifact).toHaveBeenCalledWith(
+      'postgres_pgvector',
+      'docs',
+      IndexType.HNSW,
+      [{ name: 'M', value: 16 }],
+      undefined,
+    );
     expect(mockPoolInstance.query).toHaveBeenCalledWith('CREATE INDEX ...');
   });
 

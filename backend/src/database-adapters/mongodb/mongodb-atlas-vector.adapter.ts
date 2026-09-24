@@ -75,6 +75,7 @@ export class MongoDbAtlasVectorAdapter implements VectorDatabaseAdapter, OnModul
     const { mongodb_atlas } = this.schemaGenerator.generateAll({
       collectionName,
       dimension: definition.dimension,
+      metric: definition.metric,
       metadataFields: definition.metadataFields as SchemaDefinition['metadataFields'] as any,
     });
     const spec = mongodb_atlas.schema as { name: string; type: string; definition: Record<string, unknown> };

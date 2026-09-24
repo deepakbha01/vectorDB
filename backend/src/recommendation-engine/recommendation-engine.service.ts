@@ -14,6 +14,7 @@ import { buildPlainLanguageSummary } from './plain-language-summary';
 import {
   AlternativeBucket,
   AssessmentInput,
+  AssumptionEntry,
   BudgetFeasibility,
   ComplianceCheck,
   ComplianceGateResult,
@@ -24,6 +25,7 @@ import {
   InfrastructureEstimate,
   RankedAlternative,
   RecommendationResult,
+  RiskEntry,
   ScoredOption,
   SensitivityResult,
   SensitivityScenario,
@@ -107,7 +109,7 @@ export class RecommendationEngineService {
 
     const decisionStatus = this.buildDecisionStatus(tied, winner, complianceGate);
     const openValidations = this.buildOpenValidations(input, budgetFeasibility, complianceGate, winner);
-    const confidence = this.buildConfidence(decisionStatus, openValidations.length, winner.eligibilityStatus);
+    const confidence = this.buildConfidence(decisionStatus, openValidations.length, winner.eligibilityStatus, tieBreakStage);
 
     return {
       rulesVersion: this.platformConfig.getRulesVersion(),
@@ -128,6 +130,7 @@ export class RecommendationEngineService {
         openValidations,
         decisionStatus,
         tied.length > 1 ? tied.map((o) => o.label) : [],
+        tieBreakStage,
       ),
       criteriaWeights: weights,
       decisionStatus,
@@ -516,14 +519,30 @@ export class RecommendationEngineService {
     return items;
   }
 
-  private buildConfidence(decisionStatus: DecisionStatus, openValidationCount: number, eligibilityStatus: EligibilityStatus): ConfidenceLevel {
+  /**
+   * A tie on the primary criteria doesn't automatically mean the pick is a coin flip: `resolveWinner`
+   * already runs a deterministic tie-break chain (cost -> existing-stack fit -> operational fit), and
+   * most ties resolve cleanly at one of those stages - a real, defensible reason to prefer one platform
+   * over the other. Only a tie that survives every stage and falls back to arbitrary catalog order is
+   * genuinely low-confidence; that case alone should surface as "low" (and route to architect review).
+   */
+  private buildConfidence(
+    decisionStatus: DecisionStatus,
+    openValidationCount: number,
+    eligibilityStatus: EligibilityStatus,
+    tieBreakStage: string | null,
+  ): ConfidenceLevel {
     if (decisionStatus === 'tied') {
-      return 'low';
+      return this.tieBreakWasArbitrary(tieBreakStage) ? 'low' : 'medium';
     }
     if (decisionStatus === 'conditional' || openValidationCount >= 2 || eligibilityStatus === 'unverified') {
       return 'medium';
     }
     return 'high';
+  }
+
+  private tieBreakWasArbitrary(tieBreakStage: string | null): boolean {
+    return tieBreakStage === null || tieBreakStage.startsWith('catalog order');
   }
 
   private buildEvidence(
@@ -569,30 +588,88 @@ export class RecommendationEngineService {
     );
   }
 
-  private buildAssumptions(input: AssessmentInput): string[] {
-    const assumptions = [
-      'Vector dimension and count are stable estimates provided at Discovery time; re-run the assessment if they change materially.',
-      `Sizing assumes float32 embeddings (${input.embeddingDimension} dimensions) with a single HNSW-style ANN index per collection.`,
-      'Cost scoring is directional (favors reuse of existing infrastructure); it is not a substitute for a vendor quote.',
-      `QPS figures are treated as '${input.qpsScope}'; if that does not match how you actually measure QPS, re-run the assessment with the correct scope, since it materially changes sizing once multi-region is in play.`,
+  private buildAssumptions(input: AssessmentInput): AssumptionEntry[] {
+    const assumptions: AssumptionEntry[] = [
+      {
+        id: 'assumption-vector-scale',
+        parameter: 'Vector dimension & count',
+        value: `${input.embeddingDimension} dimensions, ${input.estimatedVectorCount.toLocaleString()} vectors`,
+        source: 'Discovery assessment (Phase 1)',
+        type: 'customer_provided',
+        confidence: 'medium',
+        impact: 'Vector dimension and count are stable estimates provided at Discovery time; re-run the assessment if they change materially - they directly drive infrastructure sizing and platform capacity scoring.',
+        validationRequired: true,
+      },
+      {
+        id: 'assumption-embedding-precision',
+        parameter: 'Embedding precision & index shape',
+        value: `float32, single HNSW-style ANN index per collection (${input.embeddingDimension} dimensions)`,
+        source: 'Engine default assumption',
+        type: 'directional',
+        confidence: 'medium',
+        impact: 'Sizing assumes float32 embeddings with a single HNSW-style ANN index per collection - affects raw vector storage and memory estimates.',
+        validationRequired: false,
+      },
+      {
+        id: 'assumption-cost-directional',
+        parameter: 'Cost scoring',
+        value: 'Directional (favors reuse of existing infrastructure)',
+        source: 'Engine scoring model',
+        type: 'directional',
+        confidence: 'low',
+        impact: 'Cost scoring is directional; it is not a substitute for a vendor quote.',
+        validationRequired: true,
+      },
+      {
+        id: 'assumption-qps-scope',
+        parameter: 'QPS scope',
+        value: input.qpsScope,
+        source: 'Discovery assessment (Phase 1)',
+        type: 'customer_provided',
+        confidence: 'medium',
+        impact: `QPS figures are treated as '${input.qpsScope}'; if that does not match how you actually measure QPS, re-run the assessment with the correct scope, since it materially changes sizing once multi-region is in play.`,
+        validationRequired: true,
+      },
     ];
     if (input.precisionTarget !== undefined) {
-      assumptions.push(
-        `A precision@K target of ${input.precisionTarget} was also specified; ANN index tuning (ef/nprobe) primarily controls recall, not ` +
-          'precision, which is typically governed by downstream result filtering/reranking rather than the index itself - it is recorded but not scored.',
-      );
+      assumptions.push({
+        id: 'assumption-precision-not-scored',
+        parameter: 'Precision@K target',
+        value: String(input.precisionTarget),
+        source: 'Discovery assessment (Phase 1)',
+        type: 'customer_provided',
+        confidence: 'high',
+        impact:
+          'ANN index tuning (ef/nprobe) primarily controls recall, not precision, which is typically governed by downstream result ' +
+          'filtering/reranking rather than the index itself - it is recorded but not scored.',
+        validationRequired: false,
+      });
     }
     if (input.ndcgTarget !== undefined || input.mrrTarget !== undefined) {
-      assumptions.push(
-        'NDCG@K / MRR targets, if specified, are recorded for the record only - this engine\'s rules only model recall@K, so ranking-quality ' +
-          'metrics are not independently scored.',
-      );
+      assumptions.push({
+        id: 'assumption-ranking-metrics-not-scored',
+        parameter: 'NDCG@K / MRR targets',
+        value: [input.ndcgTarget !== undefined ? `NDCG@K=${input.ndcgTarget}` : null, input.mrrTarget !== undefined ? `MRR=${input.mrrTarget}` : null]
+          .filter(Boolean)
+          .join(', '),
+        source: 'Discovery assessment (Phase 1)',
+        type: 'customer_provided',
+        confidence: 'high',
+        impact: "Recorded for the record only - this engine's rules only model recall@K, so ranking-quality metrics are not independently scored.",
+        validationRequired: false,
+      });
     }
     if (input.requiresReranking) {
-      assumptions.push(
-        'Reranking is assumed to run at the application layer over the top-K candidates any of these platforms return; it does not change ' +
-          'platform selection, since it is not platform-specific.',
-      );
+      assumptions.push({
+        id: 'assumption-reranking-application-layer',
+        parameter: 'Reranking',
+        value: 'Assumed to run at the application layer',
+        source: 'Engine default assumption',
+        type: 'directional',
+        confidence: 'medium',
+        impact: 'Reranking is assumed to run at the application layer over the top-K candidates any of these platforms return; it does not change platform selection, since it is not platform-specific.',
+        validationRequired: false,
+      });
     }
     return assumptions;
   }
@@ -602,55 +679,140 @@ export class RecommendationEngineService {
     input: AssessmentInput,
     thresholds: Record<string, any>,
     noPlatformFullyEligible: boolean,
-  ): string[] {
-    const risks: string[] = [];
+  ): RiskEntry[] {
+    const risks: RiskEntry[] = [];
 
     if (noPlatformFullyEligible) {
-      risks.push(
-        'No cataloged platform fully satisfies the required search capabilities (hybrid search / full-text search / metadata ' +
+      risks.push({
+        id: 'risk-capability-gap',
+        category: 'search_quality',
+        description:
+          'No cataloged platform fully satisfies the required search capabilities (hybrid search / full-text search / metadata ' +
           'filtering); the recommendation below is the best available compromise and this gap should be revisited.',
-      );
+        impact: 'high',
+        likelihood: 'high',
+        mitigation: 'Revisit the search-capability requirements with stakeholders, or explicitly accept the best available compromise.',
+        status: 'open',
+        validationRequired: true,
+      });
     }
     if (decision === VectorPlatform.MILVUS && !input.hasExistingKubernetes) {
-      risks.push('No existing Kubernetes platform was reported; a new cluster must be stood up before Milvus can be provisioned (Phase 4).');
+      risks.push({
+        id: 'risk-milvus-no-k8s',
+        category: 'operations',
+        description: 'No existing Kubernetes platform was reported; a new cluster must be stood up before Milvus can be provisioned (Phase 4).',
+        impact: 'medium',
+        likelihood: 'high',
+        mitigation: 'Provision a Kubernetes cluster (or confirm managed K8s availability) before Phase 4 implementation.',
+        status: 'open',
+        validationRequired: false,
+      });
     }
     if (!LIVE_INGESTION_SUPPORTED.has(decision)) {
-      risks.push(
-        `No maintained Node.js driver exists for '${decision}'; Phase 2-4/7 (schema, index design, deployment plan, capacity ` +
+      risks.push({
+        id: 'risk-no-live-ingestion-driver',
+        category: 'vendor_platform',
+        description:
+          `No maintained Node.js driver exists for '${decision}'; Phase 2-4/7 (schema, index design, deployment plan, capacity ` +
           'planning) are fully supported, but live ingestion (Phase 5) requires configuring an ODBC/JDBC bridge outside this tool.',
-      );
+        impact: 'medium',
+        likelihood: 'high',
+        mitigation: 'Configure an ODBC/JDBC bridge (or equivalent) outside this tool before Phase 5 ingestion.',
+        status: 'open',
+        validationRequired: false,
+      });
     }
     if (input.recallTarget >= thresholds.recall.highRecallTarget) {
-      risks.push('High recall target may require larger ef/nprobe search parameters, increasing latency and memory - validate during Phase 3 index tuning.');
+      risks.push({
+        id: 'risk-high-recall-target',
+        category: 'performance',
+        description: 'High recall target may require larger ef/nprobe search parameters, increasing latency and memory - validate during Phase 3 index tuning.',
+        impact: 'medium',
+        likelihood: 'medium',
+        mitigation: 'Validate ef/nprobe search parameters and their latency/memory trade-off during Phase 3 (Index Design) tuning.',
+        status: 'open',
+        validationRequired: true,
+      });
     }
     if (input.precisionTarget !== undefined && input.precisionTarget >= 0.99) {
-      risks.push(
-        `A precision@K target of ${input.precisionTarget} is at or near the ceiling; confirm this is intentional (e.g. "near-exhaustive search ` +
+      risks.push({
+        id: 'risk-precision-near-ceiling',
+        category: 'search_quality',
+        description:
+          `A precision@K target of ${input.precisionTarget} is at or near the ceiling; confirm this is intentional (e.g. "near-exhaustive search ` +
           'required") rather than a proxy for "very high precision" entered as literal 100%, since the two imply very different index designs.',
-      );
+        impact: 'low',
+        likelihood: 'medium',
+        mitigation: 'Confirm the precision target reflects an intentional near-exhaustive search requirement with the stakeholder who set it.',
+        status: 'open',
+        validationRequired: true,
+      });
     }
     if (input.targetP95LatencyMs <= thresholds.latencyMs.strictP95) {
-      risks.push('Strict P95 latency target is aggressive for the estimated scale; load-test before committing to production SLAs.');
+      risks.push({
+        id: 'risk-strict-p95-latency',
+        category: 'performance',
+        description: 'Strict P95 latency target is aggressive for the estimated scale; load-test before committing to production SLAs.',
+        impact: 'high',
+        likelihood: 'medium',
+        mitigation: 'Load-test under realistic conditions before committing to this service-level target in production.',
+        status: 'open',
+        validationRequired: true,
+      });
     }
     // A P99 target within ~30% of the P95 target is a tight tail relative to typical ANN
     // query-latency variance under load; a target that loose (or looser) is normal and not flagged.
     if (input.targetP99LatencyMs > 0 && input.targetP99LatencyMs < input.targetP95LatencyMs * 1.3) {
-      risks.push(
-        `A ${input.targetP99LatencyMs}ms P99 target is tight relative to the ${input.targetP95LatencyMs}ms P95 target; tail latency ` +
+      risks.push({
+        id: 'risk-tight-p99',
+        category: 'performance',
+        description:
+          `A ${input.targetP99LatencyMs}ms P99 target is tight relative to the ${input.targetP95LatencyMs}ms P95 target; tail latency ` +
           'under load typically exceeds P95 by more than this margin - load-test the P99 specifically, not just P95, before committing.',
-      );
+        impact: 'medium',
+        likelihood: 'medium',
+        mitigation: 'Load-test the P99 target specifically (not just P95) under realistic concurrent load before committing.',
+        status: 'open',
+        validationRequired: true,
+      });
     }
     if (input.requiresMultiRegion) {
-      risks.push(
-        'Multi-region deployment was requested; this tool does not yet model per-platform cross-region replication capabilities - ' +
+      risks.push({
+        id: 'risk-multi-region-unmodeled',
+        category: 'availability',
+        description:
+          'Multi-region deployment was requested; this tool does not yet model per-platform cross-region replication capabilities - ' +
           "validate the recommended platform's multi-region story manually (Phase 7 - Capacity Planning covers single-region sharding only).",
-      );
+        impact: 'high',
+        likelihood: 'medium',
+        mitigation: "Manually validate the recommended platform's multi-region/cross-region replication story before committing.",
+        status: 'open',
+        validationRequired: true,
+      });
     }
     if (input.containsPii) {
-      risks.push('Workload contains PII - confirm encryption at rest/in transit and data residency requirements are enforced end-to-end.');
+      risks.push({
+        id: 'risk-pii-workload',
+        category: 'compliance',
+        description: 'Workload contains PII - confirm encryption at rest/in transit and data residency requirements are enforced end-to-end.',
+        impact: 'high',
+        likelihood: 'high',
+        mitigation: 'Confirm encryption at rest/in transit and data residency requirements are enforced end-to-end before production use.',
+        status: 'open',
+        validationRequired: true,
+      });
     }
     if (risks.length === 0) {
-      risks.push('No material risks identified from the discovery inputs; standard operational risks (capacity drift, index staleness) still apply.');
+      risks.push({
+        id: 'risk-none-identified',
+        category: 'operations',
+        description: 'No material risks identified from the discovery inputs; standard operational risks (capacity drift, index staleness) still apply.',
+        impact: 'low',
+        likelihood: 'low',
+        mitigation: 'Standard operational monitoring (capacity drift, index staleness) still applies.',
+        status: 'accepted',
+        validationRequired: false,
+      });
     }
     return risks;
   }

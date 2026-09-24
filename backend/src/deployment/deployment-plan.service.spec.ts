@@ -37,6 +37,7 @@ describe('DeploymentPlanService', () => {
   const pipelineDesign = {
     collectionName: 'docs',
     embeddingDimension: 768,
+    similarityMetric: 'cosine',
     metadataFields: [{ name: 'source', type: 'string' }],
     generatedSchemas: {
       postgres_pgvector: { ddl: 'CREATE TABLE docs (...);', notes: [] },
@@ -136,8 +137,8 @@ describe('DeploymentPlanService', () => {
 
     const result = await service.executeLatestPlan('project-1', requester);
 
-    expect(adapter.createSchema).toHaveBeenCalledWith({ collectionOrTableName: 'docs', dimension: 768, metadataFields: pipelineDesign.metadataFields });
-    expect(adapter.createVectorIndex).toHaveBeenCalledWith('docs', IndexType.HNSW, indexDesign.configuration);
+    expect(adapter.createSchema).toHaveBeenCalledWith({ collectionOrTableName: 'docs', dimension: 768, metric: 'cosine', metadataFields: pipelineDesign.metadataFields });
+    expect(adapter.createVectorIndex).toHaveBeenCalledWith('docs', IndexType.HNSW, indexDesign.configuration, 'cosine');
     expect(result).toEqual({ healthCheckPassed: true, schemaCreated: true, indexCreated: true });
     expect(plansRepo.save).toHaveBeenCalledWith(expect.objectContaining({ executed: true }));
   });

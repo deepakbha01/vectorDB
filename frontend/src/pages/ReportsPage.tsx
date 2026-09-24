@@ -5,12 +5,13 @@ import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
 const REPORT_TYPES: Array<{ type: ReportType; label: string }> = [
-  { type: 'discovery', label: 'Architecture Decision Record (Phase 1)' },
+  { type: 'discovery', label: 'Discovery: Workload Qualification (Phase 1)' },
   { type: 'data-pipeline', label: 'Data Pipeline Design (Phase 2)' },
   { type: 'index-design', label: 'Indexing Strategy Guide (Phase 3)' },
-  { type: 'deployment-plan', label: 'Deployment Plan (Phase 4)' },
-  { type: 'optimization-report', label: 'Optimization Report (Phase 6)' },
-  { type: 'capacity-plan', label: 'Capacity Plan (Phase 7)' },
+  { type: 'vector-db-selection', label: 'Architecture Decision Record (Phase 4)' },
+  { type: 'deployment-plan', label: 'Deployment Plan (Phase 5)' },
+  { type: 'optimization-report', label: 'Optimization Report (Phase 7)' },
+  { type: 'capacity-plan', label: 'Capacity Plan (Phase 8)' },
   { type: 'complete', label: 'Complete Assessment Report (all phases)' },
 ];
 

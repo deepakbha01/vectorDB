@@ -6,10 +6,13 @@ import { UpdateFrequency } from '../index-recommendation-engine/enums/update-fre
 import {
   ImpactEstimate,
   IndexCriteriaScores,
-  IndexRecommendationInput,
   ScoredIndexOption,
   TuningParameter,
 } from '../index-recommendation-engine/index-recommendation.types';
+import { Phase2Handoff } from '../data-pipeline/data-pipeline-design.types';
+
+/** The Phase 2->3 handoff plus the one genuinely Phase-3-time input (updateFrequency) - what actually gets fed to the engine and persisted. */
+export type IndexDesignInputs = Phase2Handoff & { updateFrequency: UpdateFrequency };
 
 /**
  * Phase 3 deliverable: the Indexing Strategy Guide produced by the Index
@@ -66,7 +69,7 @@ export class IndexDesign {
   updateFrequency: UpdateFrequency;
 
   @Column({ type: 'jsonb' })
-  inputsUsed: IndexRecommendationInput;
+  inputsUsed: IndexDesignInputs;
 
   @CreateDateColumn()
   createdAt: Date;

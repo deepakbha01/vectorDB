@@ -2,15 +2,12 @@ import { FormEvent, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   apiClient,
-  ArchitectureDecisionRecord,
   DiscoveryAssessmentInput,
   DiscoveryOutcome,
   extractErrorMessage,
-  PlainLanguageSummary,
+  PatternCatalogEntry,
   Project,
-  SensitivityAnalysis,
 } from '../api/client';
-import { ExecutiveSummaryCard } from '../components/ExecutiveSummaryCard';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
@@ -22,6 +19,7 @@ const DEFAULT_FORM: DiscoveryAssessmentInput = {
   chunksPerDocument: 4,
   estimatedVectorCount: 400000,
   embeddingDimension: 768,
+  similarityMetric: 'cosine',
   qps: 20,
   peakQps: 60,
   qpsScope: 'aggregate',
@@ -72,7 +70,7 @@ type FieldKey = keyof DiscoveryAssessmentInput;
 interface FieldMeta {
   label: string;
   help: string;
-  /** True if this input currently changes which platform wins the Phase 1 score. */
+  /** True if this input changes which platform wins the Phase 4 (Vector DB Selection) score. */
   scored: boolean;
 }
 
@@ -115,6 +113,11 @@ const FIELD_META: Record<FieldKey, FieldMeta> = {
   embeddingDimension: {
     label: 'Embedding dimension',
     help: 'Dimensionality of your embedding model’s output vectors, chosen from this platform’s embedding model catalog. Feeds the infrastructure sizing estimate directly; it does not change which platform wins.',
+    scored: false,
+  },
+  similarityMetric: {
+    label: 'Similarity metric',
+    help: 'The vector distance/similarity function this workload needs (cosine, dot product, or Euclidean) - determined by how your embedding model was trained. Drives the actual generated schema and index configuration in Phase 2/3 for every platform; it does not change which platform wins.',
     scored: false,
   },
   qps: {
@@ -585,379 +588,11 @@ function HelpPanel({ activeField }: { activeField: FieldKey | null }) {
         </>
       ) : (
         <p className="help-panel-desc">
-          Click or tab into any field below to see what it means and whether it changes the Phase 1
-          platform recommendation.
+          Click or tab into any field below to see what it means and whether it will change the Phase 4
+          (Vector DB Selection) platform recommendation.
         </p>
       )}
     </aside>
-  );
-}
-
-const VERDICT_TONE: Record<PlainLanguageSummary['verdict'], 'validated' | 'warning' | 'danger'> = {
-  'Excellent Fit': 'validated',
-  'Good Fit': 'validated',
-  'Workable Fit': 'warning',
-  'Weak Fit': 'danger',
-};
-
-function PlainLanguageCard({ summary }: { summary: PlainLanguageSummary }) {
-  const badgeText = summary.conditionalBadge ?? summary.verdict;
-  const badgeTone = summary.conditionalBadge ? (summary.conditionalBadge.includes('Tied') ? 'warning' : 'warning') : VERDICT_TONE[summary.verdict];
-  return (
-    <ExecutiveSummaryCard
-      badge={{ text: badgeText, tone: badgeTone }}
-      headline={summary.headline}
-      scorecard={summary.scorecard}
-      note={{ label: 'Cost & Operational Effort', value: summary.costAndEffort }}
-      considerations={summary.risks}
-      bottomLine={summary.bottomLine}
-    />
-  );
-}
-
-const DECISION_STATUS_LABEL: Record<ArchitectureDecisionRecord['decisionStatus'], string> = {
-  single: 'Single recommendation',
-  tied: 'Tied - not an unambiguous winner',
-  conditional: 'Conditional recommendation',
-};
-
-function DecisionStatusCard({ adr }: { adr: ArchitectureDecisionRecord }) {
-  return (
-    <div className="card" style={{ marginBottom: 16 }}>
-      <div className="card-grid">
-        <div className="card">
-          <div className="metric-label">Decision status</div>
-          <div className="metric-value" style={{ fontSize: 18 }}>{DECISION_STATUS_LABEL[adr.decisionStatus]}</div>
-          {adr.decisionStatus === 'tied' && (
-            <p style={{ fontSize: 12, color: '#5a6472' }}>
-              Tied with: {adr.tiedPlatformIds.join(', ')}
-              {adr.tieBreakStage ? ` — ${adr.tieBreakStage}` : ''}
-            </p>
-          )}
-        </div>
-        <div className="card">
-          <div className="metric-label">Confidence</div>
-          <div className="metric-value" style={{ fontSize: 18, textTransform: 'capitalize' }}>{adr.confidence}</div>
-        </div>
-      </div>
-      {adr.openValidations.length > 0 && (
-        <div style={{ marginTop: 12 }}>
-          <div className="metric-label">Open before final selection</div>
-          <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13 }}>
-            {adr.openValidations.map((v) => (
-              <li key={v}>{v}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function BudgetAndComplianceCard({ adr }: { adr: ArchitectureDecisionRecord }) {
-  if (!adr.budgetFeasibility && (!adr.complianceGate || !adr.complianceGate.applicable)) {
-    return null;
-  }
-  return (
-    <div className="card-grid" style={{ marginBottom: 16 }}>
-      {adr.budgetFeasibility && (
-        <div className="card">
-          <div className="metric-label">Budget feasibility</div>
-          <div className="metric-value" style={{ fontSize: 16 }}>${adr.budgetFeasibility.monthlyBudgetUsd}/mo stated</div>
-          <span className="status-pill">{adr.budgetFeasibility.status.replace(/_/g, ' ')}</span>
-          <p style={{ fontSize: 12, color: '#5a6472' }}>{adr.budgetFeasibility.note}</p>
-        </div>
-      )}
-      {adr.complianceGate && adr.complianceGate.applicable && (
-        <div className="card">
-          <div className="metric-label">PII compliance gate</div>
-          <span className="status-pill">{adr.complianceGate.status}</span>
-          <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12 }}>
-            {adr.complianceGate.checks.map((c) => (
-              <li key={c.control} style={{ color: c.satisfied ? 'inherit' : '#b3261e' }}>
-                {c.control}: {c.satisfied ? 'captured' : 'not captured'}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function WhatIfAnalysisCard({ projectId }: { projectId: string }) {
-  const [analysis, setAnalysis] = useState<SensitivityAnalysis | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const run = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data } = await apiClient.get<SensitivityAnalysis>(`/projects/${projectId}/discovery/assessments/latest/sensitivity-analysis`);
-      setAnalysis(data);
-    } catch (err: any) {
-      setError(extractErrorMessage(err, 'Could not run sensitivity analysis.'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="card" style={{ marginBottom: 16 }}>
-      <div className="metric-label" style={{ marginBottom: 6 }}>What-if analysis</div>
-      <p style={{ fontSize: 12, color: '#5a6472', margin: '0 0 10px' }}>
-        Re-runs the current assessment under a few common what-if scenarios (QPS x2, vector count x2, budget halved, multi-region
-        toggled, a stricter recall target) without submitting a new version, so you can see whether the decision is sensitive to
-        these inputs before committing to it.
-      </p>
-      <button type="button" className="primary-btn" onClick={run} disabled={loading}>
-        {loading ? 'Running...' : 'Run what-if analysis'}
-      </button>
-      {error && <p style={{ color: '#b3261e', fontSize: 13 }}>{error}</p>}
-      {analysis && (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 12 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
-              <th style={{ padding: '6px 8px' }}>Scenario</th>
-              <th style={{ padding: '6px 8px' }}>Decision</th>
-              <th style={{ padding: '6px 8px' }}>Changed?</th>
-              <th style={{ padding: '6px 8px' }}>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr style={{ borderBottom: '1px solid #eceff3', color: '#5a6472' }}>
-              <td style={{ padding: '6px 8px' }}>Baseline (current assessment)</td>
-              <td style={{ padding: '6px 8px' }}>{analysis.baselineDecision}</td>
-              <td style={{ padding: '6px 8px' }}>-</td>
-              <td style={{ padding: '6px 8px' }}>{analysis.baselineDecisionStatus}</td>
-            </tr>
-            {analysis.scenarios.map((s) => (
-              <tr key={s.scenario} style={{ borderBottom: '1px solid #eceff3', fontWeight: s.decisionChanged ? 600 : 400 }}>
-                <td style={{ padding: '6px 8px' }}>{s.scenario}</td>
-                <td style={{ padding: '6px 8px' }}>{s.decision}</td>
-                <td style={{ padding: '6px 8px' }}>{s.decisionChanged ? 'Yes' : 'No'}</td>
-                <td style={{ padding: '6px 8px' }}>{s.decisionStatus}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-function AdrView({ adr, projectId }: { adr: ArchitectureDecisionRecord; projectId: string }) {
-  const [showTechnical, setShowTechnical] = useState(!adr.plainLanguageSummary);
-  return (
-    <div>
-      {adr.plainLanguageSummary ? (
-        <PlainLanguageCard summary={adr.plainLanguageSummary} />
-      ) : (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <p style={{ fontSize: 13, color: '#5a6472', margin: 0 }}>
-            This assessment was run before the plain-English summary existed. Re-run the assessment to get one.
-          </p>
-        </div>
-      )}
-
-      {adr.decisionStatus !== undefined && <DecisionStatusCard adr={adr} />}
-      <BudgetAndComplianceCard adr={adr} />
-      <WhatIfAnalysisCard projectId={projectId} />
-
-      <button
-        type="button"
-        className="primary-btn"
-        style={{ marginBottom: 16, background: 'transparent', color: 'var(--primary)', border: '1px solid var(--primary)' }}
-        onClick={() => setShowTechnical((v) => !v)}
-      >
-        {showTechnical ? 'Hide technical details' : 'Show technical details'}
-      </button>
-
-      {showTechnical && (
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="metric-label">Decision (rules v{adr.rulesVersion})</div>
-        <div className="metric-value" style={{ fontSize: 22, textTransform: 'uppercase' }}>
-          {adr.decision}
-        </div>
-        <p style={{ fontSize: 13, color: '#5a6472' }}>{adr.rationale}</p>
-        <span className="status-pill">Operational complexity: {adr.operationalComplexity}</span>
-      </div>
-      )}
-
-      {showTechnical && (
-      <div className="card" style={{ marginBottom: 16, overflowX: 'auto' }}>
-        <div className="metric-label" style={{ marginBottom: 6 }}>
-          Scored options
-        </div>
-        <p style={{ fontSize: 12, color: '#5a6472', margin: '0 0 10px' }}>
-          Each candidate is scored 0-1 on seven weighted criteria
-          {adr.criteriaWeights
-            ? ` (vector volume ${(adr.criteriaWeights.vectorCount * 100).toFixed(0)}%, query throughput ${(adr.criteriaWeights.qps * 100).toFixed(0)}%, latency ${(adr.criteriaWeights.latency * 100).toFixed(0)}%, recall ${(adr.criteriaWeights.recall * 100).toFixed(0)}%, existing-platform fit ${(adr.criteriaWeights.existingPlatform * 100).toFixed(0)}%, operational simplicity ${(adr.criteriaWeights.operationalComplexity * 100).toFixed(0)}%, cost ${(adr.criteriaWeights.cost * 100).toFixed(0)}%)`
-            : ''}{' '}
-          using the thresholds and weights in rules v{adr.rulesVersion}. A platform that fails a required search capability is
-          "Ineligible" and cannot win regardless of score; one with an unmodeled requirement (e.g. multi-region) is "Unverified" -
-          still winnable, but the decision is then marked conditional. Among eligible/unverified candidates, the highest total
-          wins, with ties broken by a deterministic chain (see Decision status above).
-        </p>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
-              <th style={{ padding: '6px 8px' }}>Platform</th>
-              <th style={{ padding: '6px 8px' }}>Eligibility</th>
-              <th style={{ padding: '6px 8px' }}>Total</th>
-              <th style={{ padding: '6px 8px' }}>Vector Count</th>
-              <th style={{ padding: '6px 8px' }}>QPS</th>
-              <th style={{ padding: '6px 8px' }}>Latency</th>
-              <th style={{ padding: '6px 8px' }}>Recall</th>
-              <th style={{ padding: '6px 8px' }}>Existing</th>
-              <th style={{ padding: '6px 8px' }}>Simplicity</th>
-              <th style={{ padding: '6px 8px' }}>Cost</th>
-            </tr>
-          </thead>
-          <tbody>
-            {adr.options
-              .filter((o) => o.eligibilityStatus !== 'ineligible')
-              .map((o) => (
-                <tr key={o.platformId} style={{ borderBottom: '1px solid #eceff3', fontWeight: o.platformId === adr.decision ? 600 : 400 }}>
-                  <td style={{ padding: '6px 8px' }}>{o.label}</td>
-                  <td style={{ padding: '6px 8px', textTransform: 'capitalize' }}>{o.eligibilityStatus}</td>
-                  <td style={{ padding: '6px 8px' }}>{o.totalScore.toFixed(2)}</td>
-                  <td style={{ padding: '6px 8px' }}>{o.criteriaScores.vectorCount.toFixed(2)}</td>
-                  <td style={{ padding: '6px 8px' }}>{o.criteriaScores.qps.toFixed(2)}</td>
-                  <td style={{ padding: '6px 8px' }}>{o.criteriaScores.latency.toFixed(2)}</td>
-                  <td style={{ padding: '6px 8px' }}>{o.criteriaScores.recall.toFixed(2)}</td>
-                  <td style={{ padding: '6px 8px' }}>{o.criteriaScores.existingPlatform.toFixed(2)}</td>
-                  <td style={{ padding: '6px 8px' }}>{o.criteriaScores.operationalComplexity.toFixed(2)}</td>
-                  <td style={{ padding: '6px 8px' }}>{o.criteriaScores.cost.toFixed(2)}</td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-
-        {adr.options.some((o) => o.eligibilityStatus === 'ineligible') && (
-          <div style={{ marginTop: 14 }}>
-            <div className="metric-label" style={{ marginBottom: 6 }}>
-              Ineligible (cannot win regardless of score)
-            </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
-                  <th style={{ padding: '6px 8px' }}>Platform</th>
-                  <th style={{ padding: '6px 8px' }}>Total</th>
-                  <th style={{ padding: '6px 8px' }}>Why ineligible</th>
-                </tr>
-              </thead>
-              <tbody>
-                {adr.options
-                  .filter((o) => o.eligibilityStatus === 'ineligible')
-                  .map((o) => (
-                    <tr key={o.platformId} style={{ borderBottom: '1px solid #eceff3', color: '#5a6472' }}>
-                      <td style={{ padding: '6px 8px' }}>{o.label}</td>
-                      <td style={{ padding: '6px 8px' }}>{o.totalScore.toFixed(2)}</td>
-                      <td style={{ padding: '6px 8px' }}>{o.eligibilityNotes.join(' ')}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div style={{ marginTop: 14 }}>
-          {adr.options.map((o) => (
-            <details key={o.platformId} style={{ marginBottom: 8 }}>
-              <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-                Why {o.label} scored this way
-              </summary>
-              <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, color: '#5a6472' }}>
-                {o.evidence.map((e) => (
-                  <li key={e}>{e}</li>
-                ))}
-              </ul>
-            </details>
-          ))}
-        </div>
-      </div>
-      )}
-
-      {showTechnical && (
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-grid" style={{ marginBottom: 14 }}>
-          <div className="card">
-            <div className="metric-label">Raw Vector Data</div>
-            <div className="metric-value">{adr.infrastructureEstimate.estimatedRawVectorGb} GiB</div>
-          </div>
-          <div className="card">
-            <div className="metric-label">Estimated Memory</div>
-            <div className="metric-value">{adr.infrastructureEstimate.estimatedMemoryGb} GiB</div>
-          </div>
-          <div className="card">
-            <div className="metric-label">Estimated Storage</div>
-            <div className="metric-value">{adr.infrastructureEstimate.estimatedStorageGb} GiB</div>
-          </div>
-          <div className="card">
-            <div className="metric-label">Estimated CPU Cores</div>
-            <div className="metric-value">{adr.infrastructureEstimate.estimatedCpuCores}</div>
-          </div>
-        </div>
-        <details>
-          <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>How these figures are calculated</summary>
-          <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, color: '#5a6472' }}>
-            {adr.infrastructureEstimate.notes.map((n) => (
-              <li key={n}>{n}</li>
-            ))}
-          </ul>
-        </details>
-      </div>
-      )}
-
-      {showTechnical && (
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="metric-label" style={{ marginBottom: 6 }}>Alternatives</div>
-        {(
-          [
-            { bucket: 'tied' as const, title: 'Tied with the decision' },
-            { bucket: 'strong' as const, title: 'Strong alternatives' },
-            { bucket: 'lower_fit' as const, title: 'Lower fit for this workload' },
-            { bucket: 'capacity_constraint' as const, title: 'Capacity/capability constraint' },
-          ]
-        )
-          .map((group) => ({ ...group, items: adr.rejectedAlternatives.filter((r) => r.bucket === group.bucket) }))
-          .filter((group) => group.items.length > 0)
-          .map((group) => (
-            <div key={group.bucket} style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{group.title}</div>
-              <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13 }}>
-                {group.items.map((r) => (
-                  <li key={r.platformId}>{r.reason}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-      </div>
-      )}
-
-      {showTechnical && (
-      <div className="card-grid">
-        <div className="card">
-          <div className="metric-label">Risks</div>
-          <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13 }}>
-            {adr.risks.map((r) => (
-              <li key={r}>{r}</li>
-            ))}
-          </ul>
-        </div>
-        <div className="card">
-          <div className="metric-label">Assumptions</div>
-          <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13 }}>
-            {adr.assumptions.map((a) => (
-              <li key={a}>{a}</li>
-            ))}
-          </ul>
-        </div>
-      </div>
-      )}
-    </div>
   );
 }
 
@@ -970,24 +605,48 @@ export function DiscoveryPage() {
   const [submitting, setSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(true);
   const [activeField, setActiveField] = useState<FieldKey | null>(null);
+  const [usedPattern, setUsedPattern] = useState<PatternCatalogEntry | null>(null);
 
   useEffect(() => {
     if (!id) return;
-    apiClient.get<Project>(`/projects/${id}`).then((res) => setProject(res.data));
-    apiClient
-      .get<DiscoveryOutcome>(`/projects/${id}/discovery/assessments/latest`)
-      .then((res) => {
-        setOutcome(res.data);
-        // res.data.assessment carries persistence fields (id/version/createdAt)
+    let cancelled = false;
+
+    (async () => {
+      const { data: proj } = await apiClient.get<Project>(`/projects/${id}`);
+      if (cancelled) return;
+      setProject(proj);
+
+      try {
+        const { data: outcomeData } = await apiClient.get<DiscoveryOutcome>(`/projects/${id}/discovery/assessments/latest`);
+        if (cancelled) return;
+        setOutcome(outcomeData);
+        // outcomeData.assessment carries persistence fields (id/version/createdAt)
         // the submit DTO rejects (forbidNonWhitelisted) - strip them before
         // seeding the editable form.
-        const { id: _id, version: _version, createdAt: _createdAt, ...input } = res.data.assessment;
+        const { id: _id, version: _version, createdAt: _createdAt, ...input } = outcomeData.assessment;
         setForm(input);
         setShowForm(false);
-      })
-      .catch(() => {
-        // No assessment yet - keep defaults and show the form.
-      });
+      } catch {
+        // No assessment yet - seed the form from the project's AI Factory pattern
+        // (if any); every value stays fully editable before the first submit.
+        if (!proj.patternId) return;
+        try {
+          const { data: patterns } = await apiClient.get<PatternCatalogEntry[]>('/projects/pattern-catalog');
+          if (cancelled) return;
+          const pattern = patterns.find((p) => p.id === proj.patternId);
+          if (pattern) {
+            setUsedPattern(pattern);
+            setForm({ ...DEFAULT_FORM, ...pattern.defaultAssessment });
+          }
+        } catch {
+          // Pattern catalog unavailable - fall back to the generic defaults silently.
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   const onSubmit = async (e: FormEvent) => {
@@ -1024,17 +683,28 @@ export function DiscoveryPage() {
         <TopBar title="Phase 1 - Discovery: Use Case & Scale Assessment" />
 
         {outcome && !showForm && (
-          <div style={{ marginBottom: 20 }}>
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="metric-label">Assessment submitted</div>
+            <p style={{ fontSize: 13, color: '#5a6472' }}>
+              Version {outcome.assessment.version} is recorded. This is a workload qualification only - it does not
+              select a target platform. Continue to Phase 2 (Data & Embeddings) and Phase 3 (Index Design), then run{' '}
+              <Link to={`/projects/${project.id}/vector-db-selection`}>Phase 4: Vector DB Selection</Link> to get a
+              platform recommendation.
+            </p>
             <button className="primary-btn" onClick={() => setShowForm(true)}>
               Re-run Assessment (v{outcome.assessment.version + 1})
-            </button>{' '}
-            <Link to={`/projects/${project.id}/platform`} style={{ fontSize: 13, marginLeft: 10 }}>
-              Manually override this decision
-            </Link>
+            </button>
           </div>
         )}
 
-        {outcome && !showForm && <AdrView adr={outcome.adr} projectId={project.id} />}
+        {showForm && usedPattern && (
+          <div className="card" style={{ marginBottom: 16 }}>
+            <p style={{ fontSize: 13, color: '#5a6472', margin: 0 }}>
+              Defaults below are seeded from the <strong>{usedPattern.name}</strong> pattern - every field is
+              editable before you submit.
+            </p>
+          </div>
+        )}
 
         {showForm && (
           <div className="discovery-layout">
@@ -1054,6 +724,19 @@ export function DiscoveryPage() {
                   <NumberField id="chunksPerDocument" {...fieldProps} />
                   <NumericSelectField id="estimatedVectorCount" {...fieldProps} options={VECTOR_COUNT_OPTIONS} />
                   <NumericSelectField id="embeddingDimension" {...fieldProps} options={EMBEDDING_DIMENSION_OPTIONS} />
+                  <div className={`field${activeField === 'similarityMetric' ? ' field-active' : ''}`}>
+                    <label htmlFor="similarityMetric">{FIELD_META.similarityMetric.label}</label>
+                    <select
+                      id="similarityMetric"
+                      value={form.similarityMetric}
+                      onChange={(e) => setForm({ ...form, similarityMetric: e.target.value as any })}
+                      onFocus={() => setActiveField('similarityMetric')}
+                    >
+                      <option value="cosine">Cosine</option>
+                      <option value="dot_product">Dot product</option>
+                      <option value="euclidean">Euclidean (L2)</option>
+                    </select>
+                  </div>
                 </div>
               </section>
 

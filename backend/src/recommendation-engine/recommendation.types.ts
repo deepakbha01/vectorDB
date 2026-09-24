@@ -140,14 +140,57 @@ export interface PlainLanguageSummary {
   bottomLine: string;
 }
 
+/** Structured Risk Register entry (spec S23) - never a plain string, so every risk carries category/impact/likelihood/mitigation/status. */
+export type RiskCategory =
+  | 'performance'
+  | 'scalability'
+  | 'security'
+  | 'compliance'
+  | 'availability'
+  | 'cost'
+  | 'migration'
+  | 'data_quality'
+  | 'search_quality'
+  | 'vendor_platform'
+  | 'operations';
+export type RiskSeverity = 'low' | 'medium' | 'high';
+export type RiskStatus = 'open' | 'mitigated' | 'accepted' | 'closed';
+
+export interface RiskEntry {
+  id: string;
+  category: RiskCategory;
+  description: string;
+  impact: RiskSeverity;
+  likelihood: RiskSeverity;
+  mitigation: string;
+  owner?: string;
+  status: RiskStatus;
+  validationRequired: boolean;
+}
+
+/** Structured Assumption Register entry (spec S24) - "mandatory" per spec; every calculated/derived value must show where it came from. */
+export type AssumptionType = 'customer_provided' | 'architect_provided' | 'pattern_default' | 'calculated' | 'directional' | 'unknown';
+export type AssumptionConfidence = 'high' | 'medium' | 'low';
+
+export interface AssumptionEntry {
+  id: string;
+  parameter: string;
+  value: string;
+  source: string;
+  type: AssumptionType;
+  confidence: AssumptionConfidence;
+  impact: string;
+  validationRequired: boolean;
+}
+
 export interface RecommendationResult {
   rulesVersion: string;
   decision: VectorPlatform;
   rationale: string;
   options: ScoredOption[];
   rejectedAlternatives: RankedAlternative[];
-  assumptions: string[];
-  risks: string[];
+  assumptions: AssumptionEntry[];
+  risks: RiskEntry[];
   infrastructureEstimate: InfrastructureEstimate;
   operationalComplexity: string;
   plainLanguageSummary: PlainLanguageSummary;

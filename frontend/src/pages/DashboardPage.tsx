@@ -37,6 +37,9 @@ export function DashboardPage() {
       <div style={{ marginBottom: 20 }}>
         <Link to="/projects/new" className="primary-btn" style={{ display: 'inline-block', textDecoration: 'none' }}>
           + New Project
+        </Link>{' '}
+        <Link to="/patterns" style={{ marginLeft: 10, fontSize: 13 }}>
+          Browse AI Factory Pattern Library
         </Link>
       </div>
 
@@ -52,7 +55,12 @@ export function DashboardPage() {
             <h3 style={{ margin: 0 }}>
               <Link to={`/projects/${s.projectId}/discovery`}>{s.projectName}</Link>
             </h3>
-            <span className="status-pill">{s.assessmentStatus.replace('_', ' ')}</span>
+            <span>
+              <span className="status-pill" style={{ marginRight: 6 }}>
+                {s.customerMode === 'existing' ? 'Existing / Modernization' : 'New / Greenfield'}
+              </span>
+              <span className="status-pill">{s.assessmentStatus.replace('_', ' ')}</span>
+            </span>
           </div>
           <div className="card-grid">
             {metric('Recommended Platform', s.recommendedPlatform === 'undetermined' ? null : s.recommendedPlatform)}

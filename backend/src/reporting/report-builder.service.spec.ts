@@ -11,7 +11,35 @@ describe('ReportBuilderService', () => {
     service = new ReportBuilderService();
   });
 
-  it('builds a Discovery/ADR report with decision, requirements, and risks sections', () => {
+  it('builds a Discovery workload-qualification report without a platform decision', () => {
+    const assessment: any = {
+      version: 2,
+      environment: Environment.PRODUCTION,
+      deploymentEnvironment: 'cloud',
+      estimatedVectorCount: 500_000,
+      embeddingDimension: 768,
+      qps: 20,
+      peakQps: 60,
+      targetP95LatencyMs: 150,
+      recallTarget: 0.9,
+      containsPii: false,
+      requiresEncryptionAtRest: true,
+      requiresEncryptionInTransit: true,
+      requiresTenantIsolation: false,
+      requiresAuditLogging: false,
+    };
+
+    const doc = service.buildDiscoveryReport(assessment);
+
+    expect(doc.title).toBe('Discovery: Workload Qualification');
+    expect(doc.subtitle).toContain('version 2');
+    expect(doc.sections.find((s) => s.heading === 'Workload profile')?.fields).toContainEqual({
+      label: 'Estimated vector count',
+      value: '500,000',
+    });
+  });
+
+  it('builds a Vector DB Selection/ADR report with decision, requirements, and risks sections', () => {
     const assessment: any = {
       version: 2,
       environment: Environment.PRODUCTION,
@@ -55,8 +83,30 @@ describe('ReportBuilderService', () => {
         },
       ],
       rejectedAlternatives: [{ platformId: VectorPlatform.MILVUS, reason: 'overkill', bucket: 'lower_fit' }],
-      assumptions: ['assumption 1'],
-      risks: ['risk 1'],
+      assumptions: [
+        {
+          id: 'assumption-1',
+          parameter: 'Vector scale',
+          value: '500,000 vectors',
+          source: 'Discovery assessment',
+          type: 'customer_provided',
+          confidence: 'high',
+          impact: 'assumption 1',
+          validationRequired: false,
+        },
+      ],
+      risks: [
+        {
+          id: 'risk-1',
+          category: 'operations',
+          description: 'risk 1',
+          impact: 'medium',
+          likelihood: 'medium',
+          mitigation: 'Monitor closely.',
+          status: 'open',
+          validationRequired: false,
+        },
+      ],
       infrastructureEstimate: { estimatedMemoryGb: 2, estimatedStorageGb: 4, estimatedCpuCores: 2, notes: [] },
       criteriaWeights: { vectorCount: 0.2, qps: 0.2, latency: 0.15, recall: 0.1, existingPlatform: 0.15, operationalComplexity: 0.1, cost: 0.1 },
       decisionStatus: 'single',
@@ -68,15 +118,17 @@ describe('ReportBuilderService', () => {
       complianceGate: { applicable: false, status: 'not_applicable', checks: [] },
     };
 
-    const doc = service.buildDiscoveryReport(assessment, adr);
+    const doc = service.buildVectorDbSelectionReport(assessment, adr);
 
-    expect(doc.title).toBe('Architecture Decision Record');
+    expect(doc.title).toBe('Vector DB Selection: Architecture Decision Record');
     expect(doc.subtitle).toContain('version 2');
     expect(doc.sections.map((s) => s.heading)).toContain('Decision status & confidence');
-    expect(doc.sections.find((s) => s.heading === 'Risks')?.lists?.[0].items).toEqual(['risk 1']);
+    expect(doc.sections.find((s) => s.heading === 'Risk Register')?.tables?.[0].rows).toEqual([
+      ['risk-1', 'operations', 'risk 1', 'medium', 'medium', 'Monitor closely.', 'open', 'No'],
+    ]);
   });
 
-  it('builds a Data Pipeline Design report including the pipeline stage table', () => {
+  it('builds a Data Pipeline Design report including the pipeline stage table, metadata fields, and every generated schema', () => {
     const design: any = {
       version: 1,
       collectionName: 'docs',
@@ -86,13 +138,18 @@ describe('ReportBuilderService', () => {
       embeddingProviderId: 'openai',
       embeddingModelId: 'text-embedding-3-small',
       embeddingDimension: 1536,
+      similarityMetric: 'cosine',
+      dimensionMismatchReason: null,
       maxInputTokens: 8191,
       costPerMillionTokens: 0.02,
       qualityTier: 'high',
+      modelVersion: '3-small',
+      languageSupport: ['en'],
+      metadataFields: [{ name: 'source_url', type: 'string', required: true, filterable: true, searchable: false, sortable: false, description: 'Origin URL' }],
       pipelineStages: [{ name: 'Chunk', description: 'Splits text.' }],
       errorHandling: { retryCount: 3, retryBackoffMs: 2000, deadLetterEnabled: true, batchSize: 100 },
       validationWarnings: [],
-      generatedSchemas: { postgres_pgvector: { ddl: 'CREATE TABLE docs (...);' }, oracle: { ddl: 'CREATE TABLE docs (...);' } },
+      generatedSchemas: { postgres_pgvector: { ddl: 'CREATE TABLE docs (...);', notes: [] }, oracle: { ddl: 'CREATE TABLE docs (...);', notes: [] } },
     };
 
     const doc = service.buildDataPipelineReport(design);
@@ -100,6 +157,59 @@ describe('ReportBuilderService', () => {
     expect(doc.title).toBe('Data Pipeline Design');
     const pipelineSection = doc.sections.find((s) => s.heading.startsWith('Pipeline:'));
     expect(pipelineSection?.tables?.[0].rows).toEqual([['Chunk', 'Splits text.']]);
+
+    const metadataSection = doc.sections.find((s) => s.heading === 'Metadata fields');
+    expect(metadataSection?.tables?.[0].rows).toEqual([['source_url', 'string', 'Yes', 'Yes', 'No', 'No', 'Origin URL']]);
+
+    expect(doc.sections.some((s) => s.heading === 'Generated schema (PostgreSQL + pgvector)')).toBe(true);
+    expect(doc.sections.some((s) => s.heading === 'Generated schema (Oracle)')).toBe(true);
+  });
+
+  it('includes the Phase 3 handoff section when provided', () => {
+    const design: any = {
+      version: 1,
+      collectionName: 'docs',
+      chunkingStrategy: ChunkingStrategy.RECURSIVE,
+      chunkSize: 500,
+      chunkOverlap: 50,
+      embeddingProviderId: 'openai',
+      embeddingModelId: 'text-embedding-3-small',
+      embeddingDimension: 1536,
+      similarityMetric: 'cosine',
+      maxInputTokens: 8191,
+      costPerMillionTokens: 0.02,
+      qualityTier: 'high',
+      modelVersion: '3-small',
+      languageSupport: ['en'],
+      metadataFields: [],
+      pipelineStages: [],
+      errorHandling: { retryCount: 3, retryBackoffMs: 2000, deadLetterEnabled: true, batchSize: 100 },
+      validationWarnings: [],
+      generatedSchemas: { postgres_pgvector: { ddl: '...', notes: [] } },
+    };
+    const handoff: any = {
+      vectorCount: 400_000,
+      dimension: 1536,
+      metric: 'cosine',
+      qps: 20,
+      peakQps: 60,
+      topK: 10,
+      candidateK: 100,
+      filterUsage: true,
+      hybridSearch: false,
+      reranking: false,
+      targetP95LatencyMs: 150,
+      recallTarget: 0.9,
+      availableMemoryGb: 32,
+      candidateIndexFamilies: ['hnsw', 'ivf_flat', 'pq'],
+      status: 'READY',
+      statusReasons: [],
+    };
+
+    const doc = service.buildDataPipelineReport(design, handoff);
+    const handoffSection = doc.sections.find((s) => s.heading.startsWith('Phase 3 handoff'));
+    expect(handoffSection?.heading).toContain('READY');
+    expect(handoffSection?.fields).toContainEqual({ label: 'Vector count', value: '400,000' });
   });
 
   it('builds an Index Design report with requirements, scored options, and the configuration table', () => {

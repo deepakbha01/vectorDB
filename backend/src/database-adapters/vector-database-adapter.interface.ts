@@ -1,5 +1,6 @@
 import { IndexType } from '../index-recommendation-engine/enums/index-type.enum';
 import { IndexTuningParameter } from '../schema-generator/schema-generator.types';
+import { SimilarityMetric } from '../discovery/enums/discovery.enum';
 
 /**
  * Common contract every target vector database (Oracle, PostgreSQL+pgvector, Milvus)
@@ -41,6 +42,8 @@ export interface VectorSearchResult {
 export interface SchemaDefinition {
   collectionOrTableName: string;
   dimension: number;
+  /** Defaults to cosine when omitted - the Phase 4 deployment/benchmark call sites always pass the real value from the Data Pipeline Design / Index Design. */
+  metric?: SimilarityMetric;
   metadataFields: Array<{ name: string; type: string }>;
 }
 
@@ -62,8 +65,8 @@ export interface VectorDatabaseAdapter {
   healthCheck(): Promise<boolean>;
   createSchema(definition: SchemaDefinition): Promise<void>;
 
-  /** Executes the Phase 3 Index Design's decision + tuned parameters for real (see SchemaGeneratorService.generateIndexArtifact). */
-  createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[]): Promise<void>;
+  /** Executes the Phase 3 Index Design's decision + tuned parameters for real (see SchemaGeneratorService.generateIndexArtifact). `metric` defaults to cosine when omitted. */
+  createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[], metric?: SimilarityMetric): Promise<void>;
 
   upsert(collectionOrTableName: string, records: VectorRecord[]): Promise<void>;
   search(collectionOrTableName: string, query: VectorSearchQuery): Promise<VectorSearchResult[]>;

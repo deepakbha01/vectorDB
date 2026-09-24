@@ -1,0 +1,319 @@
+# AI Factory Pattern Library (refactoring spec S4).
+#
+# Each pattern is a reusable, configurable STARTING POINT for a new project -
+# never a final decision. `defaultAssessment` only sets the fields a pattern
+# actually has an opinion on; every value it seeds is fully editable on the
+# Phase 1 Discovery form before submission, and Phase 4 still runs the full
+# qualification/scoring engine regardless of which pattern (if any) was used.
+#
+# Field names in `defaultAssessment` match `DiscoveryAssessmentInput`
+# (frontend/src/api/client.ts) / `CreateDiscoveryAssessmentDto` (backend).
+
+patterns:
+  - id: enterprise-document-rag
+    name: "Enterprise Document RAG"
+    description: >-
+      Retrieval-augmented generation over a general enterprise document corpus
+      (policies, wikis, contracts, reports) for internal Q&A and copilots.
+    industry: "Cross-industry / Enterprise IT"
+    typicalDataTypes: ["Unstructured text", "PDF", "Office documents", "Wiki/HTML"]
+    typicalIngestionRate: "Low-to-moderate, batch-oriented with periodic re-sync"
+    typicalVectorVolume: "100K - 5M vectors"
+    typicalQueryProfile: "Interactive Q&A, single-tenant or shared internal users"
+    typicalLatencyRequirements: "P95 150-250ms end-to-end"
+    typicalRetrievalMethod: "Dense semantic search, optional hybrid with keyword"
+    securityComplianceConsiderations: ["RBAC on source ACLs", "Audit logging of queries"]
+    recommendedDesignConsiderations: ["Preserve document hierarchy/headings in chunking", "Metadata filtering by department/source"]
+    candidateTechnologyCategories: ["Embedded/SQL-based (small corpus)", "Dedicated vector DB (larger corpus)"]
+    validationRequirements: ["Recall@K against a labeled internal QA set"]
+    defaultAssessment:
+      documentCount: 250000
+      estimatedVectorCount: 1000000
+      qps: 15
+      peakQps: 40
+      targetP95LatencyMs: 200
+      recallTarget: 0.9
+      requiresHybridSearch: true
+      requiresMetadataFiltering: true
+      requiresRbac: true
+      tenancyModel: shared_multi_tenant
+
+  - id: healthcare-rag
+    name: "Healthcare RAG"
+    description: >-
+      RAG over clinical notes, care guidelines, and patient-facing knowledge
+      bases, with PHI-grade security and auditability.
+    industry: "Healthcare / Life Sciences"
+    typicalDataTypes: ["Clinical notes", "Care guidelines", "PDF forms"]
+    typicalIngestionRate: "Low-to-moderate, tightly controlled ingestion pipelines"
+    typicalVectorVolume: "500K - 3M vectors"
+    typicalQueryProfile: "Clinician-facing lookup, moderate concurrency"
+    typicalLatencyRequirements: "P95 200-300ms end-to-end"
+    typicalRetrievalMethod: "Dense semantic search with strict metadata filtering"
+    securityComplianceConsiderations: ["HIPAA", "PHI encryption at rest/in transit", "Full audit trail", "Tenant isolation per care facility"]
+    recommendedDesignConsiderations: ["De-identify PHI before embedding where possible", "Strict access-control metadata per chunk"]
+    candidateTechnologyCategories: ["Dedicated vector DB with strong IAM/encryption", "Existing DB with vector capability (if already HIPAA-attested)"]
+    validationRequirements: ["Compliance review of encryption/audit configuration", "Access-control penetration test"]
+    defaultAssessment:
+      qps: 8
+      peakQps: 20
+      recallTarget: 0.92
+      availabilityTargetPercent: 99.9
+      containsPii: true
+      requiresEncryptionAtRest: true
+      requiresEncryptionInTransit: true
+      requiresKeyManagement: true
+      requiresAuditLogging: true
+      requiresTenantIsolation: true
+      requiresRbac: true
+      regulatoryRequirements: "HIPAA"
+
+  - id: financial-document-rag
+    name: "Financial Document RAG"
+    description: >-
+      RAG over regulatory filings, statements, and research documents for
+      analyst copilots, with long retention and audit requirements.
+    industry: "Financial Services"
+    typicalDataTypes: ["Filings (10-K/10-Q)", "Statements", "Research reports"]
+    typicalIngestionRate: "Batch, tied to filing/reporting cycles"
+    typicalVectorVolume: "1M - 10M vectors"
+    typicalQueryProfile: "Analyst-facing lookup and summarization"
+    typicalLatencyRequirements: "P95 200-300ms end-to-end"
+    typicalRetrievalMethod: "Dense semantic search with metadata filtering by entity/date"
+    securityComplianceConsiderations: ["SOC 2", "PCI DSS (if payment data present)", "Long-term audit retention"]
+    recommendedDesignConsiderations: ["Version/lineage tracking for restated filings", "Long retention (multi-year) with secure deletion policy"]
+    candidateTechnologyCategories: ["Dedicated vector DB", "Search platform with vector support (for full-text + vector)"]
+    validationRequirements: ["Audit trail completeness review", "Retention/deletion policy sign-off"]
+    defaultAssessment:
+      qps: 10
+      peakQps: 30
+      recallTarget: 0.93
+      retentionDays: 2555
+      containsPii: true
+      requiresEncryptionAtRest: true
+      requiresEncryptionInTransit: true
+      requiresAuditLogging: true
+      regulatoryRequirements: "SOC 2, PCI DSS"
+
+  - id: customer-support-rag
+    name: "Customer Support RAG"
+    description: >-
+      RAG over knowledge-base articles and past tickets to power support-agent
+      and customer-facing chat assistants.
+    industry: "Cross-industry / Customer Support"
+    typicalDataTypes: ["Knowledge-base articles", "Ticket history", "FAQs"]
+    typicalIngestionRate: "Continuous, incremental (new/updated articles and tickets)"
+    typicalVectorVolume: "200K - 2M vectors"
+    typicalQueryProfile: "High-concurrency, latency-sensitive, customer or agent facing"
+    typicalLatencyRequirements: "P95 100-150ms end-to-end"
+    typicalRetrievalMethod: "Hybrid dense + keyword search"
+    securityComplianceConsiderations: ["Tenant isolation if multi-brand/multi-customer"]
+    recommendedDesignConsiderations: ["Freshness: re-embed on article update", "Boost recent/high-confidence articles"]
+    candidateTechnologyCategories: ["Dedicated vector DB", "Search platform with vector support"]
+    validationRequirements: ["Deflection-rate / answer-quality benchmark"]
+    defaultAssessment:
+      qps: 40
+      peakQps: 120
+      concurrentUsers: 500
+      targetP95LatencyMs: 120
+      requiresHybridSearch: true
+      requiresFullTextSearch: true
+      requiresMetadataFiltering: true
+
+  - id: iot-semantic-search
+    name: "IoT Semantic Search"
+    description: >-
+      Semantic search and anomaly retrieval over high-volume sensor/telemetry
+      event descriptions and device documentation.
+    industry: "Industrial / IoT"
+    typicalDataTypes: ["Telemetry event text", "Device logs", "Technical manuals"]
+    typicalIngestionRate: "Very high, continuous streaming ingestion"
+    typicalVectorVolume: "5M - 50M vectors, fast growth"
+    typicalQueryProfile: "Moderate query volume, operations/engineering users"
+    typicalLatencyRequirements: "P95 200-350ms end-to-end"
+    typicalRetrievalMethod: "Dense semantic search with time-range metadata filtering"
+    securityComplianceConsiderations: ["Device/tenant isolation in multi-site deployments"]
+    recommendedDesignConsiderations: ["High ingestion throughput and update-friendly indexing", "Time-based partitioning/retention"]
+    candidateTechnologyCategories: ["Dedicated vector DB (K8s-self-hostable, scales with ingestion)"]
+    validationRequirements: ["Sustained ingestion-throughput benchmark"]
+    defaultAssessment:
+      documentCount: 5000000
+      estimatedVectorCount: 20000000
+      documentGrowthPercentPerMonth: 25
+      qps: 30
+      peakQps: 100
+      requiresMetadataFiltering: true
+
+  - id: code-rag
+    name: "Code RAG"
+    description: >-
+      RAG over source code, commit history, and technical docs for developer
+      copilots and code search.
+    industry: "Software Engineering"
+    typicalDataTypes: ["Source code", "Commit messages", "Technical documentation"]
+    typicalIngestionRate: "Continuous, tied to CI/repo sync"
+    typicalVectorVolume: "500K - 5M vectors"
+    typicalQueryProfile: "Developer-facing, latency-sensitive (inline IDE use)"
+    typicalLatencyRequirements: "P95 100-200ms end-to-end"
+    typicalRetrievalMethod: "Hybrid: dense semantic + exact keyword/symbol search"
+    securityComplianceConsiderations: ["Repo-level access control on retrieval"]
+    recommendedDesignConsiderations: ["Structure-aware chunking (functions/classes, not fixed-size)", "Preserve file path and symbol metadata"]
+    candidateTechnologyCategories: ["Dedicated vector DB with strong hybrid/full-text support"]
+    validationRequirements: ["Precision@K on a held-out code-search benchmark"]
+    defaultAssessment:
+      chunksPerDocument: 8
+      qps: 20
+      peakQps: 60
+      targetP95LatencyMs: 150
+      topK: 20
+      recallTarget: 0.85
+      requiresHybridSearch: true
+      requiresFullTextSearch: true
+
+  - id: log-observability-search
+    name: "Log / Observability Search"
+    description: >-
+      Semantic and full-text search over logs, traces, and incident postmortems
+      for on-call debugging and RCA.
+    industry: "Cross-industry / Platform Engineering"
+    typicalDataTypes: ["Application logs", "Traces", "Postmortem documents"]
+    typicalIngestionRate: "Very high, continuous streaming ingestion"
+    typicalVectorVolume: "10M - 100M+ vectors, short retention"
+    typicalQueryProfile: "Bursty, on-call/incident-driven"
+    typicalLatencyRequirements: "P95 250-400ms end-to-end"
+    typicalRetrievalMethod: "Hybrid dense + full-text/keyword search"
+    securityComplianceConsiderations: ["Tenant/service isolation in shared platforms"]
+    recommendedDesignConsiderations: ["Short retention with automatic expiry", "High ingestion throughput over perfect recall"]
+    candidateTechnologyCategories: ["Search platform with vector support (e.g. OpenSearch/Elasticsearch-class)"]
+    validationRequirements: ["Ingestion-throughput and retention-expiry validation"]
+    defaultAssessment:
+      documentCount: 10000000
+      estimatedVectorCount: 50000000
+      documentGrowthPercentPerMonth: 40
+      retentionDays: 90
+      qps: 50
+      peakQps: 200
+      requiresFullTextSearch: true
+      requiresHybridSearch: true
+
+  - id: multimodal-search
+    name: "Multimodal Search"
+    description: >-
+      Search across mixed text, image, and/or audio content using multimodal
+      embeddings (e.g. product catalogs, media libraries).
+    industry: "Retail / Media"
+    typicalDataTypes: ["Text", "Images", "Audio transcripts"]
+    typicalIngestionRate: "Moderate, batch with periodic catalog refresh"
+    typicalVectorVolume: "500K - 5M vectors"
+    typicalQueryProfile: "Interactive, consumer or catalog-management facing"
+    typicalLatencyRequirements: "P95 200-300ms end-to-end"
+    typicalRetrievalMethod: "Dense semantic search over multimodal embeddings"
+    securityComplianceConsiderations: ["Content licensing/usage-rights metadata"]
+    recommendedDesignConsiderations: ["GPU capacity for multimodal embedding generation", "Per-modality embedding-dimension tracking"]
+    candidateTechnologyCategories: ["Dedicated vector DB with high-dimension support"]
+    validationRequirements: ["Cross-modal retrieval quality benchmark"]
+    defaultAssessment:
+      embeddingDimension: 1024
+      hasGpu: true
+      qps: 15
+      peakQps: 40
+
+  - id: recommendation-engine
+    name: "Recommendation Engine"
+    description: >-
+      Vector similarity for real-time item/content recommendations at
+      high query volume and strict latency budgets.
+    industry: "Retail / Media / Consumer"
+    typicalDataTypes: ["Item/user embeddings", "Interaction events"]
+    typicalIngestionRate: "High, near-real-time embedding updates"
+    typicalVectorVolume: "10M - 100M vectors"
+    typicalQueryProfile: "Very high QPS, request-path/real-time"
+    typicalLatencyRequirements: "P95 <=50ms, P99 <=100ms"
+    typicalRetrievalMethod: "Approximate nearest neighbor (ANN), no reranking on the hot path"
+    securityComplianceConsiderations: ["Per-tenant data isolation for multi-brand platforms"]
+    recommendedDesignConsiderations: ["Optimize for QPS/latency over exhaustive recall", "Frequent incremental index updates"]
+    candidateTechnologyCategories: ["Dedicated at-scale vector DB", "Fully managed SaaS (for elastic QPS scaling)"]
+    validationRequirements: ["Sustained-QPS latency benchmark at target P95/P99"]
+    defaultAssessment:
+      estimatedVectorCount: 50000000
+      qps: 200
+      peakQps: 600
+      targetP95LatencyMs: 50
+      targetP99LatencyMs: 100
+      requiresReranking: false
+      tenancyModel: shared_multi_tenant
+
+  - id: agentic-ai-memory
+    name: "Agentic AI Memory"
+    description: >-
+      Long-term and episodic memory store for AI agents - frequent small
+      writes, per-agent/per-tenant isolation, low-latency recall.
+    industry: "Cross-industry / AI Platform"
+    typicalDataTypes: ["Conversation history", "Agent observations/tool outputs"]
+    typicalIngestionRate: "High-frequency, small incremental writes"
+    typicalVectorVolume: "100K - 10M vectors, grows continuously per tenant"
+    typicalQueryProfile: "Low-latency recall interleaved with agent reasoning steps"
+    typicalLatencyRequirements: "P95 <=80ms end-to-end"
+    typicalRetrievalMethod: "Dense semantic search, small top-K, per-agent scoping"
+    securityComplianceConsiderations: ["Strict per-tenant/per-agent isolation", "Data retention and forgettability controls"]
+    recommendedDesignConsiderations: ["Update-friendly index (frequent small writes)", "TTL/decay strategy for stale memories"]
+    candidateTechnologyCategories: ["Embedded vector library (per-agent/local)", "Dedicated vector DB (shared platform)"]
+    validationRequirements: ["Write-then-read latency validation under continuous ingestion"]
+    defaultAssessment:
+      qps: 25
+      peakQps: 75
+      targetP95LatencyMs: 80
+      topK: 5
+      tenancyModel: dedicated_per_tenant
+      requiresTenantIsolation: true
+
+  - id: hybrid-search
+    name: "Hybrid Search"
+    description: >-
+      General-purpose search combining dense vector similarity with keyword/
+      lexical and metadata filtering as first-class, equally-weighted needs.
+    industry: "Cross-industry"
+    typicalDataTypes: ["Mixed structured and unstructured content"]
+    typicalIngestionRate: "Moderate, batch or incremental"
+    typicalVectorVolume: "500K - 5M vectors"
+    typicalQueryProfile: "Interactive, precision-sensitive"
+    typicalLatencyRequirements: "P95 150-250ms end-to-end"
+    typicalRetrievalMethod: "Hybrid dense + keyword, with metadata filtering and optional reranking"
+    securityComplianceConsiderations: []
+    recommendedDesignConsiderations: ["Tune fusion/reranking between vector and keyword scores"]
+    candidateTechnologyCategories: ["Dedicated vector DB with native hybrid support", "Search platform with vector support"]
+    validationRequirements: ["Precision/recall comparison: hybrid vs. vector-only"]
+    defaultAssessment:
+      recallTarget: 0.9
+      requiresHybridSearch: true
+      requiresFullTextSearch: true
+      requiresMetadataFiltering: true
+      requiresReranking: true
+
+  - id: high-qps-enterprise-search
+    name: "High-QPS Enterprise Search"
+    description: >-
+      Enterprise-wide search at very high sustained query volume with strict
+      multi-region availability requirements.
+    industry: "Enterprise / Large-scale SaaS"
+    typicalDataTypes: ["Enterprise documents and records at large scale"]
+    typicalIngestionRate: "High, continuous"
+    typicalVectorVolume: "20M - 200M vectors"
+    typicalQueryProfile: "Very high sustained QPS across multiple regions"
+    typicalLatencyRequirements: "P95 <=40ms, P99 <=80ms"
+    typicalRetrievalMethod: "ANN search, multi-region replicated"
+    securityComplianceConsiderations: ["Regional data residency", "Cross-region replication security"]
+    recommendedDesignConsiderations: ["Active-active multi-region replication", "Regional failover and traffic distribution planning"]
+    candidateTechnologyCategories: ["Dedicated at-scale vector DB with multi-region support", "Fully managed SaaS with multi-region SLA"]
+    validationRequirements: ["Multi-region failover drill", "Sustained high-QPS benchmark across regions"]
+    defaultAssessment:
+      estimatedVectorCount: 100000000
+      qps: 300
+      peakQps: 800
+      targetP95LatencyMs: 40
+      targetP99LatencyMs: 80
+      requiresMultiRegion: true
+      deploymentRegionCount: 3
+      dataReplicationModel: active_active
+      regionalFailoverRequired: true
+      crossRegionReplicationRequired: true

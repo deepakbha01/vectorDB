@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { Project } from '../projects/project.entity';
 import { DiscoveryAssessment } from '../discovery/discovery-assessment.entity';
-import { ArchitectureDecisionRecord } from '../discovery/architecture-decision-record.entity';
+import { ArchitectureDecisionRecord } from '../vector-db-selection/architecture-decision-record.entity';
 import { DataPipelineDesign } from '../data-pipeline/data-pipeline-design.entity';
 import { IndexDesign } from '../index-design/index-design.entity';
 import { DeploymentPlan } from '../deployment/deployment-plan.entity';
 import { OptimizationReport } from '../benchmark/optimization-report.entity';
 import { CapacityPlan } from '../capacity-planning/capacity-plan.entity';
 import { FitRating } from '../recommendation-engine/recommendation.types';
+import { Phase2Handoff } from '../data-pipeline/data-pipeline-design.types';
 import { ReportDocument, ReportSection } from './report-document.types';
 
 const RATING_LABEL: Record<FitRating, string> = {
@@ -16,13 +17,74 @@ const RATING_LABEL: Record<FitRating, string> = {
   weak: 'Limited',
 };
 
+const PLATFORM_LABEL: Record<keyof DataPipelineDesign['generatedSchemas'], string> = {
+  oracle: 'Oracle',
+  postgres_pgvector: 'PostgreSQL + pgvector',
+  milvus: 'Milvus',
+  pinecone: 'Pinecone',
+  qdrant: 'Qdrant',
+  weaviate: 'Weaviate',
+  chroma: 'Chroma',
+  elasticsearch: 'Elasticsearch / OpenSearch',
+  redis: 'Redis',
+  mongodb_atlas: 'MongoDB Atlas',
+  lancedb: 'LanceDB',
+  actian: 'Actian',
+};
+
 function formatWeightPercent(weight: number): string {
   return `${Math.round(weight * 100)}%`;
 }
 
 @Injectable()
 export class ReportBuilderService {
-  buildDiscoveryReport(assessment: DiscoveryAssessment, adr: ArchitectureDecisionRecord): ReportDocument {
+  /**
+   * Phase 1 Discovery is qualification-only - this report summarizes the
+   * captured workload inputs. It does NOT select a platform; see
+   * `buildVectorDbSelectionReport` (Phase 4) for the Architecture Decision Record.
+   */
+  buildDiscoveryReport(assessment: DiscoveryAssessment): ReportDocument {
+    return {
+      title: 'Discovery: Workload Qualification',
+      subtitle: `Assessment version ${assessment.version}`,
+      generatedAt: new Date().toISOString(),
+      sections: [
+        {
+          heading: 'Workload profile',
+          fields: [
+            { label: 'Environment', value: assessment.environment },
+            { label: 'Deployment environment', value: assessment.deploymentEnvironment },
+            { label: 'Estimated vector count', value: assessment.estimatedVectorCount.toLocaleString() },
+            { label: 'Embedding dimension', value: String(assessment.embeddingDimension) },
+            { label: 'Sustained QPS', value: String(assessment.qps) },
+            { label: 'Peak QPS', value: String(assessment.peakQps) },
+            { label: 'Target P95 latency', value: `${assessment.targetP95LatencyMs}ms` },
+            { label: 'Recall target', value: String(assessment.recallTarget) },
+          ],
+        },
+        {
+          heading: 'Security & compliance flags',
+          fields: [
+            { label: 'Contains PII', value: assessment.containsPii ? 'Yes' : 'No' },
+            { label: 'Requires encryption at rest', value: assessment.requiresEncryptionAtRest ? 'Yes' : 'No' },
+            { label: 'Requires encryption in transit', value: assessment.requiresEncryptionInTransit ? 'Yes' : 'No' },
+            { label: 'Requires tenant isolation', value: assessment.requiresTenantIsolation ? 'Yes' : 'No' },
+            { label: 'Requires audit logging', value: assessment.requiresAuditLogging ? 'Yes' : 'No' },
+          ],
+        },
+        {
+          heading: 'Status',
+          paragraphs: [
+            'This is a workload qualification summary only - Phase 1 Discovery does not select a target platform. ' +
+              'See the Phase 4 Vector DB Selection report, once Phases 1-3 are complete, for the Architecture Decision Record.',
+          ],
+        },
+      ],
+    };
+  }
+
+  /** Phase 4 - Vector DB Selection & Target Architecture: the full Architecture Decision Record. */
+  buildVectorDbSelectionReport(assessment: DiscoveryAssessment, adr: ArchitectureDecisionRecord): ReportDocument {
     const summary = adr.plainLanguageSummary;
     const sections: ReportSection[] = [];
 
@@ -208,19 +270,53 @@ export class ReportBuilderService {
           ],
           lists: [{ title: 'How these figures are calculated', items: adr.infrastructureEstimate.notes }],
         },
-        { heading: 'Assumptions', lists: [{ items: adr.assumptions }] },
-        { heading: 'Risks', lists: [{ items: adr.risks }] },
+        {
+          heading: 'Assumption Register',
+          tables: [
+            {
+              headers: ['ID', 'Parameter', 'Value', 'Source', 'Type', 'Confidence', 'Validation required', 'Impact'],
+              rows: adr.assumptions.map((a) => [
+                a.id,
+                a.parameter,
+                a.value,
+                a.source,
+                a.type.replace(/_/g, ' '),
+                a.confidence,
+                a.validationRequired ? 'Yes' : 'No',
+                a.impact,
+              ]),
+            },
+          ],
+        },
+        {
+          heading: 'Risk Register',
+          tables: [
+            {
+              headers: ['ID', 'Category', 'Description', 'Impact', 'Likelihood', 'Mitigation', 'Status', 'Validation required'],
+              rows: adr.risks.map((r) => [
+                r.id,
+                r.category.replace(/_/g, ' '),
+                r.description,
+                r.impact,
+                r.likelihood,
+                r.mitigation,
+                r.status,
+                r.validationRequired ? 'Yes' : 'No',
+              ]),
+            },
+          ],
+        },
     );
 
     return {
-      title: 'Architecture Decision Record',
+      title: 'Vector DB Selection: Architecture Decision Record',
       subtitle: `Assessment version ${assessment.version} - rules v${adr.rulesVersion}`,
       generatedAt: new Date().toISOString(),
       sections,
     };
   }
 
-  buildDataPipelineReport(design: DataPipelineDesign): ReportDocument {
+  buildDataPipelineReport(design: DataPipelineDesign, handoff?: Phase2Handoff): ReportDocument {
     const summary = design.executiveSummary;
     const sections: ReportSection[] = [];
 
@@ -258,13 +354,40 @@ export class ReportBuilderService {
             { label: 'Provider', value: design.embeddingProviderId },
             { label: 'Model', value: design.embeddingModelId },
             { label: 'Dimension', value: String(design.embeddingDimension) },
+            { label: 'Similarity metric', value: design.similarityMetric },
             { label: 'Max input tokens', value: String(design.maxInputTokens) },
             { label: 'Cost per million tokens', value: `$${design.costPerMillionTokens}` },
             { label: 'Quality tier', value: design.qualityTier },
+            { label: 'Model version', value: design.modelVersion },
+            { label: 'Language support', value: design.languageSupport.join(', ') },
+            ...(design.dimensionMismatchReason
+              ? [{ label: 'Dimension mismatch confirmed', value: `Yes - reason: ${design.dimensionMismatchReason}` }]
+              : []),
           ],
         },
         {
-          heading: 'Pipeline: Source -> Extract -> Clean -> Chunk -> Embed -> Validate -> Store -> Index',
+          heading: 'Metadata fields',
+          tables:
+            design.metadataFields.length > 0
+              ? [
+                  {
+                    headers: ['Name', 'Type', 'Required', 'Filterable', 'Searchable', 'Sortable', 'Description'],
+                    rows: design.metadataFields.map((f) => [
+                      f.name,
+                      f.type,
+                      f.required ? 'Yes' : 'No',
+                      f.filterable === false ? 'No' : 'Yes',
+                      f.searchable ? 'Yes' : 'No',
+                      f.sortable ? 'Yes' : 'No',
+                      f.description ?? '',
+                    ]),
+                  },
+                ]
+              : undefined,
+          paragraphs: design.metadataFields.length === 0 ? ['No metadata fields defined.'] : undefined,
+        },
+        {
+          heading: `Pipeline: ${design.pipelineStages.map((s) => s.name).join(' -> ')}`,
           tables: [
             {
               headers: ['Stage', 'Description'],
@@ -281,14 +404,38 @@ export class ReportBuilderService {
         design.validationWarnings.length > 0
           ? { heading: 'Validation warnings', lists: [{ items: design.validationWarnings }] }
           : { heading: 'Validation warnings', paragraphs: ['None.'] },
-        {
-          heading: 'Generated schema (PostgreSQL + pgvector)',
-          paragraphs: [design.generatedSchemas.postgres_pgvector.ddl],
-        },
-        {
-          heading: 'Generated schema (Oracle)',
-          paragraphs: [design.generatedSchemas.oracle.ddl],
-        },
+        ...(Object.keys(design.generatedSchemas) as Array<keyof DataPipelineDesign['generatedSchemas']>).map((platform) => {
+          const output = design.generatedSchemas[platform];
+          return {
+            heading: `Generated schema (${PLATFORM_LABEL[platform]})`,
+            paragraphs: ['ddl' in output ? output.ddl : JSON.stringify(output.schema, null, 2)],
+            lists: output.notes.length > 0 ? [{ title: 'Notes', items: output.notes }] : undefined,
+          };
+        }),
+        handoff
+          ? {
+              heading: `Phase 3 handoff - status: ${handoff.status.replace(/_/g, ' ')}`,
+              fields: [
+                { label: 'Vector count', value: handoff.vectorCount.toLocaleString() },
+                { label: 'Dimension', value: String(handoff.dimension) },
+                { label: 'Similarity metric', value: handoff.metric },
+                { label: 'Average QPS', value: String(handoff.qps) },
+                { label: 'Peak QPS', value: String(handoff.peakQps) },
+                { label: 'Top-K', value: String(handoff.topK) },
+                { label: 'Candidate-K (calculated)', value: String(handoff.candidateK) },
+                { label: 'Filter usage', value: handoff.filterUsage ? 'Yes' : 'No' },
+                { label: 'Hybrid search', value: handoff.hybridSearch ? 'Yes' : 'No' },
+                { label: 'Reranking', value: handoff.reranking ? 'Yes' : 'No' },
+                { label: 'P95 latency target', value: `${handoff.targetP95LatencyMs}ms` },
+                { label: 'Recall@K target', value: String(handoff.recallTarget) },
+                { label: 'Memory available', value: `${handoff.availableMemoryGb}GB` },
+              ],
+              lists: [
+                { title: 'Candidate index families for Phase 3', items: handoff.candidateIndexFamilies },
+                ...(handoff.statusReasons.length > 0 ? [{ title: 'Status reasons', items: handoff.statusReasons }] : []),
+              ],
+            }
+          : { heading: 'Phase 3 handoff', paragraphs: ['Not yet available.'] },
     );
 
     return {
@@ -518,8 +665,10 @@ export class ReportBuilderService {
   buildCompleteReport(
     project: Project,
     parts: {
-      discovery?: { assessment: DiscoveryAssessment; adr: ArchitectureDecisionRecord };
+      discovery?: { assessment: DiscoveryAssessment };
+      vectorDbSelection?: { assessment: DiscoveryAssessment; adr: ArchitectureDecisionRecord };
       dataPipeline?: DataPipelineDesign;
+      phase3Handoff?: Phase2Handoff;
       indexDesign?: IndexDesign;
       deploymentPlan?: DeploymentPlan;
       optimizationReport?: OptimizationReport;
@@ -527,12 +676,13 @@ export class ReportBuilderService {
     },
   ): ReportDocument {
     const phases: Array<{ name: string; done: boolean; sub?: ReportDocument }> = [
-      { name: '1. Discovery', done: !!parts.discovery, sub: parts.discovery && this.buildDiscoveryReport(parts.discovery.assessment, parts.discovery.adr) },
-      { name: '2. Data & Embeddings', done: !!parts.dataPipeline, sub: parts.dataPipeline && this.buildDataPipelineReport(parts.dataPipeline) },
+      { name: '1. Discovery', done: !!parts.discovery, sub: parts.discovery && this.buildDiscoveryReport(parts.discovery.assessment) },
+      { name: '2. Data & Embeddings', done: !!parts.dataPipeline, sub: parts.dataPipeline && this.buildDataPipelineReport(parts.dataPipeline, parts.phase3Handoff) },
       { name: '3. Index Design', done: !!parts.indexDesign, sub: parts.indexDesign && this.buildIndexDesignReport(parts.indexDesign) },
-      { name: '4. Infrastructure', done: !!parts.deploymentPlan, sub: parts.deploymentPlan && this.buildDeploymentPlanReport(parts.deploymentPlan) },
-      { name: '6. Optimization', done: !!parts.optimizationReport, sub: parts.optimizationReport && this.buildOptimizationReport(parts.optimizationReport) },
-      { name: '7. Capacity', done: !!parts.capacityPlan, sub: parts.capacityPlan && this.buildCapacityPlanReport(parts.capacityPlan) },
+      { name: '4. Vector DB Selection', done: !!parts.vectorDbSelection, sub: parts.vectorDbSelection && this.buildVectorDbSelectionReport(parts.vectorDbSelection.assessment, parts.vectorDbSelection.adr) },
+      { name: '5. Infrastructure', done: !!parts.deploymentPlan, sub: parts.deploymentPlan && this.buildDeploymentPlanReport(parts.deploymentPlan) },
+      { name: '7. Optimization', done: !!parts.optimizationReport, sub: parts.optimizationReport && this.buildOptimizationReport(parts.optimizationReport) },
+      { name: '8. Capacity', done: !!parts.capacityPlan, sub: parts.capacityPlan && this.buildCapacityPlanReport(parts.capacityPlan) },
     ];
 
     const sections: ReportSection[] = [
@@ -540,6 +690,7 @@ export class ReportBuilderService {
         heading: 'Project overview',
         fields: [
           { label: 'Project', value: project.name },
+          { label: 'Customer mode', value: project.customerMode === 'existing' ? 'Existing / Modernization' : 'New / Greenfield' },
           { label: 'Platform', value: project.platform },
           { label: 'Manual override', value: String(project.platformIsManualOverride) },
         ],

@@ -12,6 +12,7 @@ import { SchemaGeneratorService } from '../../schema-generator/schema-generator.
 import { IndexTuningParameter } from '../../schema-generator/schema-generator.types';
 import { IndexType } from '../../index-recommendation-engine/enums/index-type.enum';
 import { VectorPlatform } from '../../projects/enums/platform.enum';
+import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
 
 const MILVUS_DATA_TYPES: Record<string, DataType> = {
@@ -67,6 +68,7 @@ export class MilvusVectorAdapter implements VectorDatabaseAdapter {
     const { milvus } = this.schemaGenerator.generateAll({
       collectionName: definition.collectionOrTableName,
       dimension: definition.dimension,
+      metric: definition.metric,
       metadataFields: definition.metadataFields as SchemaDefinition['metadataFields'] as any,
     });
     const schemaFields = milvus.schema.fields as Array<Record<string, unknown>>;
@@ -80,9 +82,9 @@ export class MilvusVectorAdapter implements VectorDatabaseAdapter {
     });
   }
 
-  async createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[]): Promise<void> {
+  async createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[], metric?: SimilarityMetric): Promise<void> {
     const collection = sanitizeSqlIdentifier(collectionOrTableName, 'collectionOrTableName');
-    const artifact = this.schemaGenerator.generateIndexArtifact(VectorPlatform.MILVUS, collection, indexType, parameters);
+    const artifact = this.schemaGenerator.generateIndexArtifact(VectorPlatform.MILVUS, collection, indexType, parameters, metric);
     const config = JSON.parse(artifact.statement) as { field_name: string; index_type: string; metric_type: string; params: Record<string, unknown> };
 
     await this.getClient().createIndex({

@@ -6,6 +6,7 @@ import { PdfRendererService } from './pdf-renderer.service';
 import { DocxRendererService } from './docx-renderer.service';
 import { ProjectsModule } from '../projects/projects.module';
 import { DiscoveryModule } from '../discovery/discovery.module';
+import { VectorDbSelectionModule } from '../vector-db-selection/vector-db-selection.module';
 import { DataPipelineDesignModule } from '../data-pipeline/data-pipeline-design.module';
 import { IndexDesignModule } from '../index-design/index-design.module';
 import { DeploymentModule } from '../deployment/deployment.module';
@@ -16,6 +17,7 @@ import { CapacityPlanningModule } from '../capacity-planning/capacity-planning.m
   imports: [
     ProjectsModule,
     DiscoveryModule,
+    VectorDbSelectionModule,
     DataPipelineDesignModule,
     IndexDesignModule,
     DeploymentModule,

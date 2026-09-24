@@ -29,7 +29,7 @@ describe('BenchmarkService', () => {
       { name: 'efConstruction', value: 200, description: '' },
       { name: 'efSearch', value: 100, description: '' },
     ],
-    inputsUsed: { dimension: 8, targetP95LatencyMs: 200, recallTarget: 0.5 },
+    inputsUsed: { dimension: 8, targetP95LatencyMs: 200, recallTarget: 0.5, metric: 'cosine' },
   };
 
   const benchmarkDefaults = {
@@ -105,8 +105,8 @@ describe('BenchmarkService', () => {
 
     const report: any = await service.runBenchmark('project-1', requester, {});
 
-    expect(adapter.createSchema).toHaveBeenCalledWith(expect.objectContaining({ dimension: 8 }));
-    expect(adapter.createVectorIndex).toHaveBeenCalledWith(expect.any(String), IndexType.HNSW, indexDesign.configuration);
+    expect(adapter.createSchema).toHaveBeenCalledWith(expect.objectContaining({ dimension: 8, metric: 'cosine' }));
+    expect(adapter.createVectorIndex).toHaveBeenCalledWith(expect.any(String), IndexType.HNSW, indexDesign.configuration, 'cosine');
     expect(adapter.dropSchema).toHaveBeenCalledWith(expect.any(String), true);
     expect(report.variantResults).toHaveLength(2); // [50, 100] - baseline (100) already included
     expect(report.variantResults.every((v: any) => v.avgRecall === 1)).toBe(true);

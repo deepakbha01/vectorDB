@@ -9,13 +9,15 @@ import { UsersModule } from './users/users.module';
 import { ProjectsModule } from './projects/projects.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthController } from './health/health.controller';
+import { FeaturesController } from './features/features.controller';
 import { DatabaseAdaptersModule } from './database-adapters/database-adapters.module';
 import { RecommendationEngineModule } from './recommendation-engine/recommendation-engine.module';
 import { DiscoveryModule } from './discovery/discovery.module';
 import { User } from './users/user.entity';
 import { Project } from './projects/project.entity';
 import { DiscoveryAssessment } from './discovery/discovery-assessment.entity';
-import { ArchitectureDecisionRecord } from './discovery/architecture-decision-record.entity';
+import { VectorDbSelectionModule } from './vector-db-selection/vector-db-selection.module';
+import { ArchitectureDecisionRecord } from './vector-db-selection/architecture-decision-record.entity';
 import { ChunkingModule } from './chunking/chunking.module';
 import { EmbeddingsModule } from './embeddings/embeddings.module';
 import { SchemaGeneratorModule } from './schema-generator/schema-generator.module';
@@ -37,6 +39,8 @@ import { CapacityPlan } from './capacity-planning/capacity-plan.entity';
 import { ReportingModule } from './reporting/reporting.module';
 import { AuditModule } from './audit/audit.module';
 import { AuditLogEntry } from './audit/audit-log-entry.entity';
+import { InferenceModule } from './inference/inference.module';
+import { InferenceAssessment } from './inference/inference-assessment.entity';
 
 @Module({
   imports: [
@@ -65,6 +69,7 @@ import { AuditLogEntry } from './audit/audit-log-entry.entity';
           OptimizationReport,
           CapacityPlan,
           AuditLogEntry,
+          InferenceAssessment,
         ],
         // Sprint 1 uses schema sync for velocity. Replace with TypeORM migrations
         // before any non-development deployment (see development rule #12).
@@ -98,14 +103,16 @@ import { AuditLogEntry } from './audit/audit-log-entry.entity';
     DataPipelineDesignModule,
     IndexRecommendationEngineModule,
     IndexDesignModule,
+    VectorDbSelectionModule,
     DeploymentModule,
     IngestionModule,
     BenchmarkModule,
     CapacityPlanningModule,
     ReportingModule,
     AuditModule,
+    InferenceModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, FeaturesController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
