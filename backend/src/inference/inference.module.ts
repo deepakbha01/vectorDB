@@ -23,6 +23,6 @@ import { AiModelSelection } from '../ai-factory/model-selection/model-selection.
   imports: [TypeOrmModule.forFeature([InferenceAssessment, AiWorkloadProfile, AiModelSelection]), ProjectsModule, DiscoveryModule, DataPipelineDesignModule],
   providers: [InferenceConfigService, InferenceEngineService, InferenceService, PdfRendererService, DocxRendererService],
   controllers: [InferenceController],
-  exports: [InferenceService, InferenceEngineService],
+  exports: [InferenceService, InferenceEngineService, InferenceConfigService],
 })
 export class InferenceModule {}

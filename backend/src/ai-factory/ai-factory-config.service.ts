@@ -7,11 +7,13 @@ import { WorkloadProfileRules } from './workload-profile/workload-profile.engine
 import { ModelCatalogue } from './model-selection/model-selection.types';
 import { EmbeddingEligibilityRules, IndexEligibilityRules } from './eligibility/eligibility.rules';
 import { ServingCatalogue } from './inference-architecture/inference-architecture.types';
+import { InfrastructureCatalogue } from './infrastructure/infrastructure.types';
 
 /**
  * Loads config/ai-factory.yaml (dependency graph, parameter impact map,
  * guided steps, workload-profile and eligibility rules), config/models.yaml
- * (model catalogue) and config/serving.yaml (serving options). Separate from
+ * (model catalogue), config/serving.yaml (serving options) and
+ * config/infrastructure-targets.yaml (deployment targets). Separate from
  * PlatformConfigService so the vector engines' configuration is untouched.
  */
 @Injectable()
@@ -19,6 +21,7 @@ export class AiFactoryConfigService implements OnModuleInit {
   private cfg: Record<string, any> = {};
   private models: ModelCatalogue = {} as ModelCatalogue;
   private serving: ServingCatalogue = {} as ServingCatalogue;
+  private infrastructure: InfrastructureCatalogue = {} as InfrastructureCatalogue;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -29,6 +32,8 @@ export class AiFactoryConfigService implements OnModuleInit {
     this.models = yaml.load(fs.readFileSync(modelsPath, 'utf8')) as ModelCatalogue;
     const servingPath = this.config.get<string>('AI_FACTORY_SERVING_CONFIG_PATH') ?? './config/serving.yaml';
     this.serving = yaml.load(fs.readFileSync(servingPath, 'utf8')) as ServingCatalogue;
+    const infraPath = this.config.get<string>('AI_FACTORY_INFRASTRUCTURE_CONFIG_PATH') ?? './config/infrastructure-targets.yaml';
+    this.infrastructure = yaml.load(fs.readFileSync(infraPath, 'utf8')) as InfrastructureCatalogue;
   }
 
   /** Test seams. */
@@ -50,6 +55,14 @@ export class AiFactoryConfigService implements OnModuleInit {
 
   getServingCatalogue(): ServingCatalogue {
     return this.serving;
+  }
+
+  setInfrastructureCatalogue(infrastructure: InfrastructureCatalogue) {
+    this.infrastructure = infrastructure;
+  }
+
+  getInfrastructureCatalogue(): InfrastructureCatalogue {
+    return this.infrastructure;
   }
 
   getIndexEligibilityRules(): IndexEligibilityRules {

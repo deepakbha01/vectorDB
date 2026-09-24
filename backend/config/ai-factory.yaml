@@ -5,7 +5,7 @@
 # phases compute anything; it only describes how their deliverables relate so
 # the AI Factory view can show lineage, staleness and impact.
 
-rulesVersion: ai-factory-2026.09-4
+rulesVersion: ai-factory-2026.09-5
 
 # ---------------------------------------------------------------------------
 # Phase dependency graph. `dependsOn` lists the DIRECT upstream deliverables
@@ -81,6 +81,16 @@ phases:
       - { phase: inference, kind: hard }          # designed around its sizing
       - { phase: model_selection, kind: hard }    # routing uses primary / secondary / fallback
       - { phase: workload_profile, kind: hard }   # deployment targets and data classification gate eligibility
+  - key: infrastructure_design
+    label: Infrastructure design
+    route: infrastructure-design
+    dependsOn:
+      - { phase: discovery, kind: hard }                # availability, RPO / RTO, multi-region, Kubernetes, ops capability
+      - { phase: workload_profile, kind: hard }         # allowed targets, data classification, GPUs
+      - { phase: vector_db_selection, kind: hard }      # platform and sizing estimate
+      - { phase: inference, kind: hard }                # GPU type and count
+      - { phase: inference_architecture, kind: hard }   # runtime platform
+      - { phase: capacity, kind: advisory }             # growth horizon for storage
 
 # ---------------------------------------------------------------------------
 # Parameter impact map (spec §22). Which phases must be re-run when a
@@ -113,9 +123,9 @@ parameterImpact:
   concurrentUsers: [workload_profile]
   targetP95LatencyMs: [data_embeddings, vector_db_selection]
   targetP99LatencyMs: [vector_db_selection]
-  availabilityTargetPercent: [capacity, inference, workload_profile]
-  rpoMinutes: [vector_db_selection, capacity]
-  rtoMinutes: [vector_db_selection, capacity]
+  availabilityTargetPercent: [capacity, inference, workload_profile, infrastructure_design]
+  rpoMinutes: [vector_db_selection, capacity, infrastructure_design]
+  rtoMinutes: [vector_db_selection, capacity, infrastructure_design]
   retentionDays: [vector_db_selection]
   # search capabilities
   requiresSimilaritySearch: none
@@ -132,21 +142,21 @@ parameterImpact:
   # existing platforms & deployment
   hasExistingOracle: [vector_db_selection]
   hasExistingPostgres: [vector_db_selection]
-  hasExistingKubernetes: [vector_db_selection]
+  hasExistingKubernetes: [vector_db_selection, infrastructure_design]
   existingPlatforms: [vector_db_selection]
   deploymentEnvironment: [workload_profile]
   availableCpuCores: [capacity]
   availableRamGb: [data_embeddings]
   availableStorageGb: [capacity]
-  hasGpu: [workload_profile]
-  operationalCapability: [vector_db_selection]
+  hasGpu: [workload_profile, infrastructure_design]
+  operationalCapability: [vector_db_selection, infrastructure_design]
   monthlyBudgetUsd: [vector_db_selection, inference]
   # multi-region & tenancy
-  requiresMultiRegion: [vector_db_selection]
+  requiresMultiRegion: [vector_db_selection, infrastructure_design]
   deploymentRegionCount: [vector_db_selection]
   trafficDistributionPercent: [vector_db_selection]
   dataReplicationModel: [vector_db_selection]
-  regionalFailoverRequired: [vector_db_selection]
+  regionalFailoverRequired: [vector_db_selection, infrastructure_design]
   crossRegionReplicationRequired: [vector_db_selection]
   tenancyModel: [vector_db_selection]
   # security & compliance
@@ -157,7 +167,7 @@ parameterImpact:
   requiresKeyManagement: [vector_db_selection]
   requiresTenantIsolation: [vector_db_selection]
   requiresAuditLogging: [vector_db_selection]
-  dataResidencyRequirement: [vector_db_selection, inference, workload_profile]
+  dataResidencyRequirement: [vector_db_selection, inference, workload_profile, infrastructure_design]
   containsPii: [vector_db_selection, inference, workload_profile]
   regulatoryRequirements: [workload_profile]
 
@@ -173,7 +183,7 @@ steps:
   - { number: 4,  key: vectordb_index,  title: VectorDB & Index,      phases: [index_design, vector_db_selection],  coverage: full }
   - { number: 5,  key: model,           title: Model,                 phases: [model_selection],                    coverage: full,    note: "Primary, secondary and fallback model from a technology-neutral catalogue: mandatory eligibility first, then weighted scoring." }
   - { number: 6,  key: inference,       title: Inference,             phases: [inference, inference_architecture],  coverage: full,    note: "GPU sizing, latency and cost, plus the Inference Architecture: serving option (eligibility, then score), patterns, P50/P95/P99 estimates, and gateway, policy, router, autoscaling, fallback and observability design." }
-  - { number: 7,  key: infrastructure,  title: Infrastructure,        phases: [infrastructure],                     coverage: partial, plannedWave: 5,  note: "Vector-DB deployment plan exists; multi-cloud and GPU infrastructure arrive in Wave 5." }
+  - { number: 7,  key: infrastructure,  title: Infrastructure,        phases: [infrastructure_design, infrastructure], coverage: full, note: "Infrastructure Decision Record: placement of inference, vector database and application across on-premises, Azure, AWS, OCI and GCP (eligibility, then score), with compute, memory, storage, network, cluster, availability, DR, scaling and security; the vector-DB deployment plan provides the IaC." }
   - { number: 8,  key: rag_agent,       title: RAG / Agent,           phases: [],                                   coverage: none,    plannedWave: 6 }
   - { number: 9,  key: security,        title: Security,              phases: [],                                   coverage: partial, plannedWave: 7,  note: "Security requirements and the compliance gate live in Discovery and the Vector DB ADR; per-component policy status arrives in Wave 7." }
   - { number: 10, key: performance,     title: Performance,           phases: [optimization],                       coverage: partial, plannedWave: 8,  note: "Measured vector benchmark exists; LLM/embedding benchmarks and PASS/FAIL status arrive in Wave 8." }

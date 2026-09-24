@@ -88,6 +88,14 @@ export function PhaseNav({ project }: { project: Project }) {
               </NavLink>
             </li>
           )}
+          {features.aiFactory && (
+            <li>
+              <NavLink to={`/projects/${project.id}/infrastructure-design`} className={({ isActive }) => (isActive ? 'active' : '')}>
+                Infrastructure Design
+                {lineage.infrastructure_design === 'stale' && <span className="status-pill danger" title="Discovery, the workload profile, vector DB selection or the inference design changed since this design">out of date</span>}
+              </NavLink>
+            </li>
+          )}
         </ul>
       </div>
       <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid #dfe3e8' }}>

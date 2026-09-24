@@ -18,12 +18,13 @@ import { AiFactoryStateSnapshot } from './ai-factory-state-snapshot.entity';
 import { AiWorkloadProfile } from './workload-profile/workload-profile.entity';
 import { AiModelSelection } from './model-selection/model-selection.entity';
 import { AiInferenceArchitecture } from './inference-architecture/inference-architecture.entity';
+import { AiInfrastructureDesign } from './infrastructure/infrastructure.entity';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 import { ChunkingStrategy } from '../chunking/enums/chunking-strategy.enum';
 import { EmbeddingModelFacts } from './eligibility/eligibility.rules';
 import { computeLineage } from './lineage.engine';
 import { analyseImpact } from './impact.engine';
-import { fromDataPipelineDesign, fromIndexDesign, fromInferenceArchitecture, fromInferenceAssessment, fromModelSelection, fromVectorDbSelection } from './decision-record.adapters';
+import { fromDataPipelineDesign, fromIndexDesign, fromInferenceArchitecture, fromInferenceAssessment, fromInfrastructureDesign, fromModelSelection, fromVectorDbSelection } from './decision-record.adapters';
 import {
   AiFactoryOverview,
   AssessmentState,
@@ -65,6 +66,7 @@ export class AiFactoryService {
     @InjectRepository(AiWorkloadProfile) private readonly profiles: Repository<AiWorkloadProfile>,
     @InjectRepository(AiModelSelection) private readonly modelSelections: Repository<AiModelSelection>,
     @InjectRepository(AiInferenceArchitecture) private readonly inferenceArchitectures: Repository<AiInferenceArchitecture>,
+    @InjectRepository(AiInfrastructureDesign) private readonly infrastructureDesigns: Repository<AiInfrastructureDesign>,
     private readonly platformConfig: PlatformConfigService,
   ) {}
 
@@ -82,6 +84,7 @@ export class AiFactoryService {
       workload_profile: this.profiles,
       model_selection: this.modelSelections,
       inference_architecture: this.inferenceArchitectures,
+      infrastructure_design: this.infrastructureDesigns,
     }[phase];
   }
 
@@ -193,6 +196,9 @@ export class AiFactoryService {
     const architecture = await this.latest<AiInferenceArchitecture>('inference_architecture', projectId);
     if (architecture) records.push(fromInferenceArchitecture(architecture));
 
+    const infrastructure = await this.latest<AiInfrastructureDesign>('infrastructure_design', projectId);
+    if (infrastructure) records.push(fromInfrastructureDesign(infrastructure));
+
     return records;
   }
 
@@ -267,7 +273,7 @@ export class AiFactoryService {
     };
     const later = (wave: number): StateSection => ({ status: 'not_yet_available', coverage: 'none', source: null, summary: {}, plannedWave: wave });
 
-    const [d, p, i, adr, dep, opt, cap, inf, wp, ms, ia] = await Promise.all([
+    const [d, p, i, adr, dep, opt, cap, inf, wp, ms, ia, infra] = await Promise.all([
       this.latest<DiscoveryAssessment>('discovery', project.id),
       this.latest<DataPipelineDesign>('data_embeddings', project.id),
       this.latest<IndexDesign>('index_design', project.id),
@@ -279,6 +285,7 @@ export class AiFactoryService {
       this.latest<AiWorkloadProfile>('workload_profile', project.id),
       this.latest<AiModelSelection>('model_selection', project.id),
       this.latest<AiInferenceArchitecture>('inference_architecture', project.id),
+      this.latest<AiInfrastructureDesign>('infrastructure_design', project.id),
     ]);
     const profileValue = (k: keyof AiWorkloadProfile['inputs']) => wp?.inputs[k]?.value ?? null;
     const wpResult = wp?.result;
@@ -334,7 +341,14 @@ export class AiFactoryService {
             architectureVersion: ia?.version ?? null,
           }
         : {}),
-      infrastructure: { ...section('infrastructure', 'partial', dep ? { platform: dep.platform, executed: dep.executed, hasKubernetes: !!dep.kubernetesArtifacts } : {}), plannedWave: 5 },
+      infrastructure: infra
+        ? section('infrastructure_design', 'full', {
+            deploymentModel: infra.result.deploymentModel.summary,
+            placements: Object.fromEntries(infra.result.placements.map((pl) => [pl.componentLabel, pl.chosen?.label ?? 'not feasible'])),
+            confidence: infra.result.confidence,
+            vectorDeploymentPlan: dep ? `v${dep.version} (${dep.platform})` : null,
+          })
+        : { ...section('infrastructure', 'partial', dep ? { platform: dep.platform, executed: dep.executed, hasKubernetes: !!dep.kubernetesArtifacts } : {}), plannedWave: 5 },
       rag: later(6),
       security: {
         ...section('discovery', 'partial', d ? { containsPii: d.containsPii, dataResidency: d.dataResidencyRequirement ?? null, encryptionAtRest: d.requiresEncryptionAtRest, encryptionInTransit: d.requiresEncryptionInTransit, keyManagement: d.requiresKeyManagement, rbac: d.requiresRbac, auditLogging: d.requiresAuditLogging, tenantIsolation: d.requiresTenantIsolation, complianceGate: adr?.complianceGate?.status ?? null, ...(wp ? { dataClassification: wpResult?.dataClassification.level, containsPhi: profileValue('containsPhi'), containsPci: profileValue('containsPci'), requiredControls: wpResult?.securityRequirements.controls.length } : {}) } : {}),

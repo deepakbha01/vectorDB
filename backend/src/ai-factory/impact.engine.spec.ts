@@ -30,6 +30,7 @@ describe('analyseImpact', () => {
       index_design: 'rerun',
       vector_db_selection: 'rerun',
       infrastructure: 'rerun',
+      infrastructure_design: 'rerun',
       optimization: 'rerun',
       capacity: 'rerun',
       inference: 'review',
@@ -51,15 +52,15 @@ describe('analyseImpact', () => {
     expect(r.affected).toEqual([]);
   });
 
-  it('sends GPU availability to the Workload Profile for review only (Wave 2)', () => {
+  it('sends GPU availability to the Workload Profile for review and re-runs the infrastructure design (Waves 2 and 5)', () => {
     const r = run({ hasGpu: true });
     expect(r.noImpactFields).toEqual([]);
-    expect(affected(r)).toEqual({ workload_profile: 'review' });
+    expect(affected(r)).toEqual({ workload_profile: 'review', infrastructure_design: 'rerun' });
   });
 
   it('treats compliance changes as affecting selection and inference', () => {
     const r = run({ containsPii: true, dataResidencyRequirement: 'EU' });
-    expect(affected(r)).toMatchObject({ vector_db_selection: 'rerun', inference: 'review' });
+    expect(affected(r)).toMatchObject({ vector_db_selection: 'rerun', inference: 'review', infrastructure_design: 'rerun' });
     expect(affected(r).data_embeddings).toBeUndefined();
   });
 });
