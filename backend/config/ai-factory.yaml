@@ -5,7 +5,7 @@
 # phases compute anything; it only describes how their deliverables relate so
 # the AI Factory view can show lineage, staleness and impact.
 
-rulesVersion: ai-factory-2026.09-7
+rulesVersion: ai-factory-2026.09-8
 
 # ---------------------------------------------------------------------------
 # Phase dependency graph. `dependsOn` lists the DIRECT upstream deliverables
@@ -114,6 +114,21 @@ phases:
       - { phase: inference_architecture, kind: hard }   # gateway, policy engine, runtime
       - { phase: infrastructure_design, kind: hard }    # placements, network and key management
       - { phase: rag_agent_architecture, kind: hard }   # reranker, prompt and agent controls
+  - key: performance_benchmark
+    label: Performance & benchmark
+    route: performance
+    dependsOn:
+      - { phase: discovery, kind: hard }                # recall, QPS and latency targets, corpus size, available CPU / RAM
+      - { phase: workload_profile, kind: hard }         # end-to-end latency target
+      - { phase: data_embeddings, kind: hard }          # chunk size and embedding price
+      - { phase: index_design, kind: hard }             # vector measurements must post-date it
+      - { phase: vector_db_selection, kind: hard }      # CPU / RAM estimate
+      - { phase: optimization, kind: hard }             # measured vector benchmark
+      - { phase: inference, kind: hard }                # TTFT / TPOT targets, GPU sizing
+      - { phase: model_selection, kind: hard }          # accuracy requirement (quality target)
+      - { phase: inference_architecture, kind: hard }   # P50 / P95 / P99 estimates
+      - { phase: infrastructure_design, kind: hard }    # deployment model (network)
+      - { phase: rag_agent_architecture, kind: hard }   # end-to-end latency budget
 
 # ---------------------------------------------------------------------------
 # Parameter impact map (spec §22). Which phases must be re-run when a
@@ -132,20 +147,20 @@ parameterImpact:
   # hasGpu, regulatoryRequirements).
   # corpus & scale
   environment: none
-  documentCount: [workload_profile]
+  documentCount: [workload_profile, performance_benchmark]
   documentGrowthPercentPerMonth: [capacity, workload_profile]
   avgDocumentSizeKb: none
-  chunksPerDocument: none
-  estimatedVectorCount: [data_embeddings, vector_db_selection, workload_profile]
+  chunksPerDocument: [performance_benchmark]
+  estimatedVectorCount: [data_embeddings, vector_db_selection, workload_profile, performance_benchmark]
   embeddingDimension: [data_embeddings, vector_db_selection]
   similarityMetric: [data_embeddings]
   # performance & SLAs
   qps: [data_embeddings, vector_db_selection, inference, workload_profile]
-  peakQps: [data_embeddings, vector_db_selection, inference, workload_profile]
+  peakQps: [data_embeddings, vector_db_selection, inference, workload_profile, performance_benchmark]
   qpsScope: [vector_db_selection]
   concurrentUsers: [workload_profile]
-  targetP95LatencyMs: [data_embeddings, vector_db_selection, rag_agent_architecture]
-  targetP99LatencyMs: [vector_db_selection]
+  targetP95LatencyMs: [data_embeddings, vector_db_selection, rag_agent_architecture, performance_benchmark]
+  targetP99LatencyMs: [vector_db_selection, performance_benchmark]
   availabilityTargetPercent: [capacity, inference, workload_profile, infrastructure_design]
   rpoMinutes: [vector_db_selection, capacity, infrastructure_design]
   rtoMinutes: [vector_db_selection, capacity, infrastructure_design]
@@ -157,7 +172,7 @@ parameterImpact:
   requiresMetadataFiltering: [vector_db_selection, rag_agent_architecture]
   requiresFullTextSearch: [vector_db_selection, rag_agent_architecture]
   topK: [data_embeddings, inference, rag_agent_architecture]
-  recallTarget: [data_embeddings, vector_db_selection]
+  recallTarget: [data_embeddings, vector_db_selection, performance_benchmark]
   precisionTarget: [vector_db_selection, rag_agent_architecture]
   requiresReranking: [data_embeddings, vector_db_selection, rag_agent_architecture]
   ndcgTarget: [vector_db_selection]
@@ -168,8 +183,8 @@ parameterImpact:
   hasExistingKubernetes: [vector_db_selection, infrastructure_design]
   existingPlatforms: [vector_db_selection]
   deploymentEnvironment: [workload_profile]
-  availableCpuCores: [capacity]
-  availableRamGb: [data_embeddings]
+  availableCpuCores: [capacity, performance_benchmark]
+  availableRamGb: [data_embeddings, performance_benchmark]
   availableStorageGb: [capacity]
   hasGpu: [workload_profile, infrastructure_design, rag_agent_architecture]
   operationalCapability: [vector_db_selection, infrastructure_design, rag_agent_architecture]
@@ -209,7 +224,7 @@ steps:
   - { number: 7,  key: infrastructure,  title: Infrastructure,        phases: [infrastructure_design, infrastructure], coverage: full, note: "Infrastructure Decision Record: placement of inference, vector database and application across on-premises, Azure, AWS, OCI and GCP (eligibility, then score), with compute, memory, storage, network, cluster, availability, DR, scaling and security; the vector-DB deployment plan provides the IaC." }
   - { number: 8,  key: rag_agent,       title: RAG / Agent,           phases: [rag_agent_architecture],             coverage: full,    note: "GenAI Application Architecture: retrieval strategy, reranking and agent orchestration (eligibility, then score), with filtering, context and prompt construction, citation, grounding, guardrails, human approval, tool security and isolation, plus context-window and latency budgets." }
   - { number: 9,  key: security,        title: Security,              phases: [security_governance],                coverage: full,    note: "AI Security & Governance Assessment: policy status per component (approved / with conditions / restricted / not eligible) from where it processes data, plus the 18 spec §12 control areas traced to the designs that address them." }
-  - { number: 10, key: performance,     title: Performance,           phases: [optimization],                       coverage: partial, plannedWave: 8,  note: "Measured vector benchmark exists; LLM/embedding benchmarks and PASS/FAIL status arrive in Wave 8." }
+  - { number: 10, key: performance,     title: Performance,           phases: [performance_benchmark, optimization], coverage: full,   note: "Performance & Benchmark Assessment: vector, embedding, LLM and infrastructure metrics with target, estimate and measurement kept apart; PASS / PASS WITH CONDITIONS / FAIL only on measured evidence, otherwise REQUIRES BENCHMARK." }
   - { number: 11, key: cost,            title: Cost,                  phases: [],                                   coverage: partial, plannedWave: 9,  note: "Budget feasibility (ADR) and inference cost exist; the consolidated FinOps view arrives in Wave 9." }
   - { number: 12, key: operations,      title: Operations,            phases: [capacity],                           coverage: partial, plannedWave: 10, note: "Capacity, HA and DR exist; model versioning and observability arrive in Wave 10." }
   - { number: 13, key: final,           title: Final Recommendation,  phases: [],                                   coverage: none,    plannedWave: 11 }
