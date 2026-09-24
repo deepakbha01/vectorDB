@@ -5,7 +5,7 @@
 # phases compute anything; it only describes how their deliverables relate so
 # the AI Factory view can show lineage, staleness and impact.
 
-rulesVersion: ai-factory-2026.09-9
+rulesVersion: ai-factory-2026.09-10
 
 # ---------------------------------------------------------------------------
 # Phase dependency graph. `dependsOn` lists the DIRECT upstream deliverables
@@ -140,6 +140,18 @@ phases:
       - { phase: inference, kind: hard }                # GPU spend, managed API cost, demand
       - { phase: inference_architecture, kind: hard }   # managed or self-hosted serving
       - { phase: infrastructure_design, kind: hard }    # chosen placement per component
+  - key: operations_model
+    label: Operations model
+    route: operations-model
+    dependsOn:
+      - { phase: discovery, kind: hard }                # availability, RPO, RTO, multi-region, operational capability
+      - { phase: vector_db_selection, kind: hard }      # platform and storage to restore
+      - { phase: capacity, kind: hard }                 # growth horizons, HA / DR recommendations
+      - { phase: inference, kind: hard }                # replicas, model weights, TTFT target
+      - { phase: model_selection, kind: hard }          # models to version and fail over between
+      - { phase: inference_architecture, kind: hard }   # autoscaling, load balancing, fallback, observability
+      - { phase: infrastructure_design, kind: hard }    # targets, sites and DR design
+      - { phase: rag_agent_architecture, kind: advisory } # agents that act add operational load
 
 # ---------------------------------------------------------------------------
 # Parameter impact map (spec §22). Which phases must be re-run when a
@@ -172,9 +184,9 @@ parameterImpact:
   concurrentUsers: [workload_profile]
   targetP95LatencyMs: [data_embeddings, vector_db_selection, rag_agent_architecture, performance_benchmark]
   targetP99LatencyMs: [vector_db_selection, performance_benchmark]
-  availabilityTargetPercent: [capacity, inference, workload_profile, infrastructure_design, finops]
-  rpoMinutes: [vector_db_selection, capacity, infrastructure_design]
-  rtoMinutes: [vector_db_selection, capacity, infrastructure_design, finops]
+  availabilityTargetPercent: [capacity, inference, workload_profile, infrastructure_design, finops, operations_model]
+  rpoMinutes: [vector_db_selection, capacity, infrastructure_design, operations_model]
+  rtoMinutes: [vector_db_selection, capacity, infrastructure_design, finops, operations_model]
   retentionDays: [vector_db_selection, security_governance]
   # search capabilities
   requiresSimilaritySearch: [rag_agent_architecture]
@@ -198,14 +210,14 @@ parameterImpact:
   availableRamGb: [data_embeddings, performance_benchmark]
   availableStorageGb: [capacity]
   hasGpu: [workload_profile, infrastructure_design, rag_agent_architecture]
-  operationalCapability: [vector_db_selection, infrastructure_design, rag_agent_architecture]
+  operationalCapability: [vector_db_selection, infrastructure_design, rag_agent_architecture, operations_model]
   monthlyBudgetUsd: [vector_db_selection, inference, finops]
   # multi-region & tenancy
-  requiresMultiRegion: [vector_db_selection, infrastructure_design, finops]
+  requiresMultiRegion: [vector_db_selection, infrastructure_design, finops, operations_model]
   deploymentRegionCount: [vector_db_selection]
   trafficDistributionPercent: [vector_db_selection]
   dataReplicationModel: [vector_db_selection]
-  regionalFailoverRequired: [vector_db_selection, infrastructure_design, finops]
+  regionalFailoverRequired: [vector_db_selection, infrastructure_design, finops, operations_model]
   crossRegionReplicationRequired: [vector_db_selection]
   tenancyModel: [vector_db_selection]
   # security & compliance
@@ -237,7 +249,7 @@ steps:
   - { number: 9,  key: security,        title: Security,              phases: [security_governance],                coverage: full,    note: "AI Security & Governance Assessment: policy status per component (approved / with conditions / restricted / not eligible) from where it processes data, plus the 18 spec §12 control areas traced to the designs that address them." }
   - { number: 10, key: performance,     title: Performance,           phases: [performance_benchmark, optimization], coverage: full,   note: "Performance & Benchmark Assessment: vector, embedding, LLM and infrastructure metrics with target, estimate and measurement kept apart; PASS / PASS WITH CONDITIONS / FAIL only on measured evidence, otherwise REQUIRES BENCHMARK." }
   - { number: 11, key: cost,            title: Cost,                  phases: [finops],                             coverage: full,    note: "Cost & FinOps Assessment: inference, vector DB, embedding, infrastructure and operations costs for the chosen design, compared across on-premises, Azure, AWS, OCI, GCP and hybrid - every figure labelled, never presented as a quote." }
-  - { number: 12, key: operations,      title: Operations,            phases: [capacity],                           coverage: partial, plannedWave: 10, note: "Capacity, HA and DR exist; model versioning and observability arrive in Wave 10." }
+  - { number: 12, key: operations,      title: Operations,            phases: [operations_model, capacity],         coverage: full,    note: "AI Operations Model: the 13 spec §14 areas, RTO / RPO / SLA checked against estimated recovery time and serial availability, scaling and failover policy, capacity thresholds, and whether the team can run what the design asks." }
   - { number: 13, key: final,           title: Final Recommendation,  phases: [],                                   coverage: none,    plannedWave: 11 }
 
 # ---------------------------------------------------------------------------

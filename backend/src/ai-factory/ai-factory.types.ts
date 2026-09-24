@@ -21,7 +21,8 @@ export type PhaseKey =
   | 'rag_agent_architecture'
   | 'security_governance'
   | 'performance_benchmark'
-  | 'finops';
+  | 'finops'
+  | 'operations_model';
 
 export type DependencyKind = 'hard' | 'advisory';
 

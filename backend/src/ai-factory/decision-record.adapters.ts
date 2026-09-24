@@ -11,6 +11,7 @@ import { AiRagAgentDesign } from './rag-agent/rag-agent.entity';
 import { AiSecurityAssessment } from './security/security.entity';
 import { AiPerformanceAssessment } from './performance/performance.entity';
 import { AiFinopsAssessment } from './finops/finops.entity';
+import { AiOperationsModel } from './operations/operations.entity';
 import { EmbeddingEligibilityRules, EmbeddingModelFacts, IndexEligibilityRules, embeddingEligibility, indexEligibility, scoreEmbedding } from './eligibility/eligibility.rules';
 import { DecisionAlternative, DecisionCandidate, DecisionRecord, Eligibility, EvidenceType } from './ai-factory.types';
 
@@ -577,6 +578,40 @@ export function fromFinopsAssessment(d: AiFinopsAssessment): DecisionRecord {
       ...r.oneOff.map((o) => ({ label: o.item, value: `${money(o.usd)} one-off`, evidenceType: o.evidenceType })),
     ],
     benchmarkRequired: ['Replace the assumed rate card with contracted rates or vendor quotes', 'Confirm with a billed pilot before committing to a budget'],
+    wouldChangeIf: r.wouldChangeIf,
+    gaps: r.gaps,
+  };
+}
+
+// ------------------------------------------------------------ Operations model
+const AREA_ELIGIBILITY = { from_design: 'eligible', defined_here: 'eligible', gap: 'not_eligible' } as const;
+
+/** Spec §14 AI Operations Model in the standard format: the verdict on whether the design can be run in production. */
+export function fromOperationsModel(d: AiOperationsModel): DecisionRecord {
+  const r = d.result;
+  const def = r.definitions;
+  const label = { pass_with_conditions: 'Operable with conditions', further_assessment: 'Requires further assessment', fail: 'Not operable as designed' }[r.verdict.status];
+  return {
+    phase: 'operations_model',
+    title: 'Operations, scale and resiliency',
+    source: { deliverableId: d.id, version: d.version, createdAt: d.createdAt },
+    status: r.verdict.status === 'fail' ? 'not_feasible' : 'conditional',
+    recommendation: { id: r.verdict.status, label },
+    // Nothing here is measured until DR is rehearsed and availability observed.
+    confidence: r.verdict.status === 'pass_with_conditions' && d.context.drTested ? 'medium' : 'low',
+    why: r.verdict.reasons,
+    candidates: r.areas.map((a) => ({ id: a.area, label: a.label, eligibility: AREA_ELIGIBILITY[a.status], score: null, notes: a.items.map((i) => `${i.source}: ${i.text}`) })),
+    alternatives: [],
+    tradeoffs: [...def.failoverStrategy],
+    risks: r.gaps,
+    assumptions: [{ statement: r.evidenceNote, evidenceType: 'assumption' as const }],
+    evidence: [
+      ...(def.sla.estimatedPercent !== null ? [{ label: 'Availability (serial estimate)', value: `${def.sla.estimatedPercent}% vs ${def.sla.targetPercent}% target`, evidenceType: 'estimated' as const }] : []),
+      ...(def.rto.estimatedMinutes !== null ? [{ label: `Recovery time (${def.rto.tier} DR)`, value: `${def.rto.estimatedMinutes} min${def.rto.targetMinutes !== null ? ` vs ${def.rto.targetMinutes} min RTO` : ''}`, evidenceType: 'estimated' as const }] : []),
+      { label: 'RPO method', value: def.rpo.method, evidenceType: 'assumption' as const },
+      { label: 'Operational load', value: `${r.operationalLoad.total} of ${r.operationalLoad.capacity} (${r.operationalLoad.opsCapability.replace(/_/g, ' ')})`, evidenceType: 'estimated' as const },
+    ],
+    benchmarkRequired: ['Rehearse DR end to end and record the recovery time', 'Measure availability against the SLO once live', 'Chaos-test each failover path'],
     wouldChangeIf: r.wouldChangeIf,
     gaps: r.gaps,
   };
