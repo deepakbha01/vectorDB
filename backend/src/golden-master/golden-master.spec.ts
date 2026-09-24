@@ -34,6 +34,18 @@ import { GpuPricingModel, InferenceEngineInput, InferenceOpsCapability, Inferenc
 import { VectorPlatform } from '../projects/enums/platform.enum';
 import { DataReplicationModel, OperationalCapability, QpsScope, SimilarityMetric, TenancyModel } from '../discovery/enums/discovery.enum';
 
+// ----------------------------------------------------- numeric stability
+// Snapshots compare non-integer numbers at 12 significant digits. Different
+// Node / V8 versions can differ in the last binary digit of the same float
+// computation (e.g. 1089.9240005276854 vs ...858), which is not a behaviour
+// change. 12 digits is still far finer than any cost, latency or score the
+// engines produce, so every real change is still caught.
+const SIGNIFICANT_DIGITS = 12;
+expect.addSnapshotSerializer({
+  test: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && !Number.isInteger(v),
+  serialize: (v: number) => String(Number(v.toPrecision(SIGNIFICANT_DIGITS))),
+});
+
 // ---------------------------------------------------------------- real config
 const CONFIG_DIR = path.join(__dirname, '../../config');
 const CONFIG_PATHS: Record<string, string> = {
