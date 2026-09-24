@@ -28,6 +28,7 @@ import { SecurityGovernancePage } from './pages/SecurityGovernancePage';
 import { PerformancePage } from './pages/PerformancePage';
 import { FinopsPage } from './pages/FinopsPage';
 import { OperationsModelPage } from './pages/OperationsModelPage';
+import { FinalRecommendationPage } from './pages/FinalRecommendationPage';
 
 export function App() {
   return (
@@ -62,6 +63,7 @@ export function App() {
           <Route path="/projects/:id/performance" element={<PerformancePage />} />
           <Route path="/projects/:id/finops" element={<FinopsPage />} />
           <Route path="/projects/:id/operations-model" element={<OperationsModelPage />} />
+          <Route path="/projects/:id/final-recommendation" element={<FinalRecommendationPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

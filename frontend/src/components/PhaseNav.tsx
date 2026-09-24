@@ -136,6 +136,14 @@ export function PhaseNav({ project }: { project: Project }) {
               </NavLink>
             </li>
           )}
+          {features.aiFactory && (
+            <li>
+              <NavLink to={`/projects/${project.id}/final-recommendation`} className={({ isActive }) => (isActive ? 'active' : '')}>
+                Final Recommendation
+                {lineage.final_recommendation === 'stale' && <span className="status-pill danger" title="A phase changed since this recommendation was saved">out of date</span>}
+              </NavLink>
+            </li>
+          )}
         </ul>
       </div>
       <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid #dfe3e8' }}>

@@ -36,6 +36,7 @@ describe('analyseImpact', () => {
       performance_benchmark: 'rerun',
       finops: 'rerun',
       operations_model: 'rerun',
+      final_recommendation: 'rerun',
       optimization: 'rerun',
       capacity: 'rerun',
       inference: 'review',
@@ -47,7 +48,7 @@ describe('analyseImpact', () => {
 
   it('does not recalculate unrelated phases (spec §22): a growth-rate change re-runs capacity, what is built on it and cost, and only asks the profile for review', () => {
     const r = run({ documentGrowthPercentPerMonth: 12 });
-    expect(affected(r)).toEqual({ capacity: 'rerun', operations_model: 'rerun', finops: 'rerun', workload_profile: 'review' });
+    expect(affected(r)).toEqual({ capacity: 'rerun', operations_model: 'rerun', finops: 'rerun', final_recommendation: 'rerun', workload_profile: 'review' });
     expect(r.affected.find((a) => a.phase === 'operations_model')!.because).toEqual(['built from Capacity plan, which must be re-run']);
     expect(r.unaffected.map((u) => u.phase)).toEqual(expect.arrayContaining(['data_embeddings', 'index_design', 'vector_db_selection', 'infrastructure', 'optimization', 'inference']));
   });
@@ -58,10 +59,10 @@ describe('analyseImpact', () => {
     expect(r.affected).toEqual([]);
   });
 
-  it('sends GPU availability to the Workload Profile for review and re-runs the designs that read it, and what is built from them (Waves 2, 5-10)', () => {
+  it('sends GPU availability to the Workload Profile for review and re-runs the designs that read it, and what is built from them (Waves 2, 5-11)', () => {
     const r = run({ hasGpu: true });
     expect(r.noImpactFields).toEqual([]);
-    expect(affected(r)).toEqual({ workload_profile: 'review', infrastructure_design: 'rerun', rag_agent_architecture: 'rerun', security_governance: 'rerun', performance_benchmark: 'rerun', finops: 'rerun', operations_model: 'rerun' });
+    expect(affected(r)).toEqual({ workload_profile: 'review', infrastructure_design: 'rerun', rag_agent_architecture: 'rerun', security_governance: 'rerun', performance_benchmark: 'rerun', finops: 'rerun', operations_model: 'rerun', final_recommendation: 'rerun' });
     expect(r.affected.find((a) => a.phase === 'security_governance')!.because[0]).toMatch(/built from/);
   });
 

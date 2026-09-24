@@ -5,7 +5,7 @@
 # phases compute anything; it only describes how their deliverables relate so
 # the AI Factory view can show lineage, staleness and impact.
 
-rulesVersion: ai-factory-2026.09-10
+rulesVersion: ai-factory-2026.09-11
 
 # ---------------------------------------------------------------------------
 # Phase dependency graph. `dependsOn` lists the DIRECT upstream deliverables
@@ -152,6 +152,25 @@ phases:
       - { phase: inference_architecture, kind: hard }   # autoscaling, load balancing, fallback, observability
       - { phase: infrastructure_design, kind: hard }    # targets, sites and DR design
       - { phase: rag_agent_architecture, kind: advisory } # agents that act add operational load
+  - key: final_recommendation
+    label: Final recommendation
+    route: final-recommendation
+    # Combines every phase: any change upstream makes the recommendation and its readiness gate out of date.
+    dependsOn:
+      - { phase: discovery, kind: hard }
+      - { phase: workload_profile, kind: hard }
+      - { phase: data_embeddings, kind: hard }
+      - { phase: index_design, kind: hard }
+      - { phase: vector_db_selection, kind: hard }
+      - { phase: model_selection, kind: hard }
+      - { phase: inference, kind: hard }
+      - { phase: inference_architecture, kind: hard }
+      - { phase: infrastructure_design, kind: hard }
+      - { phase: rag_agent_architecture, kind: hard }
+      - { phase: security_governance, kind: hard }
+      - { phase: performance_benchmark, kind: hard }
+      - { phase: finops, kind: hard }
+      - { phase: operations_model, kind: hard }
 
 # ---------------------------------------------------------------------------
 # Parameter impact map (spec §22). Which phases must be re-run when a
@@ -250,7 +269,7 @@ steps:
   - { number: 10, key: performance,     title: Performance,           phases: [performance_benchmark, optimization], coverage: full,   note: "Performance & Benchmark Assessment: vector, embedding, LLM and infrastructure metrics with target, estimate and measurement kept apart; PASS / PASS WITH CONDITIONS / FAIL only on measured evidence, otherwise REQUIRES BENCHMARK." }
   - { number: 11, key: cost,            title: Cost,                  phases: [finops],                             coverage: full,    note: "Cost & FinOps Assessment: inference, vector DB, embedding, infrastructure and operations costs for the chosen design, compared across on-premises, Azure, AWS, OCI, GCP and hybrid - every figure labelled, never presented as a quote." }
   - { number: 12, key: operations,      title: Operations,            phases: [operations_model, capacity],         coverage: full,    note: "AI Operations Model: the 13 spec §14 areas, RTO / RPO / SLA checked against estimated recovery time and serial availability, scaling and failover policy, capacity thresholds, and whether the team can run what the design asks." }
-  - { number: 13, key: final,           title: Final Recommendation,  phases: [],                                   coverage: none,    plannedWave: 11 }
+  - { number: 13, key: final,           title: Final Recommendation,  phases: [final_recommendation],               coverage: full,    note: "Production-readiness gate (data, requirements, security, technology, performance, cost, operations), the final architecture and ADR, a primary recommendation with up to two eligible alternatives, and an implementation plan." }
 
 # ---------------------------------------------------------------------------
 # Wave 2 - AI Workload Profile (spec §4). Classification rules only; no cloud,
