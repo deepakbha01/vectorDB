@@ -22,12 +22,13 @@ import { AiInfrastructureDesign } from './infrastructure/infrastructure.entity';
 import { AiRagAgentDesign } from './rag-agent/rag-agent.entity';
 import { AiSecurityAssessment } from './security/security.entity';
 import { AiPerformanceAssessment } from './performance/performance.entity';
+import { AiFinopsAssessment } from './finops/finops.entity';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 import { ChunkingStrategy } from '../chunking/enums/chunking-strategy.enum';
 import { EmbeddingModelFacts } from './eligibility/eligibility.rules';
 import { computeLineage } from './lineage.engine';
 import { analyseImpact } from './impact.engine';
-import { fromDataPipelineDesign, fromIndexDesign, fromInferenceArchitecture, fromInferenceAssessment, fromInfrastructureDesign, fromRagAgentDesign, fromSecurityAssessment, fromPerformanceAssessment, fromModelSelection, fromVectorDbSelection } from './decision-record.adapters';
+import { fromDataPipelineDesign, fromIndexDesign, fromInferenceArchitecture, fromInferenceAssessment, fromInfrastructureDesign, fromRagAgentDesign, fromSecurityAssessment, fromPerformanceAssessment, fromFinopsAssessment, fromModelSelection, fromVectorDbSelection } from './decision-record.adapters';
 import {
   AiFactoryOverview,
   AssessmentState,
@@ -73,6 +74,7 @@ export class AiFactoryService {
     @InjectRepository(AiRagAgentDesign) private readonly ragAgentDesigns: Repository<AiRagAgentDesign>,
     @InjectRepository(AiSecurityAssessment) private readonly securityAssessments: Repository<AiSecurityAssessment>,
     @InjectRepository(AiPerformanceAssessment) private readonly performanceAssessments: Repository<AiPerformanceAssessment>,
+    @InjectRepository(AiFinopsAssessment) private readonly finopsAssessments: Repository<AiFinopsAssessment>,
     private readonly platformConfig: PlatformConfigService,
   ) {}
 
@@ -94,6 +96,7 @@ export class AiFactoryService {
       rag_agent_architecture: this.ragAgentDesigns,
       security_governance: this.securityAssessments,
       performance_benchmark: this.performanceAssessments,
+      finops: this.finopsAssessments,
     }[phase];
   }
 
@@ -217,6 +220,9 @@ export class AiFactoryService {
     const performance = await this.latest<AiPerformanceAssessment>('performance_benchmark', projectId);
     if (performance) records.push(fromPerformanceAssessment(performance));
 
+    const finops = await this.latest<AiFinopsAssessment>('finops', projectId);
+    if (finops) records.push(fromFinopsAssessment(finops));
+
     return records;
   }
 
@@ -291,7 +297,7 @@ export class AiFactoryService {
     };
     const later = (wave: number): StateSection => ({ status: 'not_yet_available', coverage: 'none', source: null, summary: {}, plannedWave: wave });
 
-    const [d, p, i, adr, dep, opt, cap, inf, wp, ms, ia, infra, ra, sec, perf] = await Promise.all([
+    const [d, p, i, adr, dep, opt, cap, inf, wp, ms, ia, infra, ra, sec, perf, fin] = await Promise.all([
       this.latest<DiscoveryAssessment>('discovery', project.id),
       this.latest<DataPipelineDesign>('data_embeddings', project.id),
       this.latest<IndexDesign>('index_design', project.id),
@@ -307,6 +313,7 @@ export class AiFactoryService {
       this.latest<AiRagAgentDesign>('rag_agent_architecture', project.id),
       this.latest<AiSecurityAssessment>('security_governance', project.id),
       this.latest<AiPerformanceAssessment>('performance_benchmark', project.id),
+      this.latest<AiFinopsAssessment>('finops', project.id),
     ]);
     const profileValue = (k: keyof AiWorkloadProfile['inputs']) => wp?.inputs[k]?.value ?? null;
     const wpResult = wp?.result;
@@ -399,7 +406,15 @@ export class AiFactoryService {
             failing: perf.result.groups.flatMap((g) => g.metrics).filter((k) => k.status === 'fail').map((k) => k.label),
           })
         : { ...section('optimization', 'partial', opt ? { recall: opt.recommendedVariant.avgRecall, p95LatencyMs: opt.recommendedVariant.p95LatencyMs, achievedQps: opt.recommendedVariant.achievedQps, evidence: 'measured (vector benchmark sample)' } : {}), plannedWave: 8 },
-      cost: {
+      cost: fin
+        ? section('finops', 'full', {
+            chosenMonthlyUsd: fin.result.chosen?.monthlyUsd ?? null,
+            budget: fin.result.budget.status,
+            validation: fin.result.validation.status,
+            cheapestAllowed: fin.result.cheapestAllowed?.label ?? null,
+            evidence: 'estimated / assumption - not quotes',
+          })
+        : {
         status: adr || inf ? 'current' : 'not_started',
         coverage: 'partial',
         source: null,

@@ -24,7 +24,7 @@ describe('analyseImpact', () => {
 
   it('re-runs direct readers and everything built from them; advisory readers only need review', () => {
     const r = run({ qps: 200 });
-    expect(r.changes).toEqual([{ field: 'qps', from: 20, to: 200, directPhases: ['data_embeddings', 'vector_db_selection', 'inference', 'workload_profile'] }]);
+    expect(r.changes).toEqual([{ field: 'qps', from: 20, to: 200, directPhases: ['data_embeddings', 'vector_db_selection', 'inference', 'workload_profile', 'finops'] }]);
     expect(affected(r)).toEqual({
       data_embeddings: 'rerun',
       index_design: 'rerun',
@@ -34,6 +34,7 @@ describe('analyseImpact', () => {
       rag_agent_architecture: 'rerun',
       security_governance: 'rerun',
       performance_benchmark: 'rerun',
+      finops: 'rerun',
       optimization: 'rerun',
       capacity: 'rerun',
       inference: 'review',
@@ -43,9 +44,9 @@ describe('analyseImpact', () => {
     expect(idx.because).toEqual(['built from Data & Embedding design, which must be re-run']);
   });
 
-  it('does not recalculate unrelated phases (spec §22): a growth-rate change re-runs capacity and only asks the profile for review', () => {
+  it('does not recalculate unrelated phases (spec §22): a growth-rate change re-runs capacity and cost, and only asks the profile for review', () => {
     const r = run({ documentGrowthPercentPerMonth: 12 });
-    expect(affected(r)).toEqual({ capacity: 'rerun', workload_profile: 'review' });
+    expect(affected(r)).toEqual({ capacity: 'rerun', finops: 'rerun', workload_profile: 'review' });
     expect(r.unaffected.map((u) => u.phase)).toEqual(expect.arrayContaining(['data_embeddings', 'index_design', 'vector_db_selection', 'infrastructure', 'optimization', 'inference']));
   });
 
@@ -55,10 +56,10 @@ describe('analyseImpact', () => {
     expect(r.affected).toEqual([]);
   });
 
-  it('sends GPU availability to the Workload Profile for review and re-runs the designs that read it, and what is built from them (Waves 2, 5-8)', () => {
+  it('sends GPU availability to the Workload Profile for review and re-runs the designs that read it, and what is built from them (Waves 2, 5-9)', () => {
     const r = run({ hasGpu: true });
     expect(r.noImpactFields).toEqual([]);
-    expect(affected(r)).toEqual({ workload_profile: 'review', infrastructure_design: 'rerun', rag_agent_architecture: 'rerun', security_governance: 'rerun', performance_benchmark: 'rerun' });
+    expect(affected(r)).toEqual({ workload_profile: 'review', infrastructure_design: 'rerun', rag_agent_architecture: 'rerun', security_governance: 'rerun', performance_benchmark: 'rerun', finops: 'rerun' });
     expect(r.affected.find((a) => a.phase === 'security_governance')!.because[0]).toMatch(/built from/);
   });
 

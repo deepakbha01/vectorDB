@@ -10,6 +10,7 @@ import { AiInfrastructureDesign } from './infrastructure/infrastructure.entity';
 import { AiRagAgentDesign } from './rag-agent/rag-agent.entity';
 import { AiSecurityAssessment } from './security/security.entity';
 import { AiPerformanceAssessment } from './performance/performance.entity';
+import { AiFinopsAssessment } from './finops/finops.entity';
 import { EmbeddingEligibilityRules, EmbeddingModelFacts, IndexEligibilityRules, embeddingEligibility, indexEligibility, scoreEmbedding } from './eligibility/eligibility.rules';
 import { DecisionAlternative, DecisionCandidate, DecisionRecord, Eligibility, EvidenceType } from './ai-factory.types';
 
@@ -539,6 +540,44 @@ export function fromPerformanceAssessment(d: AiPerformanceAssessment): DecisionR
     ],
     benchmarkRequired: r.benchmarkPlan.map((b) => `${b.metric}: ${b.how}${b.warning ? ` - ${b.warning}` : ''}`),
     wouldChangeIf: ['Recording measured results (with their source) turns REQUIRES BENCHMARK into PASS / PASS WITH CONDITIONS / FAIL.'],
+    gaps: r.gaps,
+  };
+}
+
+// ------------------------------------------------------------ Cost & FinOps
+/** Spec §13 Cost & FinOps Assessment in the standard format: the chosen design's cost, with cheaper allowed options as alternatives. */
+export function fromFinopsAssessment(d: AiFinopsAssessment): DecisionRecord {
+  const r = d.result;
+  const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
+  const options = r.comparison.map((o) => ({
+    id: o.id,
+    label: o.label,
+    eligibility: (!o.feasible ? 'not_eligible' : o.allowed ? 'eligible' : 'conditional') as Eligibility,
+    monthlyUsd: o.monthlyUsd,
+    note: !o.feasible ? o.notFeasibleReasons.join(' ') : o.allowed ? `${money(o.monthlyUsd!)} / month` : `${money(o.monthlyUsd!)} / month - not an allowed target`,
+  }));
+  const chosenMonthly = r.chosen?.monthlyUsd ?? null;
+  const cheaper = options.filter((o) => o.eligibility !== 'not_eligible' && o.monthlyUsd !== null && chosenMonthly !== null && o.monthlyUsd < chosenMonthly && o.id !== 'hybrid').sort((a, b) => a.monthlyUsd! - b.monthlyUsd!);
+  return {
+    phase: 'finops',
+    title: 'Cost and FinOps',
+    source: { deliverableId: d.id, version: d.version, createdAt: d.createdAt },
+    status: r.validation.status === 'fail' ? 'not_feasible' : 'conditional',
+    recommendation: r.chosen?.monthlyUsd ? { id: 'chosen', label: `${r.chosen.label}: ~${money(r.chosen.monthlyUsd)} / month (estimate)` } : null,
+    // Cost estimates never earn high confidence without a rate card or quotes.
+    confidence: r.chosen?.feasible ? 'medium' : 'low',
+    why: [...r.validation.reasons, r.disclaimer],
+    candidates: options.map((o) => ({ id: o.id, label: o.label, eligibility: o.eligibility, score: null, notes: [o.note] })),
+    alternatives: pickAlternatives(cheaper.map((o) => ({ id: o.id, label: o.label, eligibility: o.eligibility, reason: o.note })), null),
+    tradeoffs: r.wouldChangeIf,
+    risks: [...(r.budget.status === 'exceeds_budget' || r.budget.status === 'near_budget' ? [r.budget.note] : []), ...r.gaps],
+    assumptions: (r.chosen?.lines ?? []).filter((l) => l.evidenceType === 'assumption').map((l) => ({ statement: `${l.item}: ${l.basis}`, evidenceType: 'assumption' as const })),
+    evidence: [
+      ...(r.chosen?.lines ?? []).map((l) => ({ label: l.item, value: `${money(l.monthlyUsd)} / month`, evidenceType: l.evidenceType })),
+      ...r.oneOff.map((o) => ({ label: o.item, value: `${money(o.usd)} one-off`, evidenceType: o.evidenceType })),
+    ],
+    benchmarkRequired: ['Replace the assumed rate card with contracted rates or vendor quotes', 'Confirm with a billed pilot before committing to a budget'],
+    wouldChangeIf: r.wouldChangeIf,
     gaps: r.gaps,
   };
 }

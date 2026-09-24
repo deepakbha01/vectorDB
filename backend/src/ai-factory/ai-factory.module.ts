@@ -35,6 +35,9 @@ import { SecurityAssessmentController } from './security/security.controller';
 import { AiPerformanceAssessment } from './performance/performance.entity';
 import { PerformanceAssessmentService } from './performance/performance.service';
 import { PerformanceAssessmentController } from './performance/performance.controller';
+import { AiFinopsAssessment } from './finops/finops.entity';
+import { FinopsAssessmentService } from './finops/finops.service';
+import { FinopsAssessmentController } from './finops/finops.controller';
 import { IngestionRun } from '../ingestion/ingestion-run.entity';
 import { InferenceModule } from '../inference/inference.module';
 
@@ -42,12 +45,12 @@ import { InferenceModule } from '../inference/inference.module';
  * AI Factory foundations (Wave 1), AI Workload Profile (Wave 2), Model
  * Selection (Wave 3), Inference Architecture (Wave 4), Infrastructure
  * (Wave 5), RAG / Agent architecture (Wave 6), Security & Governance
- * (Wave 7) and Performance & Benchmark (Wave 8). Registers repositories for the existing
+ * (Wave 7), Performance & Benchmark (Wave 8) and Cost & FinOps (Wave 9). Registers repositories for the existing
  * deliverable entities for READ access only; the only tables this module
  * writes are ai_factory_state_snapshots, ai_workload_profiles,
  * ai_model_selections, ai_inference_architectures,
- * ai_infrastructure_designs, ai_rag_agent_designs, ai_security_assessments
- * and ai_performance_assessments.
+ * ai_infrastructure_designs, ai_rag_agent_designs, ai_security_assessments,
+ * ai_performance_assessments and ai_finops_assessments.
  */
 @Module({
   imports: [
@@ -69,12 +72,13 @@ import { InferenceModule } from '../inference/inference.module';
       AiSecurityAssessment,
       AiPerformanceAssessment,
       IngestionRun,
+      AiFinopsAssessment,
     ]),
     ProjectsModule,
     InferenceModule,
   ],
-  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService, InferenceArchitectureService, InfrastructureDesignService, RagAgentDesignService, SecurityAssessmentService, PerformanceAssessmentService],
-  controllers: [AiFactoryController, WorkloadProfileController, ModelSelectionController, InferenceArchitectureController, InfrastructureDesignController, RagAgentDesignController, SecurityAssessmentController, PerformanceAssessmentController],
+  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService, InferenceArchitectureService, InfrastructureDesignService, RagAgentDesignService, SecurityAssessmentService, PerformanceAssessmentService, FinopsAssessmentService],
+  controllers: [AiFactoryController, WorkloadProfileController, ModelSelectionController, InferenceArchitectureController, InfrastructureDesignController, RagAgentDesignController, SecurityAssessmentController, PerformanceAssessmentController, FinopsAssessmentController],
   exports: [AiFactoryConfigService],
 })
 export class AiFactoryModule {}
