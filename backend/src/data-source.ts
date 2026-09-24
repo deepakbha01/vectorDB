@@ -20,6 +20,7 @@ import { AiWorkloadProfile } from './ai-factory/workload-profile/workload-profil
 import { AiModelSelection } from './ai-factory/model-selection/model-selection.entity';
 import { AiInferenceArchitecture } from './ai-factory/inference-architecture/inference-architecture.entity';
 import { AiInfrastructureDesign } from './ai-factory/infrastructure/infrastructure.entity';
+import { AiRagAgentDesign } from './ai-factory/rag-agent/rag-agent.entity';
 
 config();
 
@@ -63,6 +64,7 @@ export const AppDataSource = new DataSource({
     AiModelSelection,
     AiInferenceArchitecture,
     AiInfrastructureDesign,
+    AiRagAgentDesign,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,

@@ -5,7 +5,7 @@
 # phases compute anything; it only describes how their deliverables relate so
 # the AI Factory view can show lineage, staleness and impact.
 
-rulesVersion: ai-factory-2026.09-5
+rulesVersion: ai-factory-2026.09-6
 
 # ---------------------------------------------------------------------------
 # Phase dependency graph. `dependsOn` lists the DIRECT upstream deliverables
@@ -91,6 +91,17 @@ phases:
       - { phase: inference, kind: hard }                # GPU type and count
       - { phase: inference_architecture, kind: hard }   # runtime platform
       - { phase: capacity, kind: advisory }             # growth horizon for storage
+  - key: rag_agent_architecture
+    label: RAG / agent architecture
+    route: rag-agent
+    dependsOn:
+      - { phase: discovery, kind: hard }                # search requirements, top-K, precision, tenant isolation
+      - { phase: workload_profile, kind: hard }         # RAG / agent scope, criticality, targets, classification
+      - { phase: data_embeddings, kind: hard }          # embedding model, chunk size, metadata fields
+      - { phase: vector_db_selection, kind: hard }      # platform and its native hybrid / filtering support
+      - { phase: model_selection, kind: hard }          # context window, tool calling, accuracy and latency priorities
+      - { phase: inference, kind: hard }                # output tokens, TTFT target, third-party API policy
+      - { phase: inference_architecture, kind: hard }   # latency estimates and the policy engine
 
 # ---------------------------------------------------------------------------
 # Parameter impact map (spec §22). Which phases must be re-run when a
@@ -121,22 +132,22 @@ parameterImpact:
   peakQps: [data_embeddings, vector_db_selection, inference, workload_profile]
   qpsScope: [vector_db_selection]
   concurrentUsers: [workload_profile]
-  targetP95LatencyMs: [data_embeddings, vector_db_selection]
+  targetP95LatencyMs: [data_embeddings, vector_db_selection, rag_agent_architecture]
   targetP99LatencyMs: [vector_db_selection]
   availabilityTargetPercent: [capacity, inference, workload_profile, infrastructure_design]
   rpoMinutes: [vector_db_selection, capacity, infrastructure_design]
   rtoMinutes: [vector_db_selection, capacity, infrastructure_design]
   retentionDays: [vector_db_selection]
   # search capabilities
-  requiresSimilaritySearch: none
-  requiresSemanticSearch: none
-  requiresHybridSearch: [data_embeddings, vector_db_selection]
-  requiresMetadataFiltering: [vector_db_selection]
-  requiresFullTextSearch: [vector_db_selection]
-  topK: [data_embeddings, inference]
+  requiresSimilaritySearch: [rag_agent_architecture]
+  requiresSemanticSearch: [rag_agent_architecture]
+  requiresHybridSearch: [data_embeddings, vector_db_selection, rag_agent_architecture]
+  requiresMetadataFiltering: [vector_db_selection, rag_agent_architecture]
+  requiresFullTextSearch: [vector_db_selection, rag_agent_architecture]
+  topK: [data_embeddings, inference, rag_agent_architecture]
   recallTarget: [data_embeddings, vector_db_selection]
-  precisionTarget: [vector_db_selection]
-  requiresReranking: [data_embeddings, vector_db_selection]
+  precisionTarget: [vector_db_selection, rag_agent_architecture]
+  requiresReranking: [data_embeddings, vector_db_selection, rag_agent_architecture]
   ndcgTarget: [vector_db_selection]
   mrrTarget: [vector_db_selection]
   # existing platforms & deployment
@@ -148,8 +159,8 @@ parameterImpact:
   availableCpuCores: [capacity]
   availableRamGb: [data_embeddings]
   availableStorageGb: [capacity]
-  hasGpu: [workload_profile, infrastructure_design]
-  operationalCapability: [vector_db_selection, infrastructure_design]
+  hasGpu: [workload_profile, infrastructure_design, rag_agent_architecture]
+  operationalCapability: [vector_db_selection, infrastructure_design, rag_agent_architecture]
   monthlyBudgetUsd: [vector_db_selection, inference]
   # multi-region & tenancy
   requiresMultiRegion: [vector_db_selection, infrastructure_design]
@@ -165,10 +176,10 @@ parameterImpact:
   requiresEncryptionAtRest: [vector_db_selection, workload_profile]
   requiresEncryptionInTransit: [vector_db_selection, workload_profile]
   requiresKeyManagement: [vector_db_selection]
-  requiresTenantIsolation: [vector_db_selection]
+  requiresTenantIsolation: [vector_db_selection, rag_agent_architecture]
   requiresAuditLogging: [vector_db_selection]
   dataResidencyRequirement: [vector_db_selection, inference, workload_profile, infrastructure_design]
-  containsPii: [vector_db_selection, inference, workload_profile]
+  containsPii: [vector_db_selection, inference, workload_profile, rag_agent_architecture]
   regulatoryRequirements: [workload_profile]
 
 # ---------------------------------------------------------------------------
@@ -184,7 +195,7 @@ steps:
   - { number: 5,  key: model,           title: Model,                 phases: [model_selection],                    coverage: full,    note: "Primary, secondary and fallback model from a technology-neutral catalogue: mandatory eligibility first, then weighted scoring." }
   - { number: 6,  key: inference,       title: Inference,             phases: [inference, inference_architecture],  coverage: full,    note: "GPU sizing, latency and cost, plus the Inference Architecture: serving option (eligibility, then score), patterns, P50/P95/P99 estimates, and gateway, policy, router, autoscaling, fallback and observability design." }
   - { number: 7,  key: infrastructure,  title: Infrastructure,        phases: [infrastructure_design, infrastructure], coverage: full, note: "Infrastructure Decision Record: placement of inference, vector database and application across on-premises, Azure, AWS, OCI and GCP (eligibility, then score), with compute, memory, storage, network, cluster, availability, DR, scaling and security; the vector-DB deployment plan provides the IaC." }
-  - { number: 8,  key: rag_agent,       title: RAG / Agent,           phases: [],                                   coverage: none,    plannedWave: 6 }
+  - { number: 8,  key: rag_agent,       title: RAG / Agent,           phases: [rag_agent_architecture],             coverage: full,    note: "GenAI Application Architecture: retrieval strategy, reranking and agent orchestration (eligibility, then score), with filtering, context and prompt construction, citation, grounding, guardrails, human approval, tool security and isolation, plus context-window and latency budgets." }
   - { number: 9,  key: security,        title: Security,              phases: [],                                   coverage: partial, plannedWave: 7,  note: "Security requirements and the compliance gate live in Discovery and the Vector DB ADR; per-component policy status arrives in Wave 7." }
   - { number: 10, key: performance,     title: Performance,           phases: [optimization],                       coverage: partial, plannedWave: 8,  note: "Measured vector benchmark exists; LLM/embedding benchmarks and PASS/FAIL status arrive in Wave 8." }
   - { number: 11, key: cost,            title: Cost,                  phases: [],                                   coverage: partial, plannedWave: 9,  note: "Budget feasibility (ADR) and inference cost exist; the consolidated FinOps view arrives in Wave 9." }

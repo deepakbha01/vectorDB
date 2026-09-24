@@ -85,7 +85,7 @@ export function placeComponent(need: ComponentNeed, anchor: TargetId | null, ctx
   const chosen = candidates.find((c) => c.eligibility !== 'not_eligible') ?? null;
   const why = !chosen
     ? `No eligible placement for ${need.label.toLowerCase()} - ${candidates[0]?.failures[0] ?? 'no target offers the required platform'}`
-    : `${chosen.label}: highest score (${chosen.score}) among ${candidates.filter((c) => c.eligibility !== 'not_eligible').length} usable placement(s)${anchor && chosen.target === anchor ? ', co-located with inference' : ''}${chosen.eligibility === 'conditional' ? ` - with conditions: ${chosen.conditions.join(' ')}` : ''}.`;
+    : `${chosen.label}: highest score (${chosen.score}) among ${candidates.filter((c) => c.eligibility !== 'not_eligible').length} usable placement(s)${anchor && chosen.target === anchor ? ', co-located with inference' : ''}${chosen.eligibility === 'conditional' ? ` - with conditions: ${chosen.conditions.join(' ').replace(/\.$/, '')}` : ''}.`;
   return { component: need.id, componentLabel: need.label, chosen, candidates, why };
 }
 
