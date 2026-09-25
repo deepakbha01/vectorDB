@@ -52,6 +52,7 @@ import { AiModelPrice } from './token-observability/model-price.entity';
 import { AiUsageEvent } from './token-observability/usage-event.entity';
 import { AiUsageRollup } from './token-observability/usage-rollup.entity';
 import { PricingService } from './token-observability/pricing.service';
+import { UsageService } from './token-observability/usage.service';
 import { IngestionRun } from '../ingestion/ingestion-run.entity';
 import { InferenceModule } from '../inference/inference.module';
 
@@ -101,7 +102,7 @@ import { InferenceModule } from '../inference/inference.module';
     ProjectsModule,
     InferenceModule,
   ],
-  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService, InferenceArchitectureService, InfrastructureDesignService, RagAgentDesignService, SecurityAssessmentService, PerformanceAssessmentService, FinopsAssessmentService, OperationsModelService, FinalRecommendationService, TokenObservabilityEnabledGuard, TokenObservabilityService, PricingService],
+  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService, InferenceArchitectureService, InfrastructureDesignService, RagAgentDesignService, SecurityAssessmentService, PerformanceAssessmentService, FinopsAssessmentService, OperationsModelService, FinalRecommendationService, TokenObservabilityEnabledGuard, TokenObservabilityService, PricingService, UsageService],
   controllers: [AiFactoryController, WorkloadProfileController, ModelSelectionController, InferenceArchitectureController, InfrastructureDesignController, RagAgentDesignController, SecurityAssessmentController, PerformanceAssessmentController, FinopsAssessmentController, OperationsModelController, FinalRecommendationController, TokenObservabilityController],
   exports: [AiFactoryConfigService],
 })

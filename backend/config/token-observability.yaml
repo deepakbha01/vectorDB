@@ -43,3 +43,13 @@ estimation:
   # Agents are estimated at their bounded maximum steps (worst case). Set
   # below 1 to estimate a typical run as a share of the maximum.
   agentStepsShareOfMax: 1.0
+
+# ---------------------------------------------------------------------------
+# Observed usage (simulated / live events).
+# ---------------------------------------------------------------------------
+observed:
+  # More LLM calls than this in one trace is flagged as a possible agent loop
+  # when the RAG / agent design gives no step limit.
+  loopLlmCallsPerTrace: 10
+  # Live telemetry older than this counts as stale rather than receiving.
+  liveStaleAfterHours: 24

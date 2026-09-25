@@ -118,6 +118,7 @@ export interface TokenObservabilityCatalogue {
   rulesVersion: string;
   pricing: import('./pricing').PricingTreatment;
   estimation: { toolCallOutputTokens: number; agentStepsShareOfMax: number };
+  observed: { loopLlmCallsPerTrace: number; liveStaleAfterHours: number };
 }
 
 /**

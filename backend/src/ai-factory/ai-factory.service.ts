@@ -27,6 +27,7 @@ import { AiOperationsModel } from './operations/operations.entity';
 import { AiFinalRecommendation } from './final/final.entity';
 import { AiTokenEstimate } from './token-observability/token-estimate.entity';
 import { TokenObservabilityState } from './token-observability/token-observability.types';
+import { UsageService } from './token-observability/usage.service';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 import { ChunkingStrategy } from '../chunking/enums/chunking-strategy.enum';
 import { EmbeddingModelFacts } from './eligibility/eligibility.rules';
@@ -83,6 +84,7 @@ export class AiFactoryService {
     @InjectRepository(AiFinalRecommendation) private readonly finalRecommendations: Repository<AiFinalRecommendation>,
     @InjectRepository(AiTokenEstimate) private readonly tokenEstimates: Repository<AiTokenEstimate>,
     private readonly platformConfig: PlatformConfigService,
+    private readonly usage: UsageService,
   ) {}
 
   // ---------------------------------------------------------------- loading
@@ -302,6 +304,13 @@ export class AiFactoryService {
     });
   }
 
+  /** The estimate drives status and version; observed usage (last 30 days) is added even before an estimate exists. */
+  private async tokenSection(base: StateSection, te: AiTokenEstimate | null, projectId: string): Promise<StateSection> {
+    const observed = await this.usage.observedState(projectId);
+    if (!te && !observed.totals) return base;
+    return { ...base, summary: { ...tokenState(te, observed) } };
+  }
+
   private async buildState(project: Project, lineage: PhaseLineage[]): Promise<AssessmentState> {
     const L = (k: PhaseKey) => lineage.find((l) => l.phase === k)!;
     const section = (k: PhaseKey, coverage: StateSection['coverage'], summary: Record<string, unknown>): StateSection => {
@@ -386,7 +395,7 @@ export class AiFactoryService {
           }
         : {}),
       // Spec (Token Observability) §16. Observed figures stay null until usage events exist - never filled from the estimate.
-      tokenObservability: section('token_observability', 'partial', te ? tokenState(te) : {}),
+      tokenObservability: await this.tokenSection(section('token_observability', 'partial', {}), te, project.id),
       infrastructure: infra
         ? section('infrastructure_design', 'full', {
             deploymentModel: infra.result.deploymentModel.summary,
@@ -517,24 +526,24 @@ export function compareStates(from: number, a: AssessmentState, to: number, b: A
   };
 }
 
-/** Spec (Token Observability) §16 summary from the latest estimate. Observed values are added once usage events are ingested. */
-export function tokenState(te: AiTokenEstimate): Record<string, unknown> {
-  const r = te.result;
-  const s: TokenObservabilityState = {
-    mode: 'estimated',
-    expectedTokensPerRequest: r.perRequest.totalTokens,
-    expectedMonthlyTokens: r.monthly.totalTokens,
-    observedInputTokens: null,
-    observedOutputTokens: null,
-    observedTotalTokens: null,
-    embeddingTokens: r.monthly.embeddingTokens,
-    contextTokens: r.perRequest.contextTokens,
-    llmCallsPerRequest: r.perRequest.llmCalls,
-    estimatedCost: r.cost.monthlyUsd,
-    actualCost: null,
-    topConsumers: [],
+/** Spec (Token Observability) §16: expected figures from the latest estimate, observed ones from usage events - never one filled from the other. */
+export function tokenState(te: AiTokenEstimate | null, observed: Awaited<ReturnType<UsageService['observedState']>>): TokenObservabilityState {
+  const r = te?.result;
+  const o = observed.totals;
+  return {
+    mode: observed.telemetry.status === 'receiving' || observed.telemetry.status === 'stale' ? 'live' : observed.telemetry.status === 'simulated_only' ? 'simulated' : 'estimated',
+    expectedTokensPerRequest: r?.perRequest.totalTokens ?? null,
+    expectedMonthlyTokens: r?.monthly.totalTokens ?? null,
+    observedInputTokens: o ? o.inputTokens : null,
+    observedOutputTokens: o ? o.outputTokens : null,
+    observedTotalTokens: o ? o.totalTokens : null,
+    embeddingTokens: o ? o.embeddingTokens : (r?.monthly.embeddingTokens ?? null),
+    contextTokens: r?.perRequest.contextTokens ?? null,
+    llmCallsPerRequest: r?.perRequest.llmCalls ?? null,
+    estimatedCost: r?.cost.monthlyUsd ?? null,
+    actualCost: o ? o.cost : null,
+    topConsumers: observed.topConsumers,
     alerts: 0,
-    telemetryStatus: 'no_telemetry',
+    telemetryStatus: observed.telemetry.status,
   };
-  return { ...s };
 }
