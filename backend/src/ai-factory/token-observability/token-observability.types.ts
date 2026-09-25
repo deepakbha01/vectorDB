@@ -119,6 +119,7 @@ export interface TokenObservabilityCatalogue {
   pricing: import('./pricing').PricingTreatment;
   estimation: { toolCallOutputTokens: number; agentStepsShareOfMax: number };
   observed: { loopLlmCallsPerTrace: number; liveStaleAfterHours: number };
+  otel: { span: Record<string, string[]>; resource: Record<string, string[]> };
 }
 
 /**

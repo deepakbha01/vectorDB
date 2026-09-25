@@ -58,6 +58,7 @@ import { AiModelPrice } from './ai-factory/token-observability/model-price.entit
 import { AiUsageEvent } from './ai-factory/token-observability/usage-event.entity';
 import { AiUsageRollup } from './ai-factory/token-observability/usage-rollup.entity';
 import { AiSimulationRun } from './ai-factory/token-observability/simulation-run.entity';
+import { AiIngestKey } from './ai-factory/token-observability/ingest-key.entity';
 
 @Module({
   imports: [
@@ -103,6 +104,7 @@ import { AiSimulationRun } from './ai-factory/token-observability/simulation-run
           AiUsageEvent,
           AiUsageRollup,
           AiSimulationRun,
+          AiIngestKey,
         ],
         // Sprint 1 uses schema sync for velocity. Replace with TypeORM migrations
         // before any non-development deployment (see development rule #12).

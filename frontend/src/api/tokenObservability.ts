@@ -292,3 +292,20 @@ export interface SimulationUploadResult extends SimulationRun {
   ignoredFields: string[];
   rejectionsTruncated: boolean;
 }
+
+// ------------------------------------------------------------ live telemetry keys (Phase 6)
+
+export interface IngestKey {
+  id: string;
+  name: string;
+  prefix: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  createdBy?: string | null;
+}
+
+export interface CreatedIngestKey extends IngestKey {
+  /** Shown once. */
+  key: string;
+}

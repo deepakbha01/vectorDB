@@ -7,6 +7,7 @@ import { FILTER_NAMES, ObservedMode, TokenEstimate, TokenEstimatePreview, TokenE
 import { DashboardView, ObservedDashboard, rangeFor } from '../components/token/ObservedDashboard';
 import { download, toCsv } from '../components/token/csv';
 import { SimulationPanel } from '../components/token/SimulationPanel';
+import { IngestKeysPanel } from '../components/token/IngestKeysPanel';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
@@ -156,6 +157,7 @@ export function TokenObservabilityPage() {
                 {mode === 'simulated' && (
                   <SimulationPanel projectId={project.id} onChanged={() => setRefreshKey((k) => k + 1)} onView={(from, to) => onFilters({ ...filters, from, to, dims: {} }, 'custom')} />
                 )}
+                {mode === 'live' && <IngestKeysPanel projectId={project.id} />}
                 <ObservedDashboard projectId={project.id} filters={filters} rangeKey={rangeKey} view={view} onChange={onFilters} refreshKey={refreshKey} />
               </>
             )}

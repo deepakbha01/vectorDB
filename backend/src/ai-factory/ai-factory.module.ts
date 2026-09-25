@@ -55,6 +55,10 @@ import { PricingService } from './token-observability/pricing.service';
 import { UsageService } from './token-observability/usage.service';
 import { SimulationService } from './token-observability/simulation.service';
 import { AiSimulationRun } from './token-observability/simulation-run.entity';
+import { AiIngestKey } from './token-observability/ingest-key.entity';
+import { IngestKeyService } from './token-observability/ingest-key.service';
+import { IngestKeyGuard } from './token-observability/ingest-key.guard';
+import { ObservabilityIngestController } from './token-observability/observability-ingest.controller';
 import { IngestionRun } from '../ingestion/ingestion-run.entity';
 import { InferenceModule } from '../inference/inference.module';
 
@@ -71,7 +75,7 @@ import { InferenceModule } from '../inference/inference.module';
  * ai_infrastructure_designs, ai_rag_agent_designs, ai_security_assessments,
  * ai_performance_assessments, ai_finops_assessments, ai_operations_models,
  * ai_final_recommendations, ai_token_estimates, ai_model_prices,
- * ai_usage_events, ai_usage_rollups and ai_simulation_runs.
+ * ai_usage_events, ai_usage_rollups, ai_simulation_runs and ai_ingest_keys.
  */
 @Module({
   imports: [
@@ -101,12 +105,13 @@ import { InferenceModule } from '../inference/inference.module';
       AiUsageEvent,
       AiUsageRollup,
       AiSimulationRun,
+      AiIngestKey,
     ]),
     ProjectsModule,
     InferenceModule,
   ],
-  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService, InferenceArchitectureService, InfrastructureDesignService, RagAgentDesignService, SecurityAssessmentService, PerformanceAssessmentService, FinopsAssessmentService, OperationsModelService, FinalRecommendationService, TokenObservabilityEnabledGuard, TokenObservabilityService, PricingService, UsageService, SimulationService],
-  controllers: [AiFactoryController, WorkloadProfileController, ModelSelectionController, InferenceArchitectureController, InfrastructureDesignController, RagAgentDesignController, SecurityAssessmentController, PerformanceAssessmentController, FinopsAssessmentController, OperationsModelController, FinalRecommendationController, TokenObservabilityController],
+  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService, InferenceArchitectureService, InfrastructureDesignService, RagAgentDesignService, SecurityAssessmentService, PerformanceAssessmentService, FinopsAssessmentService, OperationsModelService, FinalRecommendationService, TokenObservabilityEnabledGuard, TokenObservabilityService, PricingService, UsageService, SimulationService, IngestKeyService, IngestKeyGuard],
+  controllers: [AiFactoryController, WorkloadProfileController, ModelSelectionController, InferenceArchitectureController, InfrastructureDesignController, RagAgentDesignController, SecurityAssessmentController, PerformanceAssessmentController, FinopsAssessmentController, OperationsModelController, FinalRecommendationController, TokenObservabilityController, ObservabilityIngestController],
   exports: [AiFactoryConfigService],
 })
 export class AiFactoryModule {}

@@ -15,6 +15,8 @@ import { UsageService } from './usage.service';
 import { SimulationService, UploadedFileLike } from './simulation.service';
 import { MAX_UPLOAD_BYTES } from './usage-upload';
 import { SimulationUploadDto } from './dto/simulation-upload.dto';
+import { IngestKeyService } from './ingest-key.service';
+import { CreateIngestKeyDto } from './dto/create-ingest-key.dto';
 import { UsageEventBatchDto } from './dto/usage-events.dto';
 import { UsageQueryDto, UsageRequestsQueryDto } from './dto/usage-query.dto';
 
@@ -31,6 +33,7 @@ export class TokenObservabilityController {
     private readonly pricing: PricingService,
     private readonly usage: UsageService,
     private readonly simulations: SimulationService,
+    private readonly ingestKeys: IngestKeyService,
   ) {}
 
   /** The Estimated-mode projection as the upstream records stand now. Saves nothing. */
@@ -158,5 +161,27 @@ export class TokenObservabilityController {
   @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
   deleteSimulation(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('runId', ParseUUIDPipe) runId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.simulations.remove(projectId, user, runId);
+  }
+
+  // ------------------------------------------- live telemetry keys (spec §11, §18)
+
+  /** Creates a project ingest key. The key is in this response only - it is stored as a hash. */
+  @Post('ingest-keys')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  createIngestKey(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: CreateIngestKeyDto) {
+    return this.ingestKeys.create(projectId, user, dto.name);
+  }
+
+  /** Key names, prefixes and use - never the keys. Admins and architects only. */
+  @Get('ingest-keys')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  listIngestKeys(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.ingestKeys.list(projectId, user);
+  }
+
+  @Delete('ingest-keys/:keyId')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  revokeIngestKey(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('keyId', ParseUUIDPipe) keyId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.ingestKeys.revoke(projectId, user, keyId);
   }
 }

@@ -16,6 +16,8 @@ import { PricingService } from '../src/ai-factory/token-observability/pricing.se
 import { UsageService } from '../src/ai-factory/token-observability/usage.service';
 import { SimulationService } from '../src/ai-factory/token-observability/simulation.service';
 import { AiSimulationRun } from '../src/ai-factory/token-observability/simulation-run.entity';
+import { IngestKeyService } from '../src/ai-factory/token-observability/ingest-key.service';
+import { AiIngestKey } from '../src/ai-factory/token-observability/ingest-key.entity';
 import { AiModelPrice } from '../src/ai-factory/token-observability/model-price.entity';
 import { AiUsageEvent } from '../src/ai-factory/token-observability/usage-event.entity';
 import { AiTokenEstimate } from '../src/ai-factory/token-observability/token-estimate.entity';
@@ -255,5 +257,33 @@ describe('simulated runs (spec §12) - upload, list, delete', () => {
     const b = await simulations.get(projectId, admin, runB);
     expect(b.accepted).toBe(3);
     await expect(simulations.get(projectId, admin, runA)).rejects.toThrow(/No such simulation run/);
+  });
+});
+
+describe('ingest keys (spec §11, §18)', () => {
+  let keys: IngestKeyService;
+  beforeAll(() => {
+    keys = new IngestKeyService(projectsStub, ds.getRepository(AiIngestKey));
+  });
+
+  it('creates a key shown once, stores only its hash, and resolves it to the project', async () => {
+    const created = await keys.create(projectId, admin, 'prod collector');
+    expect(created.key).toMatch(/^aftk_/);
+    const [row] = await ds.query(`SELECT * FROM ai_ingest_keys WHERE id = $1`, [created.id]);
+    expect(JSON.stringify(row)).not.toContain(created.key);
+    expect(row.keyHash).toHaveLength(64);
+    expect(await keys.verify(created.key)).toEqual({ projectId, keyId: created.id, prefix: created.prefix });
+    const listed = await keys.list(projectId, admin);
+    expect(listed[0]).toEqual(expect.objectContaining({ name: 'prod collector', prefix: created.prefix, revokedAt: null }));
+    expect(JSON.stringify(listed)).not.toContain(created.key);
+  });
+
+  it('refuses a tampered key and, once revoked, the key itself', async () => {
+    const created = await keys.create(projectId, admin, 'temporary');
+    const tampered = created.key.slice(0, -1) + (created.key.endsWith('A') ? 'B' : 'A');
+    expect(await keys.verify(tampered)).toBeNull();
+    await keys.revoke(projectId, admin, created.id);
+    expect(await keys.verify(created.key)).toBeNull();
+    expect((await keys.list(projectId, admin)).find((k) => k.id === created.id)?.revokedAt).not.toBeNull();
   });
 });

@@ -5,13 +5,16 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
+import { configureBodyParsers } from './common/body-parsers';
 
 async function bootstrap() {
   requireProductionSecrets();
 
-  const app = await NestFactory.create(AppModule);
+  // Body parsers are registered below so usage-ingest routes can take larger batches than the rest of the API.
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
 
   app.use(helmet());
+  configureBodyParsers(app);
   app.enableCors({ origin: process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173', credentials: true });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   app.useGlobalFilters(new GlobalExceptionFilter());

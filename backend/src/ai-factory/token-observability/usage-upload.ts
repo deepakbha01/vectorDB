@@ -96,15 +96,13 @@ export function parseUpload(content: string, fileName: string, projectId: string
       rejections.push({ row, eventId, reason });
       return;
     }
-    const dto = plainToInstance(UsageEventDto, obj);
-    const errors = validateSync(dto, { whitelist: true, forbidNonWhitelisted: true });
-    if (errors.length) {
-      // Name the column as the file does (service_id, not serviceId).
-      const messages = errors.flatMap((e) => Object.values(e.constraints ?? {}).map((m) => (original.has(e.property) ? m.replace(e.property, original.get(e.property)!) : m)));
-      rejections.push({ row, eventId, reason: messages.join('; ') });
+    // Name the column as the file does (service_id, not serviceId).
+    const checked = toEventDto(obj, original);
+    if ('reason' in checked) {
+      rejections.push({ row, eventId, reason: checked.reason });
       return;
     }
-    events.push(dto);
+    events.push(checked.dto);
     eventRows.push(row);
   });
   return { format, events, eventRows, rejections, received: rows.length, ignoredFields: [...ignored] };
@@ -151,3 +149,15 @@ export const TEMPLATE_COLUMNS = [
   'reasoning_tokens', 'cached_input_tokens', 'total_tokens', 'embedding_tokens', 'reranking_tokens', 'context_tokens', 'retrieval_count', 'tool_call_count',
   'llm_call_count', 'latency_ms', 'ttft_ms', 'request_status', 'error_type',
 ];
+
+/**
+ * Validates one event object exactly as the ingest API's global pipe does
+ * (unknown fields refused, identifiers only). `names` maps a property to the
+ * name the source used, so messages speak the caller's language.
+ */
+export function toEventDto(obj: Record<string, unknown>, names: Map<string, string> = new Map()): { dto: UsageEventDto } | { reason: string } {
+  const dto = plainToInstance(UsageEventDto, obj);
+  const errors = validateSync(dto, { whitelist: true, forbidNonWhitelisted: true });
+  if (!errors.length) return { dto };
+  return { reason: errors.flatMap((e) => Object.values(e.constraints ?? {}).map((m) => (names.has(e.property) ? m.replace(e.property, names.get(e.property)!) : m))).join('; ') };
+}

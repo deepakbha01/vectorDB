@@ -130,8 +130,8 @@ export function TokenTrendChart({ points, bucket, onSelect }: { points: Array<{ 
           <XAxis dataKey="bucket" tickFormatter={fmt} stroke={VIZ.axis} tick={AXIS_TICK} tickLine={false} minTickGap={24} />
           <YAxis tickFormatter={compact} tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
           <Tooltip content={<Tip title={fmt} format={full} />} cursor={{ fill: VIZ.hover }} />
-          <Bar dataKey="inputTokens" name="Input" stackId="t" fill={VIZ.series1} stroke={VIZ.surface} strokeWidth={2} maxBarSize={28} />
-          <Bar dataKey="outputTokens" name="Output" stackId="t" fill={VIZ.series2} stroke={VIZ.surface} strokeWidth={2} radius={[4, 4, 0, 0]} maxBarSize={28} />
+          <Bar isAnimationActive={false} dataKey="inputTokens" name="Input" stackId="t" fill={VIZ.series1} stroke={VIZ.surface} strokeWidth={2} maxBarSize={28} />
+          <Bar isAnimationActive={false} dataKey="outputTokens" name="Output" stackId="t" fill={VIZ.series2} stroke={VIZ.surface} strokeWidth={2} radius={[4, 4, 0, 0]} maxBarSize={28} />
         </BarChart>
       </ResponsiveContainer>
     </>
@@ -164,7 +164,7 @@ export function RankedBars({ rows, name, format, onSelect }: { rows: Array<{ key
         <XAxis type="number" tickFormatter={(n: number) => format(n)} tick={AXIS_TICK} stroke={VIZ.axis} tickLine={false} />
         <YAxis type="category" dataKey="label" tick={{ ...AXIS_TICK, fill: VIZ.ink2 }} axisLine={false} tickLine={false} width={150} />
         <Tooltip content={<Tip title={(l) => l} format={format} />} cursor={{ fill: VIZ.hover }} />
-        <Bar dataKey="value" name={name} fill={VIZ.series1} radius={[0, 4, 4, 0]} maxBarSize={18} />
+        <Bar isAnimationActive={false} dataKey="value" name={name} fill={VIZ.series1} radius={[0, 4, 4, 0]} maxBarSize={18} />
       </BarChart>
     </ResponsiveContainer>
   );

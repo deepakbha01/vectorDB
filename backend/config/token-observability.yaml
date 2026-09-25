@@ -53,3 +53,45 @@ observed:
   loopLlmCallsPerTrace: 10
   # Live telemetry older than this counts as stale rather than receiving.
   liveStaleAfterHours: 24
+
+# ---------------------------------------------------------------------------
+# Live telemetry (spec §11). OpenTelemetry spans (OTLP/HTTP JSON) are mapped
+# onto the normalized usage event. Each field lists attribute names to try in
+# order - the first one present wins - so newer and older GenAI semantic
+# convention names both work and new names can be added here without code
+# changes. `span` attributes are read from the span; `resource` attributes
+# from the resource (service.name etc.), and a span attribute of the same
+# field wins. Spans with no operation name are not GenAI calls and are skipped.
+# ---------------------------------------------------------------------------
+otel:
+  span:
+    operationType: [gen_ai.operation.name]
+    provider: [gen_ai.provider.name, gen_ai.system]
+    model: [gen_ai.response.model, gen_ai.request.model]
+    modelVersion: [ai_factory.model_version]
+    inputTokens: [gen_ai.usage.input_tokens, gen_ai.usage.prompt_tokens]
+    outputTokens: [gen_ai.usage.output_tokens, gen_ai.usage.completion_tokens]
+    cachedInputTokens: [gen_ai.usage.cache_read.input_tokens, gen_ai.usage.cache_read_input_tokens, gen_ai.usage.cached_tokens]
+    reasoningTokens: [gen_ai.usage.reasoning.output_tokens, gen_ai.usage.reasoning_tokens]
+    embeddingTokens: [ai_factory.embedding_tokens]
+    rerankingTokens: [ai_factory.reranking_tokens]
+    contextTokens: [ai_factory.context_tokens]
+    retrievalCount: [ai_factory.retrieval_count]
+    ttftMs: [ai_factory.ttft_ms]
+    toolName: [gen_ai.tool.name]
+    agentId: [gen_ai.agent.id, gen_ai.agent.name]
+    sessionId: [gen_ai.conversation.id, session.id]
+    requestId: [ai_factory.request_id]
+    ragStage: [ai_factory.rag_stage]
+    errorType: [error.type]
+    applicationId: [ai_factory.application_id]
+    serviceId: [ai_factory.service_id]
+    workflowId: [ai_factory.workflow_id]
+    tenantId: [ai_factory.tenant_id]
+  resource:
+    serviceId: [service.name]
+    applicationId: [ai_factory.application_id, service.namespace]
+    environment: [deployment.environment.name, deployment.environment]
+    region: [cloud.region]
+    tenantId: [ai_factory.tenant_id]
+    workflowId: [ai_factory.workflow_id]
