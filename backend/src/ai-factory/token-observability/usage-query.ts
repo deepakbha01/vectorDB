@@ -63,6 +63,13 @@ export function growth(current: number, baseline: number): number | null {
   return baseline > 0 ? Math.round(((current - baseline) / baseline) * 1000) / 10 : null;
 }
 
+/** Growth vs the previous window, withheld when that window had too little usage to compare (under 10% of now). */
+export function growthVsBaseline(current: number, baseline: number): { percent: number | null; note: string | null } {
+  if (baseline <= 0) return { percent: null, note: 'no usage in the previous period' };
+  if (baseline < current * 0.1) return { percent: null, note: 'too little usage in the previous period to compare' };
+  return { percent: growth(current, baseline), note: null };
+}
+
 export function withShare<T extends { totalTokens: number }>(rows: T[]): Array<T & { share: number }> {
   const total = rows.reduce((s, r) => s + r.totalTokens, 0);
   return rows.map((r) => ({ ...r, share: total ? Math.round((r.totalTokens / total) * 1000) / 10 : 0 }));

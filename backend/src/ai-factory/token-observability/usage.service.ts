@@ -9,9 +9,9 @@ import { AiUsageEvent, ObservedSource } from './usage-event.entity';
 import { AiTokenEstimate } from './token-estimate.entity';
 import { PricingService } from './pricing.service';
 import { UsageEventBatchDto } from './dto/usage-events.dto';
-import { UsageQueryDto } from './dto/usage-query.dto';
+import { UsageQueryDto, UsageRequestsQueryDto } from './dto/usage-query.dto';
 import { isRejection, normalizeEvent, NormalizedEvent, Rejection, ROLLUP_DIMENSIONS, ROLLUP_MEASURES, rollupDeltas } from './usage-ingest';
-import { buildTrace, growth, previousWindow, resolveFilters, SpanRow, UsageFilters, whereClause, withShare } from './usage-query';
+import { buildTrace, growth, growthVsBaseline, previousWindow, resolveFilters, SpanRow, UsageFilters, whereClause, withShare } from './usage-query';
 import { TelemetryStatus } from './token-observability.types';
 
 const num = (v: unknown) => (v === null || v === undefined ? 0 : Number(v));
@@ -198,7 +198,8 @@ export class UsageService {
         cost: t.events ? t.cost : null,
         costIncomplete: req.unpricedEvents > 0,
         topConsumer: top[0] ? { application: top[0].applicationId, service: top[0].serviceId, totalTokens: top[0].totalTokens } : null,
-        growthVsBaselinePercent: growth(t.totalTokens, base.totalTokens),
+        growthVsBaselinePercent: growthVsBaseline(t.totalTokens, base.totalTokens).percent,
+        growthNote: growthVsBaseline(t.totalTokens, base.totalTokens).note,
         baselineTotalTokens: base.totalTokens,
       },
     };
@@ -370,6 +371,55 @@ export class UsageService {
   private async loopThreshold(projectId: string): Promise<number> {
     const e = await this.estimates.findOne({ where: { project: { id: projectId } }, order: { version: 'DESC' } });
     return e?.result.agent?.llmCallsPerTask ?? this.cfg.getTokenObservabilityCatalogue().observed.loopLlmCallsPerTrace;
+  }
+
+  /** GET requests - drill-down from any aggregate to the requests behind it (spec §19). */
+  async requestList(projectId: string, requester: AuthenticatedUser, q: UsageRequestsQueryDto) {
+    const f = await this.scope(projectId, requester, q);
+    const w = whereClause(projectId, f, 'events', 'e');
+    const params = [...w.params];
+    let extra = '';
+    if (q.agent) {
+      params.push(q.agent);
+      extra = ` AND e."agentId" = $${params.length}`;
+    }
+    const order = { recent: 'started DESC', tokens: '"totalTokens" DESC, started DESC', cost: 'cost DESC NULLS LAST, started DESC' }[q.sort ?? 'recent'];
+    const limit = q.limit ?? 50;
+    params.push(limit + 1, q.offset ?? 0);
+    const rows = await this.sql(
+      `SELECT COALESCE(e."requestId", e."traceId", e."eventId") AS request, MIN(e."traceId") AS "traceId", MIN(e."timestamp") AS started,
+              MAX(e."applicationId") AS "applicationId", MAX(e."serviceId") AS "serviceId", MAX(e."workflowId") AS "workflowId", MAX(e."agentId") AS "agentId",
+              STRING_AGG(DISTINCT e."model", ', ') AS models, COUNT(*) AS spans, SUM(e."inputTokens") AS "inputTokens", SUM(e."outputTokens") AS "outputTokens", SUM(e."totalTokens") AS "totalTokens",
+              SUM(e."embeddingTokens") AS "embeddingTokens", SUM(e."llmCallCount") AS "llmCalls", SUM(e."toolCallCount") AS "toolCalls", SUM(e."estimatedTotalCost") AS cost,
+              BOOL_OR(e."estimatedTotalCost" IS NULL AND (e."totalTokens" + e."embeddingTokens" + e."rerankingTokens") > 0) AS "costIncomplete", BOOL_OR(e."requestStatus" = 'error') AS failed, MAX(e."latencyMs") AS "maxLatencyMs"
+         FROM "ai_usage_events" e WHERE ${w.sql}${extra} GROUP BY 1 ORDER BY ${order} LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params,
+    );
+    const numeric = ['spans', 'inputTokens', 'outputTokens', 'totalTokens', 'embeddingTokens', 'llmCalls', 'toolCalls'];
+    return {
+      ...this.range(f),
+      sort: q.sort ?? 'recent',
+      offset: q.offset ?? 0,
+      hasMore: rows.length > limit,
+      rows: rows.slice(0, limit).map((r) => ({ ...r, ...Object.fromEntries(numeric.map((k) => [k, num(r[k])])), cost: numOrNull(r.cost), maxLatencyMs: numOrNull(r.maxLatencyMs), started: new Date(r.started as string).toISOString() })),
+    };
+  }
+
+  /** GET dimensions - the values each filter can take in the range (for the filter bar). */
+  async dimensions(projectId: string, requester: AuthenticatedUser, q: UsageQueryDto) {
+    const f = await this.scope(projectId, requester, q);
+    // Every filter but the dimension itself, so a chosen value never hides its alternatives.
+    const cols = { environment: 'environment', application: 'applicationId', service: 'serviceId', workflow: 'workflowId', provider: 'provider', model: 'model', tenant: 'tenantId', agent: 'agentId' } as const;
+    const out: Record<string, string[]> = {};
+    await Promise.all(
+      (Object.entries(cols) as Array<[keyof typeof cols, string]>).map(async ([name, col]) => {
+        const own = { ...f, dims: Object.fromEntries(Object.entries(f.dims).filter(([k]) => k !== name)) };
+        const w = whereClause(projectId, own, 'rollups', 'r');
+        const rows = await this.sql<{ v: string }>(`SELECT DISTINCT r."${col}" AS v FROM "ai_usage_rollups" r WHERE ${w.sql} AND r."${col}" <> '' ORDER BY 1 LIMIT 200`, w.params);
+        out[name] = rows.map((r) => r.v);
+      }),
+    );
+    return { ...this.range(f), values: out };
   }
 
   /** Observed figures for the central state (spec §16): last 30 days, live if any, else simulated. */

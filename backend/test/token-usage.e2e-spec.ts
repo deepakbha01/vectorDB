@@ -153,6 +153,24 @@ describe('usage ingestion and queries (Postgres)', () => {
     expect(t.totals).toEqual(expect.objectContaining({ llmCalls: 2, toolCalls: 1, totalTokens: 7050 }));
   });
 
+  it('drills down to the requests behind an aggregate, newest first or heaviest first', async () => {
+    const list = await usage.requestList(projectId, admin, { ...range, service: 'claims-api', sort: 'tokens', limit: 2 });
+    expect(list.rows).toHaveLength(2);
+    expect(list.hasMore).toBe(true);
+    expect(list.rows[0]).toEqual(expect.objectContaining({ serviceId: 'claims-api', agentId: 'claims-agent', totalTokens: 7050, llmCalls: 2, toolCalls: 1, embeddingTokens: 30, failed: false, costIncomplete: false }));
+    const page2 = await usage.requestList(projectId, admin, { ...range, service: 'claims-api', limit: 2, offset: 2 });
+    expect(page2.rows).toHaveLength(1);
+    expect(page2.hasMore).toBe(false);
+  });
+
+  it('lists the values each filter can take, ignoring the selection made in that same filter', async () => {
+    const d = await usage.dimensions(projectId, admin, { ...range, service: 'billing-api' });
+    expect(d.values.service).toEqual(['billing-api', 'claims-api']);
+    expect(d.values.agent).toEqual(['claims-agent']);
+    expect(d.values.model).toEqual(expect.arrayContaining(['mid', 'text-embedding-3-small']));
+    expect(d.values.tenant).toEqual([]);
+  });
+
   it('keeps simulated usage separate from live', async () => {
     await usage.ingestForProject(projectId, batch([ev({ eventId: 'sim-1', inputTokens: 99_000, outputTokens: 1000 })], 'simulated'), now);
     expect((await usage.summary(projectId, admin, range)).cards.totalTokens).toBe(4 * 7050);

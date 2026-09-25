@@ -1,9 +1,11 @@
 import { ReactNode, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { apiClient, extractErrorMessage, Project } from '../api/client';
 import { useFeatures } from '../api/features';
 import { EvidenceType } from '../api/aiFactory';
-import { TokenEstimate, TokenEstimatePreview, TokenEstimateResult } from '../api/tokenObservability';
+import { FILTER_NAMES, ObservedMode, TokenEstimate, TokenEstimatePreview, TokenEstimateResult, UsageFilters } from '../api/tokenObservability';
+import { DashboardView, ObservedDashboard, rangeFor } from '../components/token/ObservedDashboard';
+import { download, toCsv } from '../components/token/csv';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
@@ -26,12 +28,37 @@ const money = (n: number | null) => (n === null ? '—' : `$${n.toLocaleString(u
 export function TokenObservabilityPage() {
   const { id } = useParams<{ id: string }>();
   const features = useFeatures();
+  const [params, setParams] = useSearchParams();
   const [project, setProject] = useState<Project | null>(null);
   const [latest, setLatest] = useState<TokenEstimate | null>(null);
   const [preview, setPreview] = useState<TokenEstimatePreview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Mode, view and filters live in the URL so any drill-down can be bookmarked or shared.
+  const mode = (['estimated', 'simulated', 'live'].includes(params.get('mode') ?? '') ? params.get('mode') : 'estimated') as 'estimated' | ObservedMode;
+  const view: DashboardView = params.get('view') === 'executive' ? 'executive' : 'architect';
+  const rangeKey = params.get('range') ?? '30d';
+  const fallback = rangeFor(rangeKey === 'custom' ? '30d' : rangeKey);
+  const filters: UsageFilters = {
+    mode: mode === 'estimated' ? 'live' : mode,
+    from: params.get('from') ?? fallback.from,
+    to: params.get('to') ?? fallback.to,
+    dims: Object.fromEntries(FILTER_NAMES.filter((k) => params.get(k)).map((k) => [k, params.get(k)!])),
+  };
+  const update = (patch: Record<string, string | undefined>) => {
+    const next = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(patch)) {
+      if (v) next.set(k, v);
+      else next.delete(k);
+    }
+    setParams(next, { replace: true });
+  };
+  const onFilters = (f: UsageFilters, range?: string) => {
+    const r = range ?? rangeKey;
+    update({ range: r, from: r === 'custom' ? f.from : undefined, to: r === 'custom' ? f.to : undefined, ...Object.fromEntries(FILTER_NAMES.map((k) => [k, f.dims[k]])) });
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -80,24 +107,51 @@ export function TokenObservabilityPage() {
             <p style={{ fontSize: 13, color: '#5a6472', marginTop: -8, maxWidth: 1000 }}>
               How many tokens this AI solution consumes, where, and what they cost - projected from <Link to={`/projects/${project.id}/inference`}>Inference</Link>,{' '}
               <Link to={`/projects/${project.id}/model-selection`}>Model Selection</Link>, <Link to={`/projects/${project.id}/rag-agent`}>RAG / Agent</Link> and{' '}
-              <Link to={`/projects/${project.id}/data-pipeline`}>Data &amp; Embeddings</Link>, priced from the versioned price table.
+              <Link to={`/projects/${project.id}/data-pipeline`}>Data &amp; Embeddings</Link>, and measured from usage events once they arrive.
             </p>
-            <div className="card" style={{ maxWidth: 1150, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', borderLeft: '4px solid #2f6fde' }}>
-              <span className="status-pill" style={{ background: '#eaf1fd', color: '#2f6fde' }}>
-                Mode: Estimated
-              </span>
-              <span style={{ fontSize: 13, color: '#5a6472' }}>No live telemetry - observed usage appears only once real usage events are received. Nothing below is measured.</span>
-            </div>
-            {previewError && <div className="card" style={{ maxWidth: 900, color: '#9a6700', marginTop: 12 }}>{previewError}</div>}
-            {preview && (
-              <div style={{ marginTop: 12 }}>
-                <button className="primary-btn" type="button" onClick={save} disabled={saving}>
-                  {saving ? 'Saving...' : latest ? 'Re-estimate (new version)' : 'Save estimate'}
-                </button>
-                {error && <div className="error-text">{error}</div>}
+            {/* Mode banner (spec §4, §19): estimated and observed figures are never shown as one. */}
+            <div className="card" style={{ maxWidth: 1250, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', borderLeft: '4px solid #2f5fd0' }}>
+              <div role="tablist" aria-label="Mode" style={{ display: 'flex', border: '1px solid #dfe3e8', borderRadius: 6, overflow: 'hidden' }}>
+                {(Object.keys(MODES) as Array<keyof typeof MODES>).map((m) => (
+                  <button
+                    key={m}
+                    role="tab"
+                    aria-selected={mode === m}
+                    type="button"
+                    onClick={() => update({ mode: m })}
+                    style={{ padding: '6px 12px', border: 'none', fontSize: 13, background: mode === m ? '#2f5fd0' : '#fff', color: mode === m ? '#fff' : '#1b2028' }}
+                  >
+                    {MODES[m].label}
+                  </button>
+                ))}
               </div>
+              <span style={{ fontSize: 13, color: '#5a6472', flex: 1 }}>{MODES[mode].note}</span>
+              <select value={view} onChange={(e) => update({ view: e.target.value === 'executive' ? 'executive' : undefined })} aria-label="View" style={{ fontSize: 13 }}>
+                <option value="architect">Technical architect view</option>
+                <option value="executive">Executive view</option>
+              </select>
+            </div>
+            {mode === 'estimated' ? (
+              <>
+                {previewError && <div className="card" style={{ maxWidth: 900, color: '#9a6700', marginTop: 12 }}>{previewError}</div>}
+                {preview && (
+                  <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <button className="primary-btn" type="button" onClick={save} disabled={saving}>
+                      {saving ? 'Saving...' : latest ? 'Re-estimate (new version)' : 'Save estimate'}
+                    </button>
+                    {shown && (
+                      <button type="button" className="primary-btn" style={{ background: '#fff', color: '#2f5fd0', border: '1px solid #2f5fd0' }} onClick={() => exportEstimate(shown.r, project.name)}>
+                        Export CSV
+                      </button>
+                    )}
+                    {error && <div className="error-text">{error}</div>}
+                  </div>
+                )}
+                {shown && <EstimateView r={shown.r} title={shown.title} sources={shown.sources} view={view} />}
+              </>
+            ) : (
+              <ObservedDashboard projectId={project.id} filters={filters} rangeKey={rangeKey} view={view} onChange={onFilters} />
             )}
-            {shown && <EstimateView r={shown.r} title={shown.title} sources={shown.sources} />}
           </>
         )}
       </div>
@@ -105,7 +159,29 @@ export function TokenObservabilityPage() {
   );
 }
 
-function EstimateView({ r, title, sources }: { r: TokenEstimateResult; title: string; sources: Record<string, { source: string; detail: string }> }) {
+const MODES = {
+  estimated: { label: 'Estimated', note: 'Projected from the design and the price table - nothing here is measured.' },
+  simulated: { label: 'Simulated', note: 'Measured in load tests or benchmarks - not production usage.' },
+  live: { label: 'Live telemetry', note: 'Production usage from received usage events.' },
+} as const;
+
+function exportEstimate(r: TokenEstimateResult, projectName: string) {
+  const csv = toCsv([
+    { title: `Token Observability - estimated usage - ${projectName}`, headers: ['Scope', 'Rules version'], rows: [[r.scope.summary, r.rulesVersion]] },
+    {
+      title: 'Per request',
+      headers: ['Input tokens', 'Output tokens', 'Total tokens', 'Context tokens', 'Embedding tokens', 'Reranking tokens', 'LLM calls', 'Tool calls'],
+      rows: [[r.perRequest.inputTokens, r.perRequest.outputTokens, r.perRequest.totalTokens, r.perRequest.contextTokens, r.perRequest.embeddingTokens, r.perRequest.rerankingTokens, r.perRequest.llmCalls, r.perRequest.toolCalls]],
+    },
+    { title: 'Final LLM call make-up', headers: ['Part', 'Tokens', 'Evidence', 'Source'], rows: r.perRequest.input.map((l) => [l.label, l.tokens, l.evidenceType, l.source]) },
+    { title: 'Monthly', headers: ['Requests', 'Input', 'Output', 'Total', 'Embedding', 'Reranking', 'Basis'], rows: [[r.monthly.requests, r.monthly.inputTokens, r.monthly.outputTokens, r.monthly.totalTokens, r.monthly.embeddingTokens, r.monthly.rerankingTokens, r.monthly.basis]] },
+    { title: 'Cost (monthly)', headers: ['Item', 'Tokens', 'Price per 1M', 'USD', 'Price used'], rows: [...r.cost.lines.map((l) => [l.item, l.tokens, l.pricePer1M, l.usd, l.price]), ['Total (priced lines)', null, null, r.cost.monthlyUsd, r.cost.note]] },
+  ]);
+  download(`token-estimate-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+}
+
+function EstimateView({ r, title, sources, view }: { r: TokenEstimateResult; title: string; sources: Record<string, { source: string; detail: string }>; view: DashboardView }) {
+  const technical = view === 'architect';
   const top = [...r.perRequest.input].sort((a, b) => b.tokens - a.tokens)[0];
   const cards: Array<[string, string, string?]> = [
     ['Total tokens / month', compact(r.monthly.totalTokens), 'estimated'],
@@ -114,7 +190,7 @@ function EstimateView({ r, title, sources }: { r: TokenEstimateResult; title: st
     ['Requests / month', compact(r.monthly.requests), 'estimated'],
     ['Tokens / request', tokens(r.perRequest.totalTokens), `${r.perRequest.llmCalls} LLM call(s)`],
     ['Estimated cost / month', money(r.cost.monthlyUsd), r.cost.perRequestUsd !== null ? `${money(r.cost.perRequestUsd)} / request` : undefined],
-    ['Top token consumer', top ? top.label.split(':')[0] : '—', top ? `${tokens(top.tokens)} tokens / request` : undefined],
+    ['Largest part of the prompt', top ? top.label.split(':')[0] : '—', top ? `${tokens(top.tokens)} tokens / request (per-service consumers need observed usage)` : undefined],
     ['Growth vs baseline', '—', 'needs observed usage'],
   ];
   return (
@@ -141,14 +217,14 @@ function EstimateView({ r, title, sources }: { r: TokenEstimateResult; title: st
         </div>
       )}
 
-      {r.perRequest.input.length > 0 && (
+      {technical && r.perRequest.input.length > 0 && (
         <div className="card" style={{ overflowX: 'auto' }}>
           <div className="metric-label">What goes into the final LLM call (per request)</div>
           <Table headers={['Part', 'Tokens', 'Evidence', 'Source']} rows={r.perRequest.input.map((l) => [l.label, tokens(l.tokens), evidence(l.evidenceType), <span key="s" style={{ fontSize: 12, color: '#5a6472' }}>{l.source}</span>])} />
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
+      <div style={{ display: technical ? 'grid' : 'none', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
         {r.rag && (
           <div className="card">
             <div className="metric-label">RAG token breakdown (per request)</div>
@@ -195,7 +271,7 @@ function EstimateView({ r, title, sources }: { r: TokenEstimateResult; title: st
         </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
+      <div style={{ display: technical ? 'grid' : 'none', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
         {r.assumptions.length > 0 && (
           <div className="card">
             <div className="metric-label">Assumptions and cross-checks</div>

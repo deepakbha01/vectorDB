@@ -1,4 +1,5 @@
-import { IsIn, IsISO8601, IsOptional, IsString, Length, Matches } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsIn, IsInt, IsISO8601, IsOptional, IsString, Length, Matches, Max, Min } from 'class-validator';
 
 const ID = /^[A-Za-z0-9_.:@/+=#-]+$/;
 
@@ -31,4 +32,27 @@ export class UsageQueryDto {
   @IsOptional()
   @IsIn(['hour', 'day'])
   bucket?: 'hour' | 'day';
+}
+
+/** Drill-down to individual requests: newest first, or the heaviest (hotspots). */
+export class UsageRequestsQueryDto extends UsageQueryDto {
+  @IsOptional()
+  @IsIn(['recent', 'tokens', 'cost'])
+  sort?: 'recent' | 'tokens' | 'cost';
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100_000)
+  offset?: number;
+
+  @IsOptional() @IsString() @Length(1, 200) @Matches(ID) agent?: string;
 }

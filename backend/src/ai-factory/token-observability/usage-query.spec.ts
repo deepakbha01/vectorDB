@@ -1,5 +1,5 @@
 import { ValidationPipe } from '@nestjs/common';
-import { buildTrace, growth, previousWindow, resolveFilters, SpanRow, UsageFilters, whereClause, withShare } from './usage-query';
+import { buildTrace, growth, growthVsBaseline, previousWindow, resolveFilters, SpanRow, UsageFilters, whereClause, withShare } from './usage-query';
 import { UsageQueryDto } from './dto/usage-query.dto';
 import { UsageEventBatchDto } from './dto/usage-events.dto';
 import { TokenObservabilityController } from './token-observability.controller';
@@ -151,10 +151,18 @@ describe('TokenObservabilityController RBAC', () => {
   });
 
   it('lets every project member read - project access is still checked per request', () => {
-    for (const m of ['summary', 'tokens', 'trends', 'services', 'models', 'agents', 'rag', 'cost', 'trace', 'preview', 'latest', 'prices'] as const) expect(roles(m)).toBeUndefined();
+    for (const m of ['summary', 'tokens', 'trends', 'services', 'models', 'agents', 'rag', 'cost', 'trace', 'requests', 'dimensions', 'preview', 'latest', 'prices'] as const) expect(roles(m)).toBeUndefined();
   });
 
   it('puts the feature-flag guard first, so a disabled server reveals nothing', () => {
     expect(Reflect.getMetadata('__guards__', TokenObservabilityController)[0]).toBe(TokenObservabilityEnabledGuard);
+  });
+});
+
+describe('growthVsBaseline', () => {
+  it('withholds growth when the previous period had too little usage to compare', () => {
+    expect(growthVsBaseline(3_300_000, 27_000)).toEqual({ percent: null, note: 'too little usage in the previous period to compare' });
+    expect(growthVsBaseline(100, 0)).toEqual({ percent: null, note: 'no usage in the previous period' });
+    expect(growthVsBaseline(150, 100)).toEqual({ percent: 50, note: null });
   });
 });

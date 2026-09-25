@@ -12,7 +12,7 @@ import { PricingService } from './pricing.service';
 import { CreateModelPriceDto } from './dto/create-model-price.dto';
 import { UsageService } from './usage.service';
 import { UsageEventBatchDto } from './dto/usage-events.dto';
-import { UsageQueryDto } from './dto/usage-query.dto';
+import { UsageQueryDto, UsageRequestsQueryDto } from './dto/usage-query.dto';
 
 const TRACE_ID = /^[A-Za-z0-9_.:@/+=#-]{1,200}$/;
 
@@ -109,6 +109,16 @@ export class TokenObservabilityController {
   @Get('cost')
   cost(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Query() q: UsageQueryDto) {
     return this.usage.cost(projectId, user, q);
+  }
+
+  @Get('requests')
+  requests(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Query() q: UsageRequestsQueryDto) {
+    return this.usage.requestList(projectId, user, q);
+  }
+
+  @Get('dimensions')
+  dimensions(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Query() q: UsageQueryDto) {
+    return this.usage.dimensions(projectId, user, q);
   }
 
   @Get('traces/:traceId')
