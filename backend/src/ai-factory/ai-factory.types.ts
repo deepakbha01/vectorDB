@@ -23,7 +23,8 @@ export type PhaseKey =
   | 'performance_benchmark'
   | 'finops'
   | 'operations_model'
-  | 'final_recommendation';
+  | 'final_recommendation'
+  | 'token_observability';
 
 export type DependencyKind = 'hard' | 'advisory';
 
@@ -192,6 +193,8 @@ export interface AssessmentState {
   index: StateSection;
   model: StateSection;
   inference: StateSection;
+  /** Spec: Token Observability §16 - summary follows TokenObservabilityState. */
+  tokenObservability: StateSection;
   infrastructure: StateSection;
   rag: StateSection;
   security: StateSection;

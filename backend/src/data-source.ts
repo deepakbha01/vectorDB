@@ -26,6 +26,10 @@ import { AiPerformanceAssessment } from './ai-factory/performance/performance.en
 import { AiFinopsAssessment } from './ai-factory/finops/finops.entity';
 import { AiOperationsModel } from './ai-factory/operations/operations.entity';
 import { AiFinalRecommendation } from './ai-factory/final/final.entity';
+import { AiTokenEstimate } from './ai-factory/token-observability/token-estimate.entity';
+import { AiModelPrice } from './ai-factory/token-observability/model-price.entity';
+import { AiUsageEvent } from './ai-factory/token-observability/usage-event.entity';
+import { AiUsageRollup } from './ai-factory/token-observability/usage-rollup.entity';
 
 config();
 
@@ -75,6 +79,10 @@ export const AppDataSource = new DataSource({
     AiFinopsAssessment,
     AiOperationsModel,
     AiFinalRecommendation,
+    AiTokenEstimate,
+    AiModelPrice,
+    AiUsageEvent,
+    AiUsageRollup,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,

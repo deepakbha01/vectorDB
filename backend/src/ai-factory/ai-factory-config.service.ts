@@ -13,6 +13,7 @@ import { SecurityCatalogue } from './security/security.types';
 import { PerformanceCatalogue } from './performance/performance.types';
 import { FinopsCatalogue } from './finops/finops.types';
 import { OperationsCatalogue } from './operations/operations.types';
+import { TokenObservabilityCatalogue } from './token-observability/token-observability.types';
 
 /**
  * Loads config/ai-factory.yaml (dependency graph, parameter impact map,
@@ -23,7 +24,8 @@ import { OperationsCatalogue } from './operations/operations.types';
  * config/security-governance.yaml (policy rules and control areas) and
  * config/performance.yaml (benchmark metrics and assumed targets) and
  * config/finops.yaml (directional unit rates) and
- * config/operations.yaml (availability, recovery and operational-load rules). Separate from
+ * config/operations.yaml (availability, recovery and operational-load rules) and
+ * config/token-observability.yaml (pricing treatment, estimation assumptions). Separate from
  * PlatformConfigService so the vector engines' configuration is untouched.
  */
 @Injectable()
@@ -37,6 +39,7 @@ export class AiFactoryConfigService implements OnModuleInit {
   private performance: PerformanceCatalogue = {} as PerformanceCatalogue;
   private finops: FinopsCatalogue = {} as FinopsCatalogue;
   private operations: OperationsCatalogue = {} as OperationsCatalogue;
+  private tokenObservability: TokenObservabilityCatalogue = {} as TokenObservabilityCatalogue;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -59,6 +62,8 @@ export class AiFactoryConfigService implements OnModuleInit {
     this.finops = yaml.load(fs.readFileSync(finopsPath, 'utf8')) as FinopsCatalogue;
     const operationsPath = this.config.get<string>('AI_FACTORY_OPERATIONS_CONFIG_PATH') ?? './config/operations.yaml';
     this.operations = yaml.load(fs.readFileSync(operationsPath, 'utf8')) as OperationsCatalogue;
+    const tokenPath = this.config.get<string>('TOKEN_OBSERVABILITY_CONFIG_PATH') ?? './config/token-observability.yaml';
+    this.tokenObservability = yaml.load(fs.readFileSync(tokenPath, 'utf8')) as TokenObservabilityCatalogue;
   }
 
   /** Test seams. */
@@ -128,6 +133,14 @@ export class AiFactoryConfigService implements OnModuleInit {
 
   getOperationsCatalogue(): OperationsCatalogue {
     return this.operations;
+  }
+
+  setTokenObservabilityCatalogue(tokenObservability: TokenObservabilityCatalogue) {
+    this.tokenObservability = tokenObservability;
+  }
+
+  getTokenObservabilityCatalogue(): TokenObservabilityCatalogue {
+    return this.tokenObservability;
   }
 
   getIndexEligibilityRules(): IndexEligibilityRules {

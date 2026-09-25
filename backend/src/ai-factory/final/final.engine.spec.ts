@@ -19,6 +19,7 @@ const state = (o: Partial<Record<keyof AssessmentState, Record<string, unknown>>
     index: { index: 'hnsw' },
     model: { primary: 'Llama 3.3 70B', secondary: 'Qwen2.5 72B', fallback: 'Qwen2.5 7B' },
     inference: { servingRuntime: 'vLLM on Kubernetes', recommended: '9 × H200' },
+    tokenObservability: {},
     infrastructure: { deploymentModel: 'Single target: everything on On-premises.', placements: { 'Inference serving': 'On-premises - Kubernetes' } },
     rag: { scope: 'RAG + agent: hybrid; no reranking', decisions: { Reranking: 'No reranking' } },
     security: { overall: 'Approved with conditions', validation: 'pass_with_conditions' },

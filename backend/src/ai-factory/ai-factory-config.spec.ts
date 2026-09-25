@@ -40,9 +40,9 @@ describe('config/ai-factory.yaml', () => {
     }
   });
 
-  it('defines the 13 guided steps in order, each backed only by known phases', () => {
+  it('defines the 14 guided steps in order, each backed only by known phases', () => {
     const steps = cfg.getSteps();
-    expect(steps.map((s) => s.number)).toEqual(Array.from({ length: 13 }, (_, i) => i + 1));
+    expect(steps.map((s) => s.number)).toEqual(Array.from({ length: 14 }, (_, i) => i + 1));
     for (const s of steps) for (const p of s.phases) expect(keys).toContain(p);
     for (const s of steps.filter((x) => x.coverage !== 'full')) expect(s.plannedWave).toBeGreaterThan(1);
   });

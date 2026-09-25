@@ -44,6 +44,14 @@ import { OperationsModelController } from './operations/operations.controller';
 import { AiFinalRecommendation } from './final/final.entity';
 import { FinalRecommendationService } from './final/final.service';
 import { FinalRecommendationController } from './final/final.controller';
+import { AiTokenEstimate } from './token-observability/token-estimate.entity';
+import { TokenObservabilityService } from './token-observability/token-observability.service';
+import { TokenObservabilityController } from './token-observability/token-observability.controller';
+import { TokenObservabilityEnabledGuard } from './token-observability/token-observability-enabled.guard';
+import { AiModelPrice } from './token-observability/model-price.entity';
+import { AiUsageEvent } from './token-observability/usage-event.entity';
+import { AiUsageRollup } from './token-observability/usage-rollup.entity';
+import { PricingService } from './token-observability/pricing.service';
 import { IngestionRun } from '../ingestion/ingestion-run.entity';
 import { InferenceModule } from '../inference/inference.module';
 
@@ -52,13 +60,15 @@ import { InferenceModule } from '../inference/inference.module';
  * Selection (Wave 3), Inference Architecture (Wave 4), Infrastructure
  * (Wave 5), RAG / Agent architecture (Wave 6), Security & Governance
  * (Wave 7), Performance & Benchmark (Wave 8), Cost & FinOps (Wave 9), the
- * Operations model (Wave 10) and the Final Recommendation (Wave 11). Registers repositories for the existing
+ * Operations model (Wave 10), the Final Recommendation (Wave 11) and Token
+ * Observability (Wave 12). Registers repositories for the existing
  * deliverable entities for READ access only; the only tables this module
  * writes are ai_factory_state_snapshots, ai_workload_profiles,
  * ai_model_selections, ai_inference_architectures,
  * ai_infrastructure_designs, ai_rag_agent_designs, ai_security_assessments,
- * ai_performance_assessments, ai_finops_assessments, ai_operations_models and
- * ai_final_recommendations.
+ * ai_performance_assessments, ai_finops_assessments, ai_operations_models,
+ * ai_final_recommendations, ai_token_estimates, ai_model_prices,
+ * ai_usage_events and ai_usage_rollups.
  */
 @Module({
   imports: [
@@ -83,12 +93,16 @@ import { InferenceModule } from '../inference/inference.module';
       AiFinopsAssessment,
       AiOperationsModel,
       AiFinalRecommendation,
+      AiTokenEstimate,
+      AiModelPrice,
+      AiUsageEvent,
+      AiUsageRollup,
     ]),
     ProjectsModule,
     InferenceModule,
   ],
-  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService, InferenceArchitectureService, InfrastructureDesignService, RagAgentDesignService, SecurityAssessmentService, PerformanceAssessmentService, FinopsAssessmentService, OperationsModelService, FinalRecommendationService],
-  controllers: [AiFactoryController, WorkloadProfileController, ModelSelectionController, InferenceArchitectureController, InfrastructureDesignController, RagAgentDesignController, SecurityAssessmentController, PerformanceAssessmentController, FinopsAssessmentController, OperationsModelController, FinalRecommendationController],
+  providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService, InferenceArchitectureService, InfrastructureDesignService, RagAgentDesignService, SecurityAssessmentService, PerformanceAssessmentService, FinopsAssessmentService, OperationsModelService, FinalRecommendationService, TokenObservabilityEnabledGuard, TokenObservabilityService, PricingService],
+  controllers: [AiFactoryController, WorkloadProfileController, ModelSelectionController, InferenceArchitectureController, InfrastructureDesignController, RagAgentDesignController, SecurityAssessmentController, PerformanceAssessmentController, FinopsAssessmentController, OperationsModelController, FinalRecommendationController, TokenObservabilityController],
   exports: [AiFactoryConfigService],
 })
 export class AiFactoryModule {}

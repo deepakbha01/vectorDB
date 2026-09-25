@@ -3,9 +3,11 @@ import { apiClient } from './client';
 
 export interface FeatureFlags {
   aiFactory: boolean;
+  /** Token Observability (Wave 12) - on only together with aiFactory. */
+  tokenObservability: boolean;
 }
 
-const OFF: FeatureFlags = { aiFactory: false };
+const OFF: FeatureFlags = { aiFactory: false, tokenObservability: false };
 let cached: Promise<FeatureFlags> | null = null;
 
 /** Fetched once per page load; any failure falls back to every flag off (the existing workflow). */

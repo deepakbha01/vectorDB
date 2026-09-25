@@ -25,6 +25,8 @@ import { AiPerformanceAssessment } from './performance/performance.entity';
 import { AiFinopsAssessment } from './finops/finops.entity';
 import { AiOperationsModel } from './operations/operations.entity';
 import { AiFinalRecommendation } from './final/final.entity';
+import { AiTokenEstimate } from './token-observability/token-estimate.entity';
+import { TokenObservabilityState } from './token-observability/token-observability.types';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 import { ChunkingStrategy } from '../chunking/enums/chunking-strategy.enum';
 import { EmbeddingModelFacts } from './eligibility/eligibility.rules';
@@ -79,6 +81,7 @@ export class AiFactoryService {
     @InjectRepository(AiFinopsAssessment) private readonly finopsAssessments: Repository<AiFinopsAssessment>,
     @InjectRepository(AiOperationsModel) private readonly operationsModels: Repository<AiOperationsModel>,
     @InjectRepository(AiFinalRecommendation) private readonly finalRecommendations: Repository<AiFinalRecommendation>,
+    @InjectRepository(AiTokenEstimate) private readonly tokenEstimates: Repository<AiTokenEstimate>,
     private readonly platformConfig: PlatformConfigService,
   ) {}
 
@@ -103,6 +106,7 @@ export class AiFactoryService {
       finops: this.finopsAssessments,
       operations_model: this.operationsModels,
       final_recommendation: this.finalRecommendations,
+      token_observability: this.tokenEstimates,
     }[phase];
   }
 
@@ -306,7 +310,7 @@ export class AiFactoryService {
     };
     const later = (wave: number): StateSection => ({ status: 'not_yet_available', coverage: 'none', source: null, summary: {}, plannedWave: wave });
 
-    const [d, p, i, adr, dep, opt, cap, inf, wp, ms, ia, infra, ra, sec, perf, fin, ops, fr] = await Promise.all([
+    const [d, p, i, adr, dep, opt, cap, inf, wp, ms, ia, infra, ra, sec, perf, fin, ops, fr, te] = await Promise.all([
       this.latest<DiscoveryAssessment>('discovery', project.id),
       this.latest<DataPipelineDesign>('data_embeddings', project.id),
       this.latest<IndexDesign>('index_design', project.id),
@@ -325,6 +329,7 @@ export class AiFactoryService {
       this.latest<AiFinopsAssessment>('finops', project.id),
       this.latest<AiOperationsModel>('operations_model', project.id),
       this.latest<AiFinalRecommendation>('final_recommendation', project.id),
+      this.latest<AiTokenEstimate>('token_observability', project.id),
     ]);
     const profileValue = (k: keyof AiWorkloadProfile['inputs']) => wp?.inputs[k]?.value ?? null;
     const wpResult = wp?.result;
@@ -380,6 +385,8 @@ export class AiFactoryService {
             architectureVersion: ia?.version ?? null,
           }
         : {}),
+      // Spec (Token Observability) §16. Observed figures stay null until usage events exist - never filled from the estimate.
+      tokenObservability: section('token_observability', 'partial', te ? tokenState(te) : {}),
       infrastructure: infra
         ? section('infrastructure_design', 'full', {
             deploymentModel: infra.result.deploymentModel.summary,
@@ -508,4 +515,26 @@ export function compareStates(from: number, a: AssessmentState, to: number, b: A
       };
     }),
   };
+}
+
+/** Spec (Token Observability) §16 summary from the latest estimate. Observed values are added once usage events are ingested. */
+export function tokenState(te: AiTokenEstimate): Record<string, unknown> {
+  const r = te.result;
+  const s: TokenObservabilityState = {
+    mode: 'estimated',
+    expectedTokensPerRequest: r.perRequest.totalTokens,
+    expectedMonthlyTokens: r.monthly.totalTokens,
+    observedInputTokens: null,
+    observedOutputTokens: null,
+    observedTotalTokens: null,
+    embeddingTokens: r.monthly.embeddingTokens,
+    contextTokens: r.perRequest.contextTokens,
+    llmCallsPerRequest: r.perRequest.llmCalls,
+    estimatedCost: r.cost.monthlyUsd,
+    actualCost: null,
+    topConsumers: [],
+    alerts: 0,
+    telemetryStatus: 'no_telemetry',
+  };
+  return { ...s };
 }

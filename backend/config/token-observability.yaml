@@ -1,0 +1,45 @@
+# Token Observability (AI Factory Wave 12) - pricing treatment and estimation
+# assumptions. Read only by the ai-factory module (AiFactoryConfigService).
+#
+# Prices are NOT duplicated here. At startup the versioned price table
+# (ai_model_prices) is synced from:
+#   - inference.yaml  managedApiTiers   -> provider "managed_api_tier", input / output
+#   - embeddings.yaml providers.models  -> provider / model id, embedding
+#   - `pricing.prices` below             -> anything else (named provider models,
+#                                           cached-input, reasoning, reranking)
+# A changed figure closes the old row and opens a new one, so usage already
+# recorded keeps the cost it was given (spec §13).
+
+rulesVersion: token-observability-2026.09-1
+
+pricing:
+  currency: USD
+  # Effective date given to a catalogue price the first time it is seeded.
+  # Later changes take effect from the moment the server picks them up.
+  catalogueEffectiveFrom: "2026-06-01"
+  # When a model has no explicit cached_input price, cached input tokens are
+  # charged at input price x this factor. 1.0 = no cache discount assumed
+  # (conservative) - set the provider's actual discount per model below.
+  cachedInputPriceFactor: 1.0
+  # When a model has no explicit reasoning price, reasoning tokens are billed
+  # at its output price (how most providers bill them).
+  reasoningBilledAs: output
+  # Extra or contracted prices, USD (or `currency`) per 1M tokens. Example:
+  #  - { provider: acme, model: acme-large-2, tokenType: input,  pricePer1M: 2.50, effectiveFrom: "2026-09-01", source: "Acme price sheet 2026-09" }
+  #  - { provider: acme, model: acme-large-2, tokenType: output, pricePer1M: 10.00, effectiveFrom: "2026-09-01", source: "Acme price sheet 2026-09" }
+  prices: []
+
+# ---------------------------------------------------------------------------
+# Estimated mode (spec §12). Everything else comes from the phases the
+# estimate is built on: requests and token sizes from the Inference
+# assessment, context make-up from the RAG / agent design and rag-agent.yaml
+# token assumptions, query size from finops.yaml (embedding.avgQueryTokens).
+# ---------------------------------------------------------------------------
+estimation:
+  # Tokens an agent's LLM emits at each intermediate step to choose and call a
+  # tool (the final step emits the answer instead). Assumption - replace with
+  # measured traces once live telemetry exists.
+  toolCallOutputTokens: 150
+  # Agents are estimated at their bounded maximum steps (worst case). Set
+  # below 1 to estimate a typical run as a share of the maximum.
+  agentStepsShareOfMax: 1.0
