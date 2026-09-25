@@ -60,7 +60,7 @@ export const rangeFor = (key: string, now = new Date()) => {
  * drills down: a bucket narrows the time range, a bar sets a filter, and
  * the requests list opens the trace behind any request.
  */
-export function ObservedDashboard({ projectId, filters, rangeKey, view, onChange }: { projectId: string; filters: UsageFilters; rangeKey: string; view: DashboardView; onChange: (f: UsageFilters, rangeKey?: string) => void }) {
+export function ObservedDashboard({ projectId, filters, rangeKey, view, onChange, refreshKey = 0 }: { projectId: string; filters: UsageFilters; rangeKey: string; view: DashboardView; onChange: (f: UsageFilters, rangeKey?: string) => void; refreshKey?: number }) {
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -93,7 +93,7 @@ export function ObservedDashboard({ projectId, filters, rangeKey, view, onChange
     return () => {
       active = false;
     };
-  }, [projectId, qs]);
+  }, [projectId, qs, refreshKey]);
 
   useEffect(() => setOffset(0), [qs, sort, agent]);
   useEffect(() => {
@@ -106,7 +106,7 @@ export function ObservedDashboard({ projectId, filters, rangeKey, view, onChange
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, qs, sort, agent, offset]);
+  }, [projectId, qs, sort, agent, offset, refreshKey]);
 
   const setDim = (patch: Partial<Record<FilterName, string | undefined>>) => {
     const dims = { ...filters.dims, ...patch };
@@ -211,7 +211,7 @@ export function ObservedDashboard({ projectId, filters, rangeKey, view, onChange
             <Stat label="Output tokens" value={compact(s.cards.outputTokens)} />
             <Stat label="Requests" value={compact(s.cards.requests)} />
             <Stat label="Tokens / request" value={s.cards.tokensPerRequest !== null ? full(s.cards.tokensPerRequest) : '—'} sub={t.llmCallsPerRequest !== null ? `${t.llmCallsPerRequest} LLM calls / request` : undefined} />
-            <Stat label="Actual cost" value={usd(s.cards.cost, 2)} sub={s.cards.costIncomplete ? `▲ incomplete - ${data.cost.unpricedEvents} event(s) without a price` : 'at prices in force when used'} />
+            <Stat label="Actual cost" value={usd(s.cards.cost)} sub={s.cards.costIncomplete ? `▲ incomplete - ${data.cost.unpricedEvents} event(s) without a price` : 'at prices in force when used'} />
             <Stat label="Top token consumer" value={s.cards.topConsumer ? s.cards.topConsumer.service ?? s.cards.topConsumer.application ?? '(unattributed)' : '—'} sub={s.cards.topConsumer ? `${compact(s.cards.topConsumer.totalTokens)} tokens` : undefined} />
             <Stat
               label="Growth vs baseline"

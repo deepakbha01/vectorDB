@@ -53,7 +53,7 @@ export class UsageService {
   }
 
   /** Access already checked by the caller (a user, or later an ingest key). */
-  async ingestForProject(projectId: string, batch: UsageEventBatchDto, now: Date): Promise<IngestResult> {
+  async ingestForProject(projectId: string, batch: UsageEventBatchDto, now: Date, simulationRunId: string | null = null): Promise<IngestResult> {
     const prices = await this.pricing.rowsFor(projectId);
     const treatment = this.cfg.getTokenObservabilityCatalogue().pricing;
     const rejected: Rejection[] = [];
@@ -67,11 +67,13 @@ export class UsageService {
       seen.add(e.eventId);
       const n = normalizeEvent(e, batch.telemetrySource, prices, projectId, treatment, now);
       if (isRejection(n)) rejected.push(n);
-      else good.push(n);
+      else good.push({ ...n, simulationRunId });
     }
     let inserted: NormalizedEvent[] = [];
     if (good.length) {
       inserted = await this.events.manager.transaction(async (m) => {
+        // Simulated rollups can be rebuilt when a run is deleted; serialise with that per project.
+        if (batch.telemetrySource === 'simulated') await lockRollups(m, projectId);
         const res = await m
           .createQueryBuilder()
           .insert()
@@ -343,7 +345,8 @@ export class UsageService {
     ]);
     const observed = byModel.reduce((s, r) => s + r.cost, 0);
     const days = (f.to.getTime() - f.from.getTime()) / 86_400_000;
-    const monthlyRunRate = byModel.length ? Math.round((observed / days) * 30.4 * 100) / 100 : null;
+    // A month is only projected from at least a day of usage; a short load test would scale into nonsense.
+    const monthlyRunRate = byModel.length && days >= 1 ? Math.round((observed / days) * 30.4 * 100) / 100 : null;
     const estimated = estimate?.result.cost.monthlyUsd ?? null;
     return {
       ...this.range(f),
@@ -352,7 +355,7 @@ export class UsageService {
       costIncomplete: req.unpricedEvents > 0,
       unpricedEvents: req.unpricedEvents,
       byModel: byModel.map((r) => ({ provider: r.provider, model: r.model, cost: r.cost, totalTokens: r.totalTokens, embeddingTokens: r.embeddingTokens })),
-      forecast: { monthlyRunRate, basis: `observed ${days.toFixed(1)} days scaled to 30.4` },
+      forecast: { monthlyRunRate, basis: days >= 1 ? `observed ${days.toFixed(1)} days scaled to 30.4` : 'range shorter than a day - not projected to a month' },
       estimate: estimate ? { version: estimate.version, monthlyUsd: estimated, deltaPercent: estimated && monthlyRunRate !== null ? growth(monthlyRunRate, estimated) : null } : null,
       budget: estimate?.result.budget.monthlyBudgetUsd ? { monthlyUsd: estimate.result.budget.monthlyBudgetUsd, shareUsed: monthlyRunRate !== null ? Math.round((monthlyRunRate / estimate.result.budget.monthlyBudgetUsd) * 1000) / 10 : null, source: estimate.result.budget.source } : null,
     };
@@ -436,4 +439,9 @@ export class UsageService {
       topConsumers: top.map((t) => ({ dimension: 'application / service', key: `${t.applicationId ?? '(none)'} / ${t.serviceId ?? '(none)'}`, totalTokens: t.totalTokens })),
     };
   }
+}
+
+/** Per-project transaction lock shared by simulated ingest and run deletion, so a rebuild never races an insert. */
+export async function lockRollups(m: EntityManager, projectId: string) {
+  await m.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`token-rollups:${projectId}`]);
 }

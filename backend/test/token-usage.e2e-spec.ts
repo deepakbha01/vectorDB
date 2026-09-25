@@ -14,6 +14,8 @@ import { InferenceConfigService } from '../src/inference/inference-config.servic
 import { AiFactoryConfigService } from '../src/ai-factory/ai-factory-config.service';
 import { PricingService } from '../src/ai-factory/token-observability/pricing.service';
 import { UsageService } from '../src/ai-factory/token-observability/usage.service';
+import { SimulationService } from '../src/ai-factory/token-observability/simulation.service';
+import { AiSimulationRun } from '../src/ai-factory/token-observability/simulation-run.entity';
 import { AiModelPrice } from '../src/ai-factory/token-observability/model-price.entity';
 import { AiUsageEvent } from '../src/ai-factory/token-observability/usage-event.entity';
 import { AiTokenEstimate } from '../src/ai-factory/token-observability/token-estimate.entity';
@@ -32,6 +34,7 @@ const projectsStub = { findOne: async () => ({}) } as any;
 
 let ds: DataSource;
 let usage: UsageService;
+let simulations: SimulationService;
 let pricing: PricingService;
 let projectId: string;
 
@@ -47,6 +50,7 @@ beforeAll(async () => {
   const [u] = await ds.query(`INSERT INTO users (email, "passwordHash", role) VALUES ('it@local', 'x', 'admin') RETURNING id`);
   const [p] = await ds.query(`INSERT INTO projects (name, "ownerId") VALUES ('IT project', $1) RETURNING id`, [u.id]);
   projectId = p.id;
+  admin.id = u.id; // uploads record who made them
 
   const platformConfig = new PlatformConfigService(configService);
   platformConfig.onModuleInit();
@@ -56,6 +60,7 @@ beforeAll(async () => {
   cfg.onModuleInit();
   pricing = new PricingService(cfg, platformConfig, inferenceConfig, projectsStub, ds.getRepository(AiModelPrice));
   usage = new UsageService(projectsStub, cfg, pricing, ds.getRepository(AiUsageEvent), ds.getRepository(AiTokenEstimate));
+  simulations = new SimulationService(projectsStub, usage, ds.getRepository(AiSimulationRun), ds.getRepository(AiUsageEvent));
   await pricing.syncCatalogue(new Date('2026-09-01T00:00:00Z'));
 }, 120_000);
 
@@ -192,5 +197,63 @@ describe('usage ingestion and queries (Postgres)', () => {
     const r = await usage.ingestForProject(projectId, batch([ev({ eventId: 'dup' }), ev({ eventId: 'dup' }), ev({ eventId: 'future', timestamp: '2026-09-26T00:00:00Z' })]), now);
     expect(r.accepted).toBe(1);
     expect(r.rejected.map((x) => x.eventId)).toEqual(['dup', 'future']);
+  });
+});
+
+describe('simulated runs (spec §12) - upload, list, delete', () => {
+  const csv = (prefix: string) =>
+    [
+      'event_id,timestamp,provider,model,operation_type,input_tokens,output_tokens,service_id,trace_id',
+      `${prefix}-1,2026-09-24T08:10:00Z,managed_api_tier,mid,chat,2000,200,loadtest-api,${prefix}-t1`,
+      `${prefix}-2,2026-09-24T08:20:00Z,managed_api_tier,mid,chat,3000,300,loadtest-api,${prefix}-t2`,
+      `${prefix}-3,2026-09-24T09:05:00Z,managed_api_tier,mid,chat,4000,400,loadtest-api,${prefix}-t3`,
+      `${prefix}-4,not-a-date,managed_api_tier,mid,chat,1,1,loadtest-api,${prefix}-t4`,
+    ].join('\n');
+  const file = (content: string, name = 'loadtest.csv') => ({ originalname: name, size: Buffer.byteLength(content), buffer: Buffer.from(content) });
+  const sums = async (source: string) => {
+    const [r] = await ds.query(`SELECT COALESCE(SUM("totalTokens"), 0) AS t, COALESCE(SUM(events), 0) AS n FROM ai_usage_rollups WHERE "projectId" = $1 AND "telemetrySource" = $2`, [projectId, source]);
+    const [e] = await ds.query(`SELECT COALESCE(SUM("totalTokens"), 0) AS t, COUNT(*) AS n FROM ai_usage_events WHERE "projectId" = $1 AND "telemetrySource" = $2`, [projectId, source]);
+    return { rollupTokens: Number(r.t), rollupEvents: Number(r.n), eventTokens: Number(e.t), events: Number(e.n) };
+  };
+  let runA: string;
+  let runB: string;
+
+  it('stores an upload as simulated usage and reports rejected rows with their row numbers', async () => {
+    const liveBefore = await sums('live');
+    const a = await simulations.upload(projectId, admin, file(csv('ra'), 'run-a.csv'), 'Load test A', now);
+    runA = a.id;
+    expect(a).toEqual(expect.objectContaining({ label: 'Load test A', format: 'csv', received: 4, accepted: 3, duplicates: 0, rejected: 1, unpriced: 0 }));
+    expect(a.rejections).toEqual([expect.objectContaining({ row: 4, eventId: 'ra-4' })]);
+    expect(a.firstEventAt?.toISOString()).toBe('2026-09-24T08:10:00.000Z');
+    expect(a.lastEventAt?.toISOString()).toBe('2026-09-24T09:05:00.000Z');
+    expect(await sums('live')).toEqual(liveBefore);
+    const s = await sums('simulated');
+    expect(s.rollupTokens).toBe(s.eventTokens);
+  });
+
+  it('counts the same file uploaded again as duplicates, not as new usage', async () => {
+    const again = await simulations.upload(projectId, admin, file(csv('ra')), undefined, now);
+    expect(again).toEqual(expect.objectContaining({ label: 'loadtest.csv', accepted: 0, duplicates: 3 }));
+    await simulations.remove(projectId, admin, again.id);
+  });
+
+  it('lists runs newest first', async () => {
+    runB = (await simulations.upload(projectId, admin, file(csv('rb'), 'run-b.csv'), 'Load test B', now)).id;
+    const list = await simulations.list(projectId, admin);
+    expect(list.slice(0, 2).map((r) => r.label)).toEqual(['Load test B', 'Load test A']);
+  });
+
+  it('deletes a run and rebuilds the hourly totals it touched from what remains', async () => {
+    const before = await sums('simulated');
+    const res = await simulations.remove(projectId, admin, runA);
+    expect(res.eventsRemoved).toBe(3);
+    const after = await sums('simulated');
+    // Run B shares the same hours and must survive intact.
+    expect(after.eventTokens).toBe(before.eventTokens - (2200 + 3300 + 4400));
+    expect(after.rollupTokens).toBe(after.eventTokens);
+    expect(after.rollupEvents).toBe(after.events);
+    const b = await simulations.get(projectId, admin, runB);
+    expect(b.accepted).toBe(3);
+    await expect(simulations.get(projectId, admin, runA)).rejects.toThrow(/No such simulation run/);
   });
 });

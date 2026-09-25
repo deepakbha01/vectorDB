@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, NotFoundException, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, ParseUUIDPipe, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -11,6 +12,9 @@ import { TokenObservabilityService } from './token-observability.service';
 import { PricingService } from './pricing.service';
 import { CreateModelPriceDto } from './dto/create-model-price.dto';
 import { UsageService } from './usage.service';
+import { SimulationService, UploadedFileLike } from './simulation.service';
+import { MAX_UPLOAD_BYTES } from './usage-upload';
+import { SimulationUploadDto } from './dto/simulation-upload.dto';
 import { UsageEventBatchDto } from './dto/usage-events.dto';
 import { UsageQueryDto, UsageRequestsQueryDto } from './dto/usage-query.dto';
 
@@ -26,6 +30,7 @@ export class TokenObservabilityController {
     private readonly service: TokenObservabilityService,
     private readonly pricing: PricingService,
     private readonly usage: UsageService,
+    private readonly simulations: SimulationService,
   ) {}
 
   /** The Estimated-mode projection as the upstream records stand now. Saves nothing. */
@@ -125,5 +130,33 @@ export class TokenObservabilityController {
   trace(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('traceId') traceId: string, @CurrentUser() user: AuthenticatedUser) {
     if (!TRACE_ID.test(traceId)) throw new BadRequestException('traceId must be an identifier.');
     return this.usage.trace(projectId, user, traceId);
+  }
+
+  // ------------------------------------------------ simulated mode (spec §12)
+
+  /** Upload a load-test or benchmark result (multipart: `file` = JSON or CSV, optional `label`). Stored as simulated usage. */
+  @Post('simulations')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } }))
+  uploadSimulation(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @UploadedFile() file: UploadedFileLike | undefined, @Body() body: SimulationUploadDto) {
+    return this.simulations.upload(projectId, user, file, body.label);
+  }
+
+  @Get('simulations')
+  listSimulations(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.simulations.list(projectId, user);
+  }
+
+  /** One run, with the rows that were rejected and why. */
+  @Get('simulations/:runId')
+  getSimulation(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('runId', ParseUUIDPipe) runId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.simulations.get(projectId, user, runId);
+  }
+
+  /** Removes the run and its events; live usage and other runs are untouched. */
+  @Delete('simulations/:runId')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  deleteSimulation(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('runId', ParseUUIDPipe) runId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.simulations.remove(projectId, user, runId);
   }
 }

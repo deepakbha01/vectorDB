@@ -22,6 +22,7 @@ export interface PriceRef {
 @Index(['project', 'timestamp'])
 @Index(['project', 'traceId'])
 @Index(['project', 'telemetrySource', 'timestamp'])
+@Index(['project', 'simulationRunId'])
 export class AiUsageEvent {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -88,6 +89,10 @@ export class AiUsageEvent {
 
   @Column({ type: 'varchar', length: 16 })
   telemetrySource: ObservedSource;
+
+  /** Set for events that came from an uploaded load-test or benchmark result (ai_simulation_runs). */
+  @Column({ type: 'uuid', nullable: true })
+  simulationRunId: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

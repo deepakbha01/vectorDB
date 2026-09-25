@@ -6,6 +6,7 @@ import { EvidenceType } from '../api/aiFactory';
 import { FILTER_NAMES, ObservedMode, TokenEstimate, TokenEstimatePreview, TokenEstimateResult, UsageFilters } from '../api/tokenObservability';
 import { DashboardView, ObservedDashboard, rangeFor } from '../components/token/ObservedDashboard';
 import { download, toCsv } from '../components/token/csv';
+import { SimulationPanel } from '../components/token/SimulationPanel';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
@@ -35,6 +36,7 @@ export function TokenObservabilityPage() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Mode, view and filters live in the URL so any drill-down can be bookmarked or shared.
   const mode = (['estimated', 'simulated', 'live'].includes(params.get('mode') ?? '') ? params.get('mode') : 'estimated') as 'estimated' | ObservedMode;
@@ -150,7 +152,12 @@ export function TokenObservabilityPage() {
                 {shown && <EstimateView r={shown.r} title={shown.title} sources={shown.sources} view={view} />}
               </>
             ) : (
-              <ObservedDashboard projectId={project.id} filters={filters} rangeKey={rangeKey} view={view} onChange={onFilters} />
+              <>
+                {mode === 'simulated' && (
+                  <SimulationPanel projectId={project.id} onChanged={() => setRefreshKey((k) => k + 1)} onView={(from, to) => onFilters({ ...filters, from, to, dims: {} }, 'custom')} />
+                )}
+                <ObservedDashboard projectId={project.id} filters={filters} rangeKey={rangeKey} view={view} onChange={onFilters} refreshKey={refreshKey} />
+              </>
             )}
           </>
         )}

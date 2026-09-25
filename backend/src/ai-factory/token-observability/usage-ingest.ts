@@ -59,6 +59,7 @@ export interface NormalizedEvent {
   currency: string | null;
   priceRefs: PriceRef[];
   telemetrySource: ObservedSource;
+  simulationRunId: string | null;
 }
 
 export interface Rejection {
@@ -136,6 +137,7 @@ export function normalizeEvent(
     currency: c.currency,
     priceRefs: c.refs,
     telemetrySource: source,
+    simulationRunId: null,
   };
 }
 

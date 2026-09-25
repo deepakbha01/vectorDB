@@ -30,6 +30,7 @@ import { AiTokenEstimate } from './ai-factory/token-observability/token-estimate
 import { AiModelPrice } from './ai-factory/token-observability/model-price.entity';
 import { AiUsageEvent } from './ai-factory/token-observability/usage-event.entity';
 import { AiUsageRollup } from './ai-factory/token-observability/usage-rollup.entity';
+import { AiSimulationRun } from './ai-factory/token-observability/simulation-run.entity';
 
 config();
 
@@ -83,6 +84,7 @@ export const AppDataSource = new DataSource({
     AiModelPrice,
     AiUsageEvent,
     AiUsageRollup,
+    AiSimulationRun,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,

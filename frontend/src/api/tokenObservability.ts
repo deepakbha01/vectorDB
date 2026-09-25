@@ -268,3 +268,27 @@ export interface UsageTrace {
 export interface UsageDimensions extends Range {
   values: Record<FilterName | 'agent', string[]>;
 }
+
+// ------------------------------------------------------------ simulated runs (Phase 5)
+
+export interface SimulationRun {
+  id: string;
+  label: string;
+  fileName: string;
+  format: 'csv' | 'json';
+  received: number;
+  accepted: number;
+  duplicates: number;
+  rejected: number;
+  unpriced: number;
+  firstEventAt: string | null;
+  lastEventAt: string | null;
+  createdAt: string;
+  uploadedBy?: string | null;
+}
+
+export interface SimulationUploadResult extends SimulationRun {
+  rejections: Array<{ row: number; eventId: string | null; reason: string }>;
+  ignoredFields: string[];
+  rejectionsTruncated: boolean;
+}
