@@ -30,6 +30,7 @@ import { FinopsPage } from './pages/FinopsPage';
 import { OperationsModelPage } from './pages/OperationsModelPage';
 import { FinalRecommendationPage } from './pages/FinalRecommendationPage';
 import { TokenObservabilityPage } from './pages/TokenObservabilityPage';
+import { DataExplorerPage } from './pages/DataExplorerPage';
 
 export function App() {
   return (
@@ -66,6 +67,7 @@ export function App() {
           <Route path="/projects/:id/operations-model" element={<OperationsModelPage />} />
           <Route path="/projects/:id/final-recommendation" element={<FinalRecommendationPage />} />
           <Route path="/projects/:id/token-observability" element={<TokenObservabilityPage />} />
+          <Route path="/projects/:id/data-explorer" element={<DataExplorerPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -14,6 +14,8 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
+import { ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
+import { normaliseIndexType, normaliseMetric, pgWhere, trimMetadata, vectorPreview } from '../explorer-helpers';
 
 /**
  * Connects to the customer's target PostgreSQL+pgvector instance - a
@@ -29,7 +31,7 @@ import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
  * this adapter.
  */
 @Injectable()
-export class PostgresVectorAdapter implements VectorDatabaseAdapter, OnModuleDestroy {
+export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplorer, OnModuleDestroy {
   readonly platformId = 'postgres_pgvector' as const;
   private readonly logger = new Logger(PostgresVectorAdapter.name);
   private pool: Pool | null = null;
@@ -291,5 +293,113 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, OnModuleDes
     const table = sanitizeSqlIdentifier(collectionOrTableName, 'collectionOrTableName');
     this.logger.warn(`Dropping Postgres table '${table}' (confirmed).`);
     await this.getPool().query(`DROP TABLE IF EXISTS ${table}`);
+  }
+
+  // ------------------------------------------------------ Data Explorer (read-only)
+
+  /** Tables in the current schema with an `embedding` column - the shape createSchema deploys. */
+  async listCollections(): Promise<string[]> {
+    const r = await this.getPool().query(
+      `SELECT table_name FROM information_schema.columns WHERE table_schema = current_schema() AND column_name = 'embedding' ORDER BY table_name`,
+    );
+    return r.rows.map((x: { table_name: string }) => x.table_name);
+  }
+
+  private async columnsOf(table: string): Promise<Array<{ name: string; type: string }>> {
+    const r = await this.getPool().query(
+      `SELECT column_name AS name, udt_name AS type FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1 ORDER BY ordinal_position`,
+      [table],
+    );
+    return r.rows;
+  }
+
+  async describeCollection(name: string): Promise<ExplorerCollectionInfo> {
+    const table = sanitizeSqlIdentifier(name, 'collectionOrTableName');
+    const pool = this.getPool();
+    const columns = await this.columnsOf(table);
+    const embedding = columns.find((c) => c.name === 'embedding');
+    const notes: string[] = [];
+    let dimension: number | null = null;
+    if (embedding?.type === 'vector') {
+      // pgvector keeps the declared dimension as the column's type modifier.
+      const d = await pool.query(`SELECT atttypmod AS dim FROM pg_attribute WHERE attrelid = quote_ident($1)::regclass AND attname = 'embedding'`, [table]);
+      dimension = d.rows[0]?.dim > 0 ? Number(d.rows[0].dim) : null;
+    } else {
+      notes.push('No pgvector on this server: vectors are a plain array column and search scans every row.');
+      const d = await pool.query(`SELECT array_length(embedding, 1) AS dim FROM "${table}" LIMIT 1`);
+      dimension = d.rows[0]?.dim ?? null;
+    }
+    // Exact below a million rows; above that the planner's estimate, so a huge table never stalls the page.
+    const est = await pool.query(`SELECT reltuples::bigint AS n FROM pg_class WHERE oid = quote_ident($1)::regclass`, [table]);
+    const estimate = Number(est.rows[0]?.n ?? -1);
+    let recordCount: number;
+    let countIsEstimate = false;
+    if (estimate >= 1_000_000) {
+      recordCount = estimate;
+      countIsEstimate = true;
+    } else {
+      recordCount = Number((await pool.query(`SELECT COUNT(*) AS n FROM "${table}"`)).rows[0].n);
+    }
+    const idx = await pool.query(`SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND tablename = $1 AND indexdef ~* 'using (hnsw|ivfflat)'`, [table]);
+    const indexes = idx.rows.map((r: { indexdef: string }) => ({ type: normaliseIndexType(/using (\w+)/i.exec(r.indexdef)?.[1] ?? ''), detail: r.indexdef }));
+    // The metric lives in the index's operator class; without an index, search uses cosine (<=>).
+    const ops = idx.rows.map((r: { indexdef: string }) => /(vector_\w+_ops)/.exec(r.indexdef)?.[1]).find(Boolean);
+    if (!indexes.length) notes.push('No ANN index: search is exact (a full scan) using cosine distance.');
+    return {
+      name: table,
+      recordCount,
+      countIsEstimate,
+      dimension,
+      metric: normaliseMetric(ops ?? null),
+      indexes,
+      fields: columns.filter((c) => !['id', 'embedding', 'created_at'].includes(c.name)),
+      notes,
+    };
+  }
+
+  async browse(name: string, options: { limit: number; cursor: string | null; filter: ExplorerFilter }): Promise<ExplorerPage> {
+    const table = sanitizeSqlIdentifier(name, 'collectionOrTableName');
+    const columns = (await this.columnsOf(table)).map((c) => c.name);
+    const where = pgWhere(options.filter, columns, options.cursor === null ? 1 : 2);
+    const conditions = [options.cursor === null ? null : `id::text > $1`, where.sql || null].filter(Boolean);
+    const params = [...(options.cursor === null ? [] : [options.cursor]), ...where.params, options.limit + 1];
+    const r = await this.getPool().query(
+      `SELECT * FROM "${table}"${conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''} ORDER BY id::text LIMIT $${params.length}`,
+      params,
+    );
+    const rows = r.rows.slice(0, options.limit);
+    return {
+      records: rows.map((row) => {
+        const { id, embedding, created_at, ...metadata } = row;
+        return { id: String(id), metadata: trimMetadata(metadata), ...vectorPreview(embedding) };
+      }),
+      nextCursor: r.rows.length > options.limit ? String(rows[rows.length - 1].id) : null,
+    };
+  }
+
+  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+    const table = sanitizeSqlIdentifier(name, 'collectionOrTableName');
+    const columns = (await this.columnsOf(table)).map((c) => c.name);
+    if (!(await this.hasPgvector())) {
+      const w = pgWhere(query.filter, columns, 1);
+      const all = await this.getPool().query(`SELECT * FROM "${table}"${w.sql ? ` WHERE ${w.sql}` : ''}`, w.params);
+      return all.rows
+        .map((row) => {
+          const { id, embedding, created_at, ...metadata } = row;
+          return { id: String(id), score: this.cosineSimilarity(query.vector, embedding), metadata: trimMetadata(metadata) };
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, query.topK);
+    }
+    const where = pgWhere(query.filter, columns, 3);
+    const clause = where.sql ? ` WHERE ${where.sql}` : '';
+    const r = await this.getPool().query(
+      `SELECT *, 1 - (embedding <=> $1) AS score FROM "${table}"${clause} ORDER BY embedding <=> $1 LIMIT $2`,
+      [JSON.stringify(query.vector), query.topK, ...where.params],
+    );
+    return r.rows.map((row) => {
+      const { id, embedding, score, created_at, ...metadata } = row;
+      return { id: String(id), score: Number(score), metadata: trimMetadata(metadata) };
+    });
   }
 }

@@ -140,9 +140,38 @@ FinOps page shows token cost estimated vs actual, and the Final
 Recommendation weighs token evidence in its cost check. Details:
 [TOKEN_OBSERVABILITY.md](TOKEN_OBSERVABILITY.md).
 
-## Roles
+## 12. Data Explorer
 
-- **Viewer**: can see everything, change nothing.
+When enabled (`DATA_EXPLORER_ENABLED`), **Data Explorer** appears under
+*Project tools*. It is a **read-only** look inside the project's target vector
+database - the platform chosen in Vector DB Selection, connected through the
+server's `TARGET_*` settings. It never writes to, loads or changes the
+database. Phase 1 covers PostgreSQL + pgvector, Qdrant and Milvus; other
+platforms say "not supported yet".
+
+Pick a collection (the one your Data & Embedding design deploys is marked
+*designed*), then:
+
+- **Overview** - records, dimension, metric and ANN index, and **Design vs
+  deployed**: the collection, vector dimension, similarity metric, index type
+  and metadata fields against Data & Embedding design, Index Design and
+  Discovery. Each row says *Match*, *Mismatch*, *Info* or *Unknown* and which
+  phase the designed value comes from. A value either side does not know is
+  *Unknown*, never a guessed match.
+- **Documents** - 25 records per page, with their metadata and the first few
+  vector values. *Add a filter* for exact matches on up to five fields.
+- **Search** - type text (embedded with the project's own embedding model,
+  as ingestion does) or paste a vector; set Top K and filters. Results show
+  their score, and the query time against the Discovery P95 target (one
+  query - the Performance phase measures percentiles).
+
+Documents and Search show customer data, so they are for admins and
+architects, and every read is recorded in the Audit Log (who, what, how many
+records - never the records themselves). Long values are shortened. A Milvus
+collection must be loaded in Milvus first; the explorer does not load it.
+
+
+- **Viewer**: can see everything, change nothing (except record contents in the Data Explorer).
 - **Architect**: can do everything except execute a real deployment.
 - **Admin**: everything, including `Execute Deployment`.
 

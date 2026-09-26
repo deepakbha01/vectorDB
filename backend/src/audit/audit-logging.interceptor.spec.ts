@@ -51,6 +51,25 @@ describe('AuditLoggingInterceptor', () => {
     );
   });
 
+  it('keeps record contents and query vectors out of the audit entry for a Data Explorer search', async () => {
+    const request = {
+      method: 'POST',
+      url: '/api/projects/p1/data-explorer/collections/docs/search',
+      params: { projectId: 'p1' },
+      body: { vector: [0.1, 0.2, 0.3], topK: 5, filter: { dept: 'legal' } },
+      user: { id: 'u1', email: 'a@b.com' },
+    };
+    const handler = { handle: () => of({ results: [{ id: 'x', score: 0.9, metadata: { ssn: '123-45-6789' } }], latencyMs: 12 }) };
+
+    await new Promise((resolve) => interceptor.intercept(makeContext(request), handler as any).subscribe(resolve));
+    await flush();
+
+    const saved = entries.save.mock.calls[0][0];
+    expect(saved.requestSummary).toEqual({ vector: '3 dimensions', topK: 5, filter: { dept: 'legal' } });
+    expect(saved.responseSummary).toEqual({ results: 1, latencyMs: 12 });
+    expect(JSON.stringify(saved)).not.toContain('123-45-6789');
+  });
+
   it('resolves the project ID from the response body when creating a project', async () => {
     const request = { method: 'POST', url: '/api/projects', params: {}, body: { name: 'New Project' }, user: { id: 'u1', email: 'a@b.com' } };
     const handler = { handle: () => of({ id: 'new-project-id' }) };
