@@ -1,34 +1,225 @@
+/*
+ * Dark enterprise control-center theme: abyssal navy canvas, glass cards,
+ * cobalt and cyan accents, high-contrast type. The HSL tokens follow the
+ * shadcn/Tailwind naming so a later move to Tailwind can map them 1:1; the
+ * short names below (--bg, --surface, --text ...) are what the app uses.
+ * --muted and --border are colors here (the app has always used them that
+ * way); their HSL forms are --muted-hsl and --border-hsl.
+ *
+ * Dark is the default; <html data-theme="light"> switches every app token to
+ * the light set below (see src/theme.tsx). Components only use the tokens.
+ */
 :root {
+  color-scheme: dark;
+
+  /* Design tokens (HSL components) */
+  --background: 222 47% 5%; /* #060b13 */
+  --foreground: 210 40% 98%; /* #f8fafc */
+  --card: 217 46% 10%; /* #0e1726 */
+  --card-foreground: 210 40% 98%;
+  --popover: 217 46% 10%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 217 91% 60%; /* electric blue #3b82f6 */
+  --primary-foreground: 222 47% 5%;
+  --secondary: 188 86% 53%; /* glowing cyan #22d3ee */
+  --secondary-foreground: 222 47% 5%;
+  --muted-hsl: 217 33% 17%;
+  --muted-foreground: 215 20% 65%;
+  --accent: 217 33% 18%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 210 40% 98%;
+  --border-hsl: 218 46% 20%; /* #1b2a4a */
+  --input: 218 46% 20%;
+  --ring: 217 91% 60%;
+  --radius: 0.5rem;
+
+  /* App tokens */
+  --bg: #060b13;
+  --surface: #0e1726;
+  --surface-glass: rgba(14, 23, 38, 0.85);
+  --surface-2: #131f35; /* inputs, table headers, hover */
+  --line: #1b2a4a;
+  --text: #f8fafc;
+  --text-2: #cbd5e1;
+  --muted-text: #94a3b8;
+  --muted: var(--muted-text);
+  --border: var(--line);
+  --primary-strong: #2563eb; /* buttons (blue-600) */
+  --primary-hover: #3b82f6; /* blue-500 */
+  --primary-text: #60a5fa; /* links and blue text on dark */
+  --primary-soft: rgba(59, 130, 246, 0.14);
+  --cyan: #22d3ee;
+  --cyan-strong: #06b6d4;
+  --success: #34d399; /* text on dark */
+  --success-strong: #10b981; /* emerald badges */
+  --success-soft: rgba(16, 185, 129, 0.14);
+  --warning: #fbbf24;
+  --warning-soft: rgba(245, 158, 11, 0.14);
+  --danger: #f87171;
+  --danger-strong: #ef4444;
+  --danger-soft: rgba(239, 68, 68, 0.14);
+  --violet: #a78bfa;
+  --glow-blue: 0 0 20px rgba(59, 130, 246, 0.3);
+  --glow-cyan: 0 0 20px rgba(34, 211, 238, 0.3);
+  --card-border: rgba(27, 42, 74, 0.7);
+  --card-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.25);
+  --tooltip-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --body-glow: radial-gradient(1200px 600px at 85% -10%, rgba(37, 99, 235, 0.12), transparent 60%), radial-gradient(900px 500px at -10% 110%, rgba(6, 182, 212, 0.08), transparent 60%);
+  /* Chart series (HTML swatches; SVG charts use the same values from charts.tsx). */
+  --chart-1: #2563eb;
+  --chart-2: #0aa5bd;
+  --font-sans: 'Inter', 'Plus Jakarta Sans', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Fira Code', 'JetBrains Mono', ui-monospace, Consolas, monospace;
+
+  font-family: var(--font-sans);
+}
+
+/* Light theme: the platform's original light palette on the same tokens. */
+:root[data-theme='light'] {
   color-scheme: light;
   --bg: #f5f6f8;
   --surface: #ffffff;
-  --border: #dfe3e8;
+  --surface-glass: rgba(255, 255, 255, 0.92);
+  --surface-2: #f1f3f6;
+  --line: #dfe3e8;
   --text: #1b2028;
-  --muted: #5a6472;
-  --primary: #2f5fd0;
+  --text-2: #3b4452;
+  --muted-text: #5a6472;
+  --primary-strong: #2f5fd0;
+  --primary-hover: #2a54bb;
+  --primary-text: #2f5fd0;
+  --primary-soft: #eaf0fd;
+  --cyan: #0e7490;
+  --cyan-strong: #0891b2;
+  --success: #1e8449;
+  --success-strong: #1e8e5a;
+  --success-soft: #e3f6ed;
+  --warning: #9a6700;
+  --warning-soft: #fdf3e0;
   --danger: #c0392b;
-  --success: #1e8e5a;
-  font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  --danger-strong: #c0392b;
+  --danger-soft: #fbe9e7;
+  --violet: #7d3cbd;
+  --glow-blue: 0 2px 8px rgba(47, 95, 208, 0.25);
+  --glow-cyan: 0 2px 8px rgba(8, 145, 178, 0.2);
+  --card-border: #dfe3e8;
+  --card-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --tooltip-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --body-glow: linear-gradient(transparent, transparent);
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  background: var(--bg);
+}
+
 body {
   margin: 0;
-  background: var(--bg);
+  min-height: 100vh;
+  background: var(--body-glow), var(--bg);
   color: var(--text);
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
-  color: var(--primary);
+  color: var(--primary-text);
+}
+
+a:hover {
+  color: var(--cyan);
 }
 
 button {
   font-family: inherit;
   cursor: pointer;
+  color: inherit;
 }
+
+::selection {
+  background: rgba(34, 211, 238, 0.3);
+}
+
+:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------ native controls */
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+/* Keep browser autofill on the dark field colors. */
+input:-webkit-autofill,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text);
+  box-shadow: 0 0 0 1000px var(--surface-2) inset;
+  caret-color: var(--text);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted-text);
+  opacity: 0.8;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary-hover);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--primary-hover);
+}
+
+table {
+  color: var(--text);
+}
+
+th {
+  color: var(--muted-text);
+}
+
+code,
+pre,
+kbd {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 4px;
+  color: var(--cyan);
+}
+
+pre {
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+/* ------------------------------------------------------------------- layout */
 
 .app-shell {
   display: flex;
@@ -38,14 +229,16 @@ button {
 .sidebar {
   width: 240px;
   flex-shrink: 0;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  border-right: 1px solid var(--line);
   padding: 20px 12px;
 }
 
 .sidebar h1 {
   font-size: 15px;
   margin: 0 8px 20px;
+  letter-spacing: 0.01em;
 }
 
 .phase-nav {
@@ -63,18 +256,21 @@ button {
   gap: 8px;
   padding: 8px 10px;
   border-radius: 6px;
-  color: var(--text);
+  color: var(--text-2);
   text-decoration: none;
   font-size: 13px;
+  border-left: 2px solid transparent;
 }
 
 .phase-nav a:hover {
-  background: var(--bg);
+  background: var(--surface-2);
+  color: var(--text);
 }
 
 .phase-nav a.active {
-  background: #eaf0fd;
-  color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--text);
+  border-left-color: var(--cyan);
   font-weight: 600;
 }
 
@@ -82,23 +278,28 @@ button {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 10px;
-  background: #eceff3;
-  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--muted-text);
   text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .status-pill.validated {
-  background: #e3f6ed;
+  background: var(--success-soft);
+  border-color: rgba(16, 185, 129, 0.4);
   color: var(--success);
 }
 
 .status-pill.warning {
-  background: #fdf3e0;
-  color: #a5690a;
+  background: var(--warning-soft);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: var(--warning);
 }
 
 .status-pill.danger {
-  background: #fbe9e7;
+  background: var(--danger-soft);
+  border-color: rgba(239, 68, 68, 0.4);
   color: var(--danger);
 }
 
@@ -106,13 +307,16 @@ button {
   flex: 1;
   padding: 28px 32px;
   max-width: 1100px;
+  min-width: 0;
 }
 
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--card-border);
   border-radius: 10px;
   padding: 18px 20px;
+  box-shadow: var(--card-shadow);
 }
 
 .card-grid {
@@ -124,20 +328,53 @@ button {
 
 .metric-label {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--muted-text);
   margin-bottom: 6px;
 }
 
+/* Telemetry and metrics read in monospace. */
 .metric-value {
+  font-family: var(--font-mono);
   font-size: 22px;
   font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
 }
 
 .metric-value.placeholder {
-  color: var(--muted);
+  font-family: var(--font-sans);
+  color: var(--muted-text);
   font-size: 14px;
   font-weight: 400;
 }
+
+.card-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+/* Theme utilities (from the theme spec). */
+.bg-card-glass {
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--card-border);
+}
+
+.glow-blue {
+  box-shadow: var(--glow-blue);
+}
+
+.glow-cyan {
+  box-shadow: var(--glow-cyan);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* -------------------------------------------------------------------- forms */
 
 form.stacked {
   display: flex;
@@ -155,8 +392,6 @@ form.stacked input,
 form.stacked select,
 form.stacked textarea {
   padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
   font-size: 14px;
   width: 100%;
 }
@@ -177,7 +412,7 @@ form.stacked textarea {
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: var(--primary);
+  color: var(--primary-text);
   font-size: 12px;
   font-weight: 600;
   padding: 4px 8px;
@@ -188,18 +423,40 @@ form.stacked textarea {
 }
 
 .primary-btn {
-  background: var(--primary);
-  color: white;
-  border: none;
+  background: var(--primary-strong);
+  color: #fff;
+  border: 1px solid transparent;
   padding: 9px 16px;
   border-radius: 6px;
   font-size: 14px;
   font-weight: 600;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.primary-btn:hover:not(:disabled) {
+  background: var(--primary-hover);
+  box-shadow: var(--glow-blue);
 }
 
 .primary-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
+}
+
+.secondary-btn {
+  background: transparent;
+  color: var(--cyan);
+  border: 1px solid rgba(34, 211, 238, 0.5);
+  padding: 9px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.secondary-btn:hover:not(:disabled) {
+  background: rgba(34, 211, 238, 0.08);
+  box-shadow: var(--glow-cyan);
 }
 
 .error-text {
@@ -224,13 +481,18 @@ form.stacked textarea {
 }
 
 .project-list li {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--surface-glass);
+  border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  transition: border-color 0.15s ease;
+}
+
+.project-list li:hover {
+  border-color: rgba(59, 130, 246, 0.5);
 }
 
 .platform-options {
@@ -241,15 +503,45 @@ form.stacked textarea {
 }
 
 .platform-option {
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px 14px;
   cursor: pointer;
+  background: var(--surface);
 }
 
 .platform-option.selected {
-  border-color: var(--primary);
-  background: #f4f7ff;
+  border-color: var(--primary-hover);
+  background: var(--primary-soft);
+  box-shadow: var(--glow-blue);
+}
+
+/* Light / dark switch in the top bar. */
+.theme-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px;
+  background: var(--surface-2);
+}
+
+.theme-toggle button {
+  border: none;
+  background: transparent;
+  color: var(--muted-text);
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.theme-toggle button:hover {
+  color: var(--text);
+}
+
+.theme-toggle button.active {
+  background: var(--primary-strong);
+  color: #fff;
 }
 
 .top-bar {
@@ -287,8 +579,9 @@ form.stacked textarea {
 }
 
 .discovery-section {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--card-border);
   border-radius: 10px;
   padding: 20px 22px;
 }
@@ -307,8 +600,9 @@ form.stacked textarea {
   height: 20px;
   padding: 0 6px;
   border-radius: 999px;
-  background: #eaf0fd;
-  color: var(--primary);
+  background: rgba(34, 211, 238, 0.12);
+  color: var(--cyan);
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
 }
@@ -321,7 +615,7 @@ form.stacked textarea {
 
 .discovery-section-sub {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--muted-text);
   margin: 4px 0 16px;
 }
 
@@ -341,18 +635,15 @@ form.stacked textarea {
 .field input,
 .field select {
   padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
   font-size: 14px;
   width: 100%;
-  background: var(--surface);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .field-active input,
 .field-active select {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(47, 95, 208, 0.14);
+  border-color: var(--primary-hover);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
 }
 
 .checkbox-grid {
@@ -366,13 +657,13 @@ form.stacked textarea {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: 8px;
   padding: 8px 12px;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  background: var(--bg);
+  background: var(--surface-2);
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 
@@ -381,20 +672,21 @@ form.stacked textarea {
 }
 
 .checkbox-chip.checked {
-  border-color: var(--primary);
-  background: #eaf0fd;
-  color: var(--primary);
+  border-color: var(--primary-hover);
+  background: var(--primary-soft);
+  color: var(--primary-text);
 }
 
 .checkbox-chip.field-active {
-  box-shadow: 0 0 0 3px rgba(47, 95, 208, 0.14);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
 }
 
 .help-panel {
   position: sticky;
   top: 20px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--card-border);
   border-radius: 10px;
   padding: 18px 20px;
 }
@@ -403,7 +695,7 @@ form.stacked textarea {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--muted);
+  color: var(--cyan);
   margin-bottom: 10px;
 }
 
@@ -415,7 +707,7 @@ form.stacked textarea {
 
 .help-panel-desc {
   font-size: 13px;
-  color: var(--text);
+  color: var(--text-2);
   line-height: 1.55;
   margin: 0 0 12px;
 }

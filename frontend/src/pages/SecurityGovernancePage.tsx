@@ -7,24 +7,24 @@ import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
 const POLICY: Record<PolicyStatus, { label: string; color: string }> = {
-  approved: { label: 'Approved', color: '#1e8449' },
-  approved_with_conditions: { label: 'Approved with conditions', color: '#9a6700' },
-  restricted: { label: 'Restricted', color: '#b35c00' },
-  not_eligible: { label: 'Not eligible', color: '#b03a2e' },
+  approved: { label: 'Approved', color: 'var(--success)' },
+  approved_with_conditions: { label: 'Approved with conditions', color: 'var(--warning)' },
+  restricted: { label: 'Restricted', color: 'var(--warning)' },
+  not_eligible: { label: 'Not eligible', color: 'var(--danger)' },
 };
 
 const VALIDATION: Record<SecurityResult['validation']['status'], { label: string; color: string }> = {
-  pass: { label: 'Pass', color: '#1e8449' },
-  pass_with_conditions: { label: 'Pass with conditions', color: '#9a6700' },
-  further_assessment: { label: 'Requires further assessment', color: '#7d3cbd' },
-  fail: { label: 'Fail', color: '#b03a2e' },
+  pass: { label: 'Pass', color: 'var(--success)' },
+  pass_with_conditions: { label: 'Pass with conditions', color: 'var(--warning)' },
+  further_assessment: { label: 'Requires further assessment', color: 'var(--violet)' },
+  fail: { label: 'Fail', color: 'var(--danger)' },
 };
 
 const CONTROL: Record<ControlAssessment['status'], { label: string; color: string }> = {
-  addressed: { label: 'Addressed in design', color: '#1e8449' },
-  gap: { label: 'Gap', color: '#b03a2e' },
-  recommended: { label: 'Recommended', color: '#7a7f8c' },
-  not_applicable: { label: 'Not applicable', color: '#7a7f8c' },
+  addressed: { label: 'Addressed in design', color: 'var(--success)' },
+  gap: { label: 'Gap', color: 'var(--danger)' },
+  recommended: { label: 'Recommended', color: 'var(--muted)' },
+  not_applicable: { label: 'Not applicable', color: 'var(--muted)' },
 };
 
 const DATA_PATH = { document: 'Every document', request: 'Per request', none: 'No customer data leaves' } as const;
@@ -98,13 +98,13 @@ export function SecurityGovernancePage() {
           </div>
         ) : (
           <>
-            <p style={{ fontSize: 13, color: '#5a6472', marginTop: -8, maxWidth: 1000 }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: -8, maxWidth: 1000 }}>
               Checks the architecture chosen in the earlier phases against enterprise security requirements. Each component gets a policy status from where it
               processes data - never from who makes it - and each of the spec's 18 control areas is traced to the design that addresses it (
               <Link to={`/projects/${project.id}/inference-architecture`}>Inference Architecture</Link>, <Link to={`/projects/${project.id}/infrastructure-design`}>Infrastructure</Link>,{' '}
               <Link to={`/projects/${project.id}/rag-agent`}>RAG / Agent</Link>). This assesses the design; it does not replace a security review or penetration test.
             </p>
-            {defaultsError && <div className="card" style={{ maxWidth: 900, color: '#9a6700' }}>{defaultsError}</div>}
+            {defaultsError && <div className="card" style={{ maxWidth: 900, color: 'var(--warning)' }}>{defaultsError}</div>}
             {defaults && c && (
               <form className="discovery-form" style={{ maxWidth: 1100 }} onSubmit={onSubmit}>
                 <section className="discovery-section">
@@ -157,7 +157,7 @@ function SecurityResultView({ r, version, createdAt }: { r: SecurityResult; vers
       </div>
 
       {r.gaps.length > 0 && (
-        <div className="card" style={{ borderLeft: '4px solid #9a6700' }}>
+        <div className="card" style={{ borderLeft: '4px solid var(--warning)' }}>
           <div className="metric-label">Gaps to close</div>
           <Bullets items={r.gaps} />
         </div>
@@ -170,7 +170,7 @@ function SecurityResultView({ r, version, createdAt }: { r: SecurityResult; vers
           rows={r.components.map((c) => [
             <span key="c">
               {c.label}
-              <div style={{ fontSize: 11, color: '#7a7f8c' }}>{c.source}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{c.source}</div>
             </span>,
             c.choice,
             c.external ? DATA_PATH[c.dataPath === 'none' ? 'request' : c.dataPath] : DATA_PATH.none,
@@ -218,7 +218,7 @@ function Panel({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="card">
       <div className="metric-label">{title}</div>
-      {items.length ? <Bullets items={items} /> : <div style={{ fontSize: 13, color: '#7a7f8c', marginTop: 6 }}>Nothing specific.</div>}
+      {items.length ? <Bullets items={items} /> : <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 6 }}>Nothing specific.</div>}
     </div>
   );
 }
@@ -238,7 +238,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
       <thead>
-        <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+        <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
           {headers.map((h, i) => (
             <th key={i} style={{ padding: '6px 8px' }}>
               {h}
@@ -248,7 +248,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} style={{ borderBottom: '1px solid #eceff3' }}>
+          <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
             {row.map((cell, j) => (
               <td key={j} style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                 {cell}

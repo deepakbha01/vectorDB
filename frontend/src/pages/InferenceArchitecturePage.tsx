@@ -15,10 +15,10 @@ import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
 const ELIGIBILITY: Record<Eligibility, { label: string; color: string }> = {
-  eligible: { label: 'Eligible', color: '#1e8449' },
-  conditional: { label: 'Conditional', color: '#9a6700' },
-  not_eligible: { label: 'Not eligible', color: '#b03a2e' },
-  not_assessed: { label: 'Not assessed', color: '#7a7f8c' },
+  eligible: { label: 'Eligible', color: 'var(--success)' },
+  conditional: { label: 'Conditional', color: 'var(--warning)' },
+  not_eligible: { label: 'Not eligible', color: 'var(--danger)' },
+  not_assessed: { label: 'Not assessed', color: 'var(--muted)' },
 };
 
 export function InferenceArchitecturePage() {
@@ -98,12 +98,12 @@ export function InferenceArchitecturePage() {
           </div>
         ) : (
           <>
-            <p style={{ fontSize: 13, color: '#5a6472', marginTop: -8, maxWidth: 1000 }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: -8, maxWidth: 1000 }}>
               Designs the Inference-as-a-Service layer around the <Link to={`/projects/${project.id}/inference`}>Inference assessment</Link>'s sizing: which serving
               technology (eligibility first, then score), which inference patterns, and the gateway, policy engine, model router, runtime and compute - with routing from{' '}
               <Link to={`/projects/${project.id}/model-selection`}>Model Selection</Link>. Latency percentiles are estimates until load-tested.
             </p>
-            {defaultsError && <div className="card" style={{ maxWidth: 900, color: '#9a6700' }}>{defaultsError}</div>}
+            {defaultsError && <div className="card" style={{ maxWidth: 900, color: 'var(--warning)' }}>{defaultsError}</div>}
             {defaults && (
               <form className="discovery-form" style={{ maxWidth: 1100 }} onSubmit={onSubmit}>
                 <section className="discovery-section">
@@ -147,7 +147,7 @@ function ArchitectureResult({ r, version, createdAt }: { r: InferenceArchitectur
   const a = r.architecture;
   return (
     <div style={{ marginTop: 28, maxWidth: 1150, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div className="card" style={{ borderLeft: `4px solid ${r.recommended ? '#2f6fde' : '#b03a2e'}` }}>
+      <div className="card" style={{ borderLeft: `4px solid ${r.recommended ? 'var(--primary-text)' : 'var(--danger)'}` }}>
         <div className="metric-label">
           Inference Architecture Decision Record · v{version} · {new Date(createdAt).toLocaleString()} · confidence {r.confidence}
         </div>
@@ -162,12 +162,12 @@ function ArchitectureResult({ r, version, createdAt }: { r: InferenceArchitectur
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'stretch', gap: 6 }}>
             {a.layers.map((l, i) => (
               <div key={l.layer} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ border: '1px solid #c9d3e0', borderRadius: 8, padding: '8px 10px', background: '#f7f9fc', minWidth: 130, maxWidth: 200 }}>
-                  <div style={{ fontSize: 11, color: '#5a6472', textTransform: 'uppercase' }}>{l.layer}</div>
+                <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', background: 'var(--surface-2)', minWidth: 130, maxWidth: 200 }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase' }}>{l.layer}</div>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{l.component}</div>
-                  <div style={{ fontSize: 11, color: '#5a6472' }}>{l.detail}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.detail}</div>
                 </div>
-                {i < a.layers.length - 1 && <span style={{ color: '#7a7f8c' }}>→</span>}
+                {i < a.layers.length - 1 && <span style={{ color: 'var(--muted)' }}>→</span>}
               </div>
             ))}
           </div>
@@ -186,11 +186,11 @@ function ArchitectureResult({ r, version, createdAt }: { r: InferenceArchitectur
                 `${l.p95.toLocaleString()} ms`,
                 `${l.p99.toLocaleString()} ms`,
                 l.targetMs === null ? '—' : `${l.targetMs.toLocaleString()} ms`,
-                l.meetsTargetAtP95 === null ? '—' : <strong key="m" style={{ color: l.meetsTargetAtP95 ? '#1e8449' : '#b03a2e' }}>{l.meetsTargetAtP95 ? 'Within target' : 'Exceeds target'}</strong>,
+                l.meetsTargetAtP95 === null ? '—' : <strong key="m" style={{ color: l.meetsTargetAtP95 ? 'var(--success)' : 'var(--danger)' }}>{l.meetsTargetAtP95 ? 'Within target' : 'Exceeds target'}</strong>,
               ])}
             />
           ) : (
-            <p style={{ fontSize: 13, color: '#5a6472' }}>Provider-managed serving - use the provider's published latency and your own measurements.</p>
+            <p style={{ fontSize: 13, color: 'var(--muted)' }}>Provider-managed serving - use the provider's published latency and your own measurements.</p>
           )}
           <Bullets items={a.sla.targets} />
         </div>
@@ -268,7 +268,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
       <thead>
-        <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+        <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
           {headers.map((h, i) => (
             <th key={i} style={{ padding: '6px 8px' }}>
               {h}
@@ -278,7 +278,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} style={{ borderBottom: '1px solid #eceff3' }}>
+          <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
             {row.map((c, j) => (
               <td key={j} style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                 {c}

@@ -7,16 +7,16 @@ import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
 const VERDICT = {
-  pass_with_conditions: { label: 'Operable with conditions', color: '#9a6700' },
-  further_assessment: { label: 'Requires further assessment', color: '#7d3cbd' },
-  fail: { label: 'Not operable as designed', color: '#b03a2e' },
+  pass_with_conditions: { label: 'Operable with conditions', color: 'var(--warning)' },
+  further_assessment: { label: 'Requires further assessment', color: 'var(--violet)' },
+  fail: { label: 'Not operable as designed', color: 'var(--danger)' },
 } as const;
 const AREA_STATUS = {
-  from_design: { label: 'From the design', color: '#1e8449' },
-  defined_here: { label: 'Defined here', color: '#2f6fde' },
-  gap: { label: 'Gap', color: '#b03a2e' },
+  from_design: { label: 'From the design', color: 'var(--success)' },
+  defined_here: { label: 'Defined here', color: 'var(--primary-text)' },
+  gap: { label: 'Gap', color: 'var(--danger)' },
 } as const;
-const verdictMark = (ok: boolean | null) => (ok === null ? '—' : <strong style={{ color: ok ? '#1e8449' : '#b03a2e' }}>{ok ? 'Meets target' : 'Misses target'}</strong>);
+const verdictMark = (ok: boolean | null) => (ok === null ? '—' : <strong style={{ color: ok ? 'var(--success)' : 'var(--danger)' }}>{ok ? 'Meets target' : 'Misses target'}</strong>);
 
 export function OperationsModelPage() {
   const { id } = useParams<{ id: string }>();
@@ -77,12 +77,12 @@ export function OperationsModelPage() {
           </div>
         ) : (
           <>
-            <p style={{ fontSize: 13, color: '#5a6472', marginTop: -8, maxWidth: 1000 }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: -8, maxWidth: 1000 }}>
               Can this run as a production AI platform? Brings together the operational parts of the <Link to={`/projects/${project.id}/inference-architecture`}>Inference Architecture</Link>,{' '}
               <Link to={`/projects/${project.id}/infrastructure-design`}>Infrastructure Design</Link> and <Link to={`/projects/${project.id}/capacity`}>Capacity plan</Link>, checks the SLA,
               RTO and RPO against estimated availability and recovery time, and checks whether the team can run what the design asks.
             </p>
-            {defaultsError && <div className="card" style={{ maxWidth: 900, color: '#9a6700' }}>{defaultsError}</div>}
+            {defaultsError && <div className="card" style={{ maxWidth: 900, color: 'var(--warning)' }}>{defaultsError}</div>}
             {defaults && c && (
               <form className="discovery-form" style={{ maxWidth: 1100 }} onSubmit={onSubmit}>
                 <section className="discovery-section">
@@ -147,7 +147,7 @@ function OperationsResultView({ r, version, createdAt }: { r: OperationsResult; 
       </div>
 
       {r.gaps.length > 0 && (
-        <div className="card" style={{ borderLeft: '4px solid #9a6700' }}>
+        <div className="card" style={{ borderLeft: '4px solid var(--warning)' }}>
           <div className="metric-label">Gaps to close</div>
           <Bullets items={r.gaps} />
         </div>
@@ -156,7 +156,7 @@ function OperationsResultView({ r, version, createdAt }: { r: OperationsResult; 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
         <div className="card" style={{ overflowX: 'auto' }}>
           <div className="metric-label">SLA - serial availability of the request path (estimate)</div>
-          <Table headers={['Component', 'Availability', 'Basis']} rows={d.sla.components.map((x) => [x.component, `${x.percent}%`, <span key="b" style={{ fontSize: 12, color: '#5a6472' }}>{x.basis}</span>])} />
+          <Table headers={['Component', 'Availability', 'Basis']} rows={d.sla.components.map((x) => [x.component, `${x.percent}%`, <span key="b" style={{ fontSize: 12, color: 'var(--muted)' }}>{x.basis}</span>])} />
           <p style={{ fontSize: 13, marginTop: 8 }}>
             Estimated <strong>{d.sla.estimatedPercent ?? '—'}%</strong> against a {d.sla.targetPercent}% target · {verdictMark(d.sla.meets)}
           </p>
@@ -174,7 +174,7 @@ function OperationsResultView({ r, version, createdAt }: { r: OperationsResult; 
         <div className="card">
           <div className="metric-label">Can the team run it?</div>
           <Table headers={['What the design asks the team to run', 'Load']} rows={load.items.map((i) => [i.item, i.points])} />
-          <p style={{ fontSize: 13, marginTop: 8, color: load.withinCapacity ? '#1e8449' : '#b03a2e' }}>
+          <p style={{ fontSize: 13, marginTop: 8, color: load.withinCapacity ? 'var(--success)' : 'var(--danger)' }}>
             Load {load.total} against {load.capacity} for a {load.opsCapability.replace(/_/g, ' ')} - {load.withinCapacity ? 'within capacity' : 'exceeds capacity'}.
           </p>
         </div>
@@ -200,7 +200,7 @@ function OperationsResultView({ r, version, createdAt }: { r: OperationsResult; 
               <ul key="i" style={{ margin: 0, paddingLeft: 16 }}>
                 {a.items.slice(0, 4).map((i, k) => (
                   <li key={k}>
-                    {i.text} <span style={{ fontSize: 11, color: '#7a7f8c' }}>({i.source})</span>
+                    {i.text} <span style={{ fontSize: 11, color: 'var(--muted)' }}>({i.source})</span>
                   </li>
                 ))}
                 {a.items.length > 4 && <li>+{a.items.length - 4} more</li>}
@@ -225,7 +225,7 @@ function Panel({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="card">
       <div className="metric-label">{title}</div>
-      {items.length ? <Bullets items={items} /> : <div style={{ fontSize: 13, color: '#7a7f8c', marginTop: 6 }}>Nothing specific.</div>}
+      {items.length ? <Bullets items={items} /> : <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 6 }}>Nothing specific.</div>}
     </div>
   );
 }
@@ -245,7 +245,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
       <thead>
-        <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+        <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
           {headers.map((h, i) => (
             <th key={i} style={{ padding: '6px 8px' }}>
               {h}
@@ -255,7 +255,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} style={{ borderBottom: '1px solid #eceff3' }}>
+          <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
             {row.map((cell, j) => (
               <td key={j} style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                 {cell}

@@ -8,10 +8,10 @@ import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
 const ELIGIBILITY: Record<Eligibility, { label: string; color: string }> = {
-  eligible: { label: 'Eligible', color: '#1e8449' },
-  conditional: { label: 'Conditional', color: '#9a6700' },
-  not_eligible: { label: 'Not eligible', color: '#b03a2e' },
-  not_assessed: { label: 'Not assessed', color: '#7a7f8c' },
+  eligible: { label: 'Eligible', color: 'var(--success)' },
+  conditional: { label: 'Conditional', color: 'var(--warning)' },
+  not_eligible: { label: 'Not eligible', color: 'var(--danger)' },
+  not_assessed: { label: 'Not assessed', color: 'var(--muted)' },
 };
 
 const RAG_SECTIONS: Array<[keyof NonNullable<RagAgentResult['rag']>, string]> = [
@@ -120,13 +120,13 @@ export function RagAgentPage() {
           </div>
         ) : (
           <>
-            <p style={{ fontSize: 13, color: '#5a6472', marginTop: -8, maxWidth: 1000 }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: -8, maxWidth: 1000 }}>
               Combines the application, <Link to={`/projects/${project.id}/vector-db-selection`}>vector database</Link>, embeddings, reranker,{' '}
               <Link to={`/projects/${project.id}/model-selection`}>models</Link>, <Link to={`/projects/${project.id}/inference-architecture`}>inference</Link> and tools into
               the GenAI application architecture. Retrieval, reranking and agent orchestration are each checked for eligibility before they are scored; latency and
               context figures are estimates until the Performance phase measures them.
             </p>
-            {defaultsError && <div className="card" style={{ maxWidth: 900, color: '#9a6700' }}>{defaultsError}</div>}
+            {defaultsError && <div className="card" style={{ maxWidth: 900, color: 'var(--warning)' }}>{defaultsError}</div>}
             {defaults && (
               <form className="discovery-form" style={{ maxWidth: 1100 }} onSubmit={onSubmit}>
                 <section className="discovery-section">
@@ -177,10 +177,10 @@ export function RagAgentPage() {
 
 function RagAgentResultView({ r, version, createdAt }: { r: RagAgentResult; version: number; createdAt: string }) {
   const lb = r.latencyBudget;
-  const verdict = (ok: boolean | null) => (ok === null ? '—' : <strong style={{ color: ok ? '#1e8449' : '#b03a2e' }}>{ok ? 'Within target' : 'Exceeds target'}</strong>);
+  const verdict = (ok: boolean | null) => (ok === null ? '—' : <strong style={{ color: ok ? 'var(--success)' : 'var(--danger)' }}>{ok ? 'Within target' : 'Exceeds target'}</strong>);
   return (
     <div style={{ marginTop: 28, maxWidth: 1150, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div className="card" style={{ borderLeft: `4px solid ${r.decisions.every((d) => d.chosen) ? '#2f6fde' : '#b03a2e'}` }}>
+      <div className="card" style={{ borderLeft: `4px solid ${r.decisions.every((d) => d.chosen) ? 'var(--primary-text)' : 'var(--danger)'}` }}>
         <div className="metric-label">
           GenAI Application Architecture · v{version} · {new Date(createdAt).toLocaleString()} · confidence {r.confidence}
         </div>
@@ -193,19 +193,19 @@ function RagAgentResultView({ r, version, createdAt }: { r: RagAgentResult; vers
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'stretch', gap: 6 }}>
           {r.components.map((c, i) => (
             <div key={c.layer} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{ border: '1px solid #c9d3e0', borderRadius: 8, padding: '8px 10px', background: '#f7f9fc', minWidth: 130, maxWidth: 210 }}>
-                <div style={{ fontSize: 11, color: '#5a6472', textTransform: 'uppercase' }}>{c.layer}</div>
+              <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', background: 'var(--surface-2)', minWidth: 130, maxWidth: 210 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase' }}>{c.layer}</div>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{c.component}</div>
-                <div style={{ fontSize: 11, color: '#5a6472' }}>{c.detail}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{c.detail}</div>
               </div>
-              {i < r.components.length - 1 && <span style={{ color: '#7a7f8c' }}>→</span>}
+              {i < r.components.length - 1 && <span style={{ color: 'var(--muted)' }}>→</span>}
             </div>
           ))}
         </div>
       </div>
 
       {r.gaps.length > 0 && (
-        <div className="card" style={{ borderLeft: '4px solid #9a6700' }}>
+        <div className="card" style={{ borderLeft: '4px solid var(--warning)' }}>
           <div className="metric-label">Gaps to close</div>
           <Bullets items={r.gaps} />
         </div>
@@ -226,7 +226,7 @@ function RagAgentResultView({ r, version, createdAt }: { r: RagAgentResult; vers
         <div className="card" style={{ overflowX: 'auto' }}>
           <div className="metric-label">Context window budget</div>
           <Table headers={['', 'Tokens', 'Evidence']} rows={r.contextBudget.lines.map((l) => [l.label, l.tokens.toLocaleString(), l.evidenceType.replace('_', '-')])} />
-          <p style={{ fontSize: 13, marginTop: 8, color: r.contextBudget.fits === false ? '#b03a2e' : '#1e3a5f' }}>{r.contextBudget.note}</p>
+          <p style={{ fontSize: 13, marginTop: 8, color: r.contextBudget.fits === false ? 'var(--danger)' : 'var(--text)' }}>{r.contextBudget.note}</p>
         </div>
       </div>
 
@@ -278,7 +278,7 @@ function Panel({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="card">
       <div className="metric-label">{title}</div>
-      {items.length ? <Bullets items={items} /> : <div style={{ fontSize: 13, color: '#7a7f8c', marginTop: 6 }}>Nothing specific.</div>}
+      {items.length ? <Bullets items={items} /> : <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 6 }}>Nothing specific.</div>}
     </div>
   );
 }
@@ -298,7 +298,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
       <thead>
-        <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+        <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
           {headers.map((h, i) => (
             <th key={i} style={{ padding: '6px 8px' }}>
               {h}
@@ -308,7 +308,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} style={{ borderBottom: '1px solid #eceff3' }}>
+          <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
             {row.map((cell, j) => (
               <td key={j} style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                 {cell}

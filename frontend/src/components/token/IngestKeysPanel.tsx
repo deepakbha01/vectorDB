@@ -101,10 +101,10 @@ export function IngestKeysPanel({ projectId }: { projectId: string }) {
           {error && <div className="error-text" style={{ marginTop: 6 }}>{error}</div>}
 
           {created && (
-            <div style={{ marginTop: 10, borderLeft: '4px solid #fab219', paddingLeft: 10 }}>
+            <div style={{ marginTop: 10, borderLeft: '4px solid var(--warning)', paddingLeft: 10 }}>
               <strong>Copy this key now - it cannot be shown again.</strong>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
-                <code style={{ ...mono, background: '#f5f6f8', padding: '6px 8px', borderRadius: 4, userSelect: 'all' }}>{created.key}</code>
+                <code style={{ ...mono, background: 'var(--surface-2)', padding: '6px 8px', borderRadius: 4, userSelect: 'all' }}>{created.key}</code>
                 <button type="button" style={linkBtn} onClick={copy}>
                   {copied ? 'Copied' : 'Copy'}
                 </button>
@@ -129,12 +129,12 @@ export function IngestKeysPanel({ projectId }: { projectId: string }) {
                     <div style={{ fontSize: 12, color: VIZ.muted }}>{k.createdBy ?? ''}</div>
                   </span>,
                   when(k.lastUsedAt),
-                  k.revokedAt ? <span key="s" style={{ color: VIZ.ink2 }}>○ Revoked {when(k.revokedAt)}</span> : <span key="s" style={{ color: '#0ca30c' }}>● Active</span>,
+                  k.revokedAt ? <span key="s" style={{ color: VIZ.ink2 }}>○ Revoked {when(k.revokedAt)}</span> : <span key="s" style={{ color: 'var(--success)' }}>● Active</span>,
                   k.revokedAt ? (
                     ''
                   ) : confirm === k.id ? (
                     <span key="a" style={{ display: 'flex', gap: 10, fontSize: 12 }}>
-                      <button type="button" style={{ ...linkBtn, color: '#d03b3b' }} disabled={busy} onClick={() => revoke(k.id)}>
+                      <button type="button" style={{ ...linkBtn, color: 'var(--danger)' }} disabled={busy} onClick={() => revoke(k.id)}>
                         Confirm revoke
                       </button>
                       <button type="button" style={linkBtn} onClick={() => setConfirm(null)}>
@@ -154,7 +154,7 @@ export function IngestKeysPanel({ projectId }: { projectId: string }) {
           <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16 }}>
             <div>
               <div className="metric-label">Send usage events directly (SDK or service)</div>
-              <pre style={{ ...mono, background: '#f5f6f8', padding: 10, borderRadius: 6, whiteSpace: 'pre-wrap', margin: 0 }}>
+              <pre style={{ ...mono, background: 'var(--surface-2)', padding: 10, borderRadius: 6, whiteSpace: 'pre-wrap', margin: 0 }}>
                 {`POST ${base}/usage-events
 Authorization: Bearer <ingest key>
 Content-Type: application/json
@@ -167,7 +167,7 @@ Content-Type: application/json
             </div>
             <div>
               <div className="metric-label">Or through an OpenTelemetry Collector</div>
-              <pre style={{ ...mono, background: '#f5f6f8', padding: 10, borderRadius: 6, whiteSpace: 'pre-wrap', margin: 0 }}>
+              <pre style={{ ...mono, background: 'var(--surface-2)', padding: 10, borderRadius: 6, whiteSpace: 'pre-wrap', margin: 0 }}>
                 {`AI_FACTORY_INGEST_KEY=<ingest key> \\
   docker compose --profile telemetry up
 

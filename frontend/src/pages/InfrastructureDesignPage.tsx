@@ -8,13 +8,13 @@ import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
 const ELIGIBILITY: Record<Eligibility, { label: string; color: string }> = {
-  eligible: { label: 'Eligible', color: '#1e8449' },
-  conditional: { label: 'Conditional', color: '#9a6700' },
-  not_eligible: { label: 'Not eligible', color: '#b03a2e' },
-  not_assessed: { label: 'Not assessed', color: '#7a7f8c' },
+  eligible: { label: 'Eligible', color: 'var(--success)' },
+  conditional: { label: 'Conditional', color: 'var(--warning)' },
+  not_eligible: { label: 'Not eligible', color: 'var(--danger)' },
+  not_assessed: { label: 'Not assessed', color: 'var(--muted)' },
 };
 
-const MODEL_COLOR = { single_target: '#2f6fde', hybrid: '#7d3cbd', not_feasible: '#b03a2e' } as const;
+const MODEL_COLOR = { single_target: 'var(--primary-text)', hybrid: 'var(--violet)', not_feasible: 'var(--danger)' } as const;
 
 const SECTIONS: Array<[keyof InfrastructureResult['sections'], string]> = [
   ['compute', 'Compute'],
@@ -101,13 +101,13 @@ export function InfrastructureDesignPage() {
           </div>
         ) : (
           <>
-            <p style={{ fontSize: 13, color: '#5a6472', marginTop: -8, maxWidth: 1000 }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: -8, maxWidth: 1000 }}>
               Places each component - inference serving from the <Link to={`/projects/${project.id}/inference-architecture`}>Inference Architecture</Link>, the vector
               database from <Link to={`/projects/${project.id}/vector-db-selection`}>Vector DB Selection</Link>, and the application tier - on an allowed target. Each placement is
               checked for eligibility before it is scored, and components are kept together where possible. The existing{' '}
               <Link to={`/projects/${project.id}/deployment`}>Deployment</Link> plan is unchanged.
             </p>
-            {defaultsError && <div className="card" style={{ maxWidth: 900, color: '#9a6700' }}>{defaultsError}</div>}
+            {defaultsError && <div className="card" style={{ maxWidth: 900, color: 'var(--warning)' }}>{defaultsError}</div>}
             {defaults && c && (
               <form className="discovery-form" style={{ maxWidth: 1100 }} onSubmit={onSubmit}>
                 <section className="discovery-section">
@@ -155,7 +155,7 @@ function InfrastructureResultView({ r, version, createdAt }: { r: Infrastructure
           Infrastructure Decision Record · v{version} · {new Date(createdAt).toLocaleString()} · confidence {r.confidence}
         </div>
         <div className="metric-value" style={{ fontSize: 20 }}>{r.deploymentModel.summary}</div>
-        <div style={{ fontSize: 12, color: '#5a6472' }}>{r.deploymentModel.kind.replace('_', ' ')}</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{r.deploymentModel.kind.replace('_', ' ')}</div>
       </div>
 
       <div className="card" style={{ overflowX: 'auto' }}>
@@ -164,7 +164,7 @@ function InfrastructureResultView({ r, version, createdAt }: { r: Infrastructure
           headers={['Component', 'Placed on', 'Eligibility', 'Why', 'Conditions']}
           rows={r.placements.map((p) => [
             p.componentLabel,
-            p.chosen?.label ?? <strong key="n" style={{ color: '#b03a2e' }}>Not feasible</strong>,
+            p.chosen?.label ?? <strong key="n" style={{ color: 'var(--danger)' }}>Not feasible</strong>,
             p.chosen ? <span key="e" style={{ color: ELIGIBILITY[p.chosen.eligibility].color, fontWeight: 600 }}>{ELIGIBILITY[p.chosen.eligibility].label}</span> : '—',
             p.why,
             p.chosen ? [...p.chosen.conditions, ...p.chosen.notes].join(' ') || '—' : '—',
@@ -209,7 +209,7 @@ function Panel({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="card">
       <div className="metric-label">{title}</div>
-      {items.length ? <Bullets items={items} /> : <div style={{ fontSize: 13, color: '#7a7f8c', marginTop: 6 }}>Nothing specific.</div>}
+      {items.length ? <Bullets items={items} /> : <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 6 }}>Nothing specific.</div>}
     </div>
   );
 }
@@ -229,7 +229,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
       <thead>
-        <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+        <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
           {headers.map((h, i) => (
             <th key={i} style={{ padding: '6px 8px' }}>
               {h}
@@ -239,7 +239,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} style={{ borderBottom: '1px solid #eceff3' }}>
+          <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
             {row.map((cell, j) => (
               <td key={j} style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                 {cell}

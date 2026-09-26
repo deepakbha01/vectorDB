@@ -49,8 +49,8 @@ export function PhaseNav({ project }: { project: Project }) {
           );
         })}
       </ul>
-      <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid #dfe3e8' }}>
-        <div style={{ fontSize: 11, color: '#5a6472', textTransform: 'uppercase', marginBottom: 6 }}>Inference track</div>
+      <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 6 }}>Inference track</div>
         <ul className="phase-nav">
           {features.aiFactory && (
             <li>
@@ -154,8 +154,8 @@ export function PhaseNav({ project }: { project: Project }) {
           )}
         </ul>
       </div>
-      <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid #dfe3e8' }}>
-        <div style={{ fontSize: 11, color: '#5a6472', textTransform: 'uppercase', marginBottom: 6 }}>Project tools</div>
+      <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 6 }}>Project tools</div>
         <ul className="phase-nav">
           <li>
             <NavLink to={`/projects/${project.id}/reports`} className={({ isActive }) => (isActive ? 'active' : '')}>

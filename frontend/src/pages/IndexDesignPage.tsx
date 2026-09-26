@@ -90,7 +90,7 @@ export function IndexDesignPage() {
               <div className="metric-value" style={{ fontSize: 22 }}>
                 {design.label}
               </div>
-              <p style={{ fontSize: 13, color: '#5a6472' }}>{design.rationale}</p>
+              <p style={{ fontSize: 13, color: 'var(--muted)' }}>{design.rationale}</p>
             </div>
 
             <div className="card-grid" style={{ marginBottom: 16 }}>
@@ -98,7 +98,7 @@ export function IndexDesignPage() {
                 <div className="card" key={c.name}>
                   <div className="metric-label">{c.name}</div>
                   <div className="metric-value">{c.value}</div>
-                  <p style={{ fontSize: 11, color: '#5a6472', margin: '4px 0 0' }}>{c.description}</p>
+                  <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>{c.description}</p>
                 </div>
               ))}
             </div>
@@ -122,14 +122,14 @@ export function IndexDesignPage() {
               <div className="metric-label" style={{ marginBottom: 8 }}>
                 How this is scored
               </div>
-              <p style={{ fontSize: 13, color: '#5a6472', margin: '0 0 8px' }}>
+              <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 8px' }}>
                 Each candidate index earns a 0-1 score on five criteria; a weighted sum decides the winner:
               </p>
               <p
                 style={{
                   fontSize: 12,
                   fontFamily: 'monospace',
-                  background: '#f5f7fa',
+                  background: 'var(--surface-2)',
                   padding: '8px 10px',
                   borderRadius: 6,
                   margin: '0 0 10px',
@@ -140,7 +140,7 @@ export function IndexDesignPage() {
                 {design.criteriaWeights.memory} + Throughput&times;{design.criteriaWeights.throughput} + Update-friendliness&times;
                 {design.criteriaWeights.updateFriendliness}
               </p>
-              <ul style={{ fontSize: 12, color: '#5a6472', margin: 0, paddingLeft: 18 }}>
+              <ul style={{ fontSize: 12, color: 'var(--muted)', margin: 0, paddingLeft: 18 }}>
                 <li>
                   <strong>Recall</strong> - how well the index's approximate search meets your {design.inputsUsed.recallTarget} recall
                   target.
@@ -160,7 +160,7 @@ export function IndexDesignPage() {
                   pattern.
                 </li>
               </ul>
-              <p style={{ fontSize: 11, color: '#8892a0', margin: '8px 0 0' }}>
+              <p style={{ fontSize: 11, color: 'var(--muted)', margin: '8px 0 0' }}>
                 Click a row below to see the exact evidence behind that option's scores.
               </p>
             </div>
@@ -171,7 +171,7 @@ export function IndexDesignPage() {
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
-                  <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+                  <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
                     <th style={{ padding: '6px 8px' }}>Index</th>
                     <th style={{ padding: '6px 8px' }}>Total</th>
                     <th style={{ padding: '6px 8px' }}>Recall</th>
@@ -190,10 +190,10 @@ export function IndexDesignPage() {
                         <tr
                           onClick={() => setExpandedOption(isExpanded ? null : o.indexType)}
                           style={{
-                            borderBottom: '1px solid #eceff3',
+                            borderBottom: '1px solid var(--border)',
                             fontWeight: o.indexType === design.decision ? 600 : 400,
                             cursor: 'pointer',
-                            background: isExpanded ? '#f5f7fa' : undefined,
+                            background: isExpanded ? 'var(--surface-2)' : undefined,
                           }}
                         >
                           <td style={{ padding: '6px 8px' }}>{o.label}</td>
@@ -207,8 +207,8 @@ export function IndexDesignPage() {
                         </tr>
                         {isExpanded && (
                           <tr>
-                            <td colSpan={8} style={{ padding: '4px 8px 12px 24px', background: '#f9fafb' }}>
-                              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: '#5a6472' }}>
+                            <td colSpan={8} style={{ padding: '4px 8px 12px 24px', background: 'var(--surface-2)' }}>
+                              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: 'var(--muted)' }}>
                                 {o.evidence.map((line, i) => (
                                   <li key={i}>{line}</li>
                                 ))}
@@ -246,7 +246,7 @@ export function IndexDesignPage() {
 
         {showForm && (
           <form className="stacked" style={{ maxWidth: 560 }} onSubmit={onSubmit}>
-            <fieldset style={{ border: '1px solid #dfe3e8', borderRadius: 8, padding: 14 }}>
+            <fieldset style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 14 }}>
               <legend>Update pattern</legend>
               <div>
                 <label>How often will vectors be inserted/updated/deleted after the initial load?</label>
@@ -258,7 +258,7 @@ export function IndexDesignPage() {
                   ))}
                 </select>
               </div>
-              <p style={{ fontSize: 12, color: '#5a6472' }}>
+              <p style={{ fontSize: 12, color: 'var(--muted)' }}>
                 Vector count, dimension, QPS, recall target, latency target, and available memory default from your
                 Phase 1 Discovery assessment (and Phase 2 embedding choice for dimension). Use the overrides below only
                 to run a what-if comparison.
@@ -269,7 +269,7 @@ export function IndexDesignPage() {
             </fieldset>
 
             {showAdvanced && (
-              <fieldset style={{ border: '1px solid #dfe3e8', borderRadius: 8, padding: 14 }}>
+              <fieldset style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 14 }}>
                 <legend>Overrides (optional)</legend>
                 <div>
                   <label>Vector count</label>

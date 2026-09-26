@@ -45,7 +45,7 @@ export function UsersManagementPage() {
     <div className="main-content">
       <TopBar title="Manage Users" />
 
-      <p style={{ fontSize: 13, color: '#5a6472', marginBottom: 20 }}>
+      <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>
         The Create Account page always signs new users up as <strong>architect</strong> - this is the only place to
         promote someone to <strong>admin</strong> (who can execute real infrastructure changes in Phase 4) or restrict
         them to <strong>viewer</strong> (read-only).
@@ -57,7 +57,7 @@ export function UsersManagementPage() {
         <div className="card" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+              <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
                 <th style={{ padding: '6px 8px' }}>Email</th>
                 <th style={{ padding: '6px 8px' }}>Name</th>
                 <th style={{ padding: '6px 8px' }}>Current role</th>
@@ -67,10 +67,10 @@ export function UsersManagementPage() {
             </thead>
             <tbody>
               {users.map((u) => (
-                <tr key={u.id} style={{ borderBottom: '1px solid #eceff3' }}>
+                <tr key={u.id} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td style={{ padding: '6px 8px' }}>
                     {u.email}
-                    {u.id === currentUser.id && <span style={{ color: '#5a6472' }}> (you)</span>}
+                    {u.id === currentUser.id && <span style={{ color: 'var(--muted)' }}> (you)</span>}
                   </td>
                   <td style={{ padding: '6px 8px' }}>{u.fullName ?? '-'}</td>
                   <td style={{ padding: '6px 8px' }}>
@@ -82,7 +82,7 @@ export function UsersManagementPage() {
                       <select
                         value={pendingRole[u.id] ?? u.role}
                         onChange={(e) => setPendingRole((prev) => ({ ...prev, [u.id]: e.target.value as UserRole }))}
-                        style={{ padding: '4px 6px', border: '1px solid #dfe3e8', borderRadius: 6, fontSize: 13 }}
+                        style={{ padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13 }}
                       >
                         {ROLES.map((r) => (
                           <option key={r} value={r}>

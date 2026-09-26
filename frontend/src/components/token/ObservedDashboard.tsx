@@ -36,10 +36,10 @@ interface Data {
 }
 
 const TELEMETRY: Record<TelemetryStatus, { icon: string; label: string; color: string }> = {
-  receiving: { icon: '●', label: 'Receiving live telemetry', color: '#0ca30c' },
-  stale: { icon: '▲', label: 'Live telemetry has stopped', color: '#b8860b' },
-  simulated_only: { icon: '◆', label: 'Simulated usage only - no live telemetry', color: '#52514e' },
-  no_telemetry: { icon: '○', label: 'No telemetry received yet', color: '#52514e' },
+  receiving: { icon: '●', label: 'Receiving live telemetry', color: 'var(--success)' },
+  stale: { icon: '▲', label: 'Live telemetry has stopped', color: 'var(--warning)' },
+  simulated_only: { icon: '◆', label: 'Simulated usage only - no live telemetry', color: 'var(--muted)' },
+  no_telemetry: { icon: '○', label: 'No telemetry received yet', color: 'var(--muted)' },
 };
 
 const FILTER_LABELS: Record<FilterName, string> = { environment: 'Environment', application: 'Application', service: 'Service', workflow: 'Workflow', provider: 'Provider', model: 'Model', tenant: 'Tenant' };
@@ -194,7 +194,7 @@ export function ObservedDashboard({ projectId, filters, rangeKey, view, onChange
       )}
 
       {data && s?.empty && (
-        <div className="card" style={{ borderLeft: '4px solid #898781' }}>
+        <div className="card" style={{ borderLeft: '4px solid var(--muted)' }}>
           <strong>No {filters.mode} usage for this range and filters.</strong>
           <div style={{ fontSize: 13, color: VIZ.ink2, marginTop: 4 }}>
             Nothing is shown rather than estimated. {filters.mode === 'live' ? 'Live usage appears once an application sends usage events.' : 'Simulated usage appears once load-test or benchmark results are uploaded.'} Switch to <em>Estimated</em> to see the projection.
@@ -302,8 +302,8 @@ export function ObservedDashboard({ projectId, filters, rangeKey, view, onChange
                     <span key="m" style={{ fontSize: 12, color: VIZ.ink2 }}>{r.models}</span>,
                     full(r.totalTokens),
                     `${r.llmCalls} LLM · ${r.toolCalls} tool`,
-                    r.costIncomplete ? <span key="c" style={{ color: '#9a6700' }}>{usd(r.cost, 6)} (incomplete)</span> : usd(r.cost, 6),
-                    r.failed ? <span key="f" style={{ color: '#d03b3b' }}>▲ error</span> : '',
+                    r.costIncomplete ? <span key="c" style={{ color: 'var(--warning)' }}>{usd(r.cost, 6)} (incomplete)</span> : usd(r.cost, 6),
+                    r.failed ? <span key="f" style={{ color: 'var(--danger)' }}>▲ error</span> : '',
                   ])}
                   onRow={(i) => setTrace(requests.rows[i].traceId ?? requests.rows[i].request)}
                 />
@@ -370,7 +370,7 @@ function CostCard({ cost, trends, onSelect }: { cost: UsageCost; trends: UsageTr
           {cost.budget ? `${usd(cost.budget.monthlyUsd, 0)} · ${cost.budget.shareUsed ?? '—'}% at run rate` : 'No budget recorded'}
         </div>
       </div>
-      {cost.costIncomplete && <div style={{ fontSize: 12, color: '#9a6700', marginTop: 6 }}>▲ {cost.unpricedEvents} event(s) had no price in force - add the price to include them.</div>}
+      {cost.costIncomplete && <div style={{ fontSize: 12, color: 'var(--warning)', marginTop: 6 }}>▲ {cost.unpricedEvents} event(s) had no price in force - add the price to include them.</div>}
     </ChartCard>
   );
 }
@@ -453,7 +453,7 @@ function AgentCard({ agents, selected, onSelect }: { agents: UsageAgents; select
           a.toolCallsPerTask.toFixed(1),
           full(a.tokensPerTask),
           a.costIncomplete ? `${usd(a.costPerTask, 5)} (incomplete)` : usd(a.costPerTask, 5),
-          a.tasksOverLimit ? <span key="l" style={{ color: '#9a4a1c' }}>▲ {a.tasksOverLimit} task(s) over {agents.loopThreshold} LLM calls</span> : <span key="l" style={{ color: VIZ.ink2 }}>● max {a.maxLlmCallsPerTask} calls</span>,
+          a.tasksOverLimit ? <span key="l" style={{ color: 'var(--warning)' }}>▲ {a.tasksOverLimit} task(s) over {agents.loopThreshold} LLM calls</span> : <span key="l" style={{ color: VIZ.ink2 }}>● max {a.maxLlmCallsPerTask} calls</span>,
         ])}
         onRow={(i) => onSelect(agents.agents[i].agentId)}
       />

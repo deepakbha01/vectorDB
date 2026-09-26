@@ -37,10 +37,10 @@ export function TraceView({ projectId, traceId, onClose }: { projectId: string; 
             {trace.totals.embeddingTokens > 0 && <span>{full(trace.totals.embeddingTokens)} embedding tokens</span>}
             <span>{usd(trace.totals.costUsd)}{trace.totals.unpricedSpans ? ` (${trace.totals.unpricedSpans} span(s) unpriced)` : ''}</span>
             <span>{full(trace.totals.durationMs)} ms</span>
-            {trace.totals.errors > 0 && <span style={{ color: '#d03b3b' }}>▲ {trace.totals.errors} error(s)</span>}
+            {trace.totals.errors > 0 && <span style={{ color: 'var(--danger)' }}>▲ {trace.totals.errors} error(s)</span>}
           </div>
           {(trace.loop.excessiveLlmCalls || trace.loop.repeatedTools.length > 0) && (
-            <div style={{ fontSize: 13, marginBottom: 10, color: '#9a4a1c' }}>
+            <div style={{ fontSize: 13, marginBottom: 10, color: 'var(--warning)' }}>
               ▲ Possible loop:{' '}
               {[
                 trace.loop.excessiveLlmCalls && `${trace.totals.llmCalls} LLM calls (limit ${trace.loop.threshold})`,
@@ -52,7 +52,7 @@ export function TraceView({ projectId, traceId, onClose }: { projectId: string; 
           )}
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
             <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+              <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
                 {['Step', 'Model / tool', 'Input', 'Output', 'Other', 'Latency', 'Cost'].map((h) => (
                   <th key={h} style={{ padding: '6px 8px' }}>
                     {h}
@@ -71,19 +71,19 @@ export function TraceView({ projectId, traceId, onClose }: { projectId: string; 
 function rows(n: SpanNode, depth: number): JSX.Element[] {
   const other = [n.embeddingTokens && `${full(n.embeddingTokens)} embedding`, n.rerankingTokens && `${full(n.rerankingTokens)} rerank`].filter(Boolean).join(', ');
   const row = (
-    <tr key={n.eventId} style={{ borderBottom: '1px solid #eceff3' }}>
+    <tr key={n.eventId} style={{ borderBottom: '1px solid var(--border)' }}>
       <td style={{ padding: '5px 8px', paddingLeft: 8 + depth * 18 }}>
         {depth > 0 && <span style={{ color: VIZ.muted }}>└ </span>}
         {n.operationType}
         {n.ragStage && <span style={{ color: VIZ.muted }}> · {n.ragStage}</span>}
-        {n.requestStatus === 'error' && <span style={{ color: '#d03b3b' }}> ▲ {n.errorType ?? 'error'}</span>}
+        {n.requestStatus === 'error' && <span style={{ color: 'var(--danger)' }}> ▲ {n.errorType ?? 'error'}</span>}
       </td>
       <td style={{ padding: '5px 8px' }}>{n.toolName ?? `${n.provider} / ${n.model}`}</td>
       <td style={{ padding: '5px 8px' }}>{n.inputTokens ? full(n.inputTokens) : ''}</td>
       <td style={{ padding: '5px 8px' }}>{n.outputTokens ? full(n.outputTokens) : ''}</td>
       <td style={{ padding: '5px 8px', color: VIZ.ink2 }}>{other}</td>
       <td style={{ padding: '5px 8px' }}>{n.latencyMs !== null ? `${full(n.latencyMs)} ms` : ''}</td>
-      <td style={{ padding: '5px 8px' }}>{n.totalTokens + n.embeddingTokens + n.rerankingTokens === 0 ? '' : n.estimatedTotalCost !== null ? usd(n.estimatedTotalCost, 6) : <span style={{ color: '#9a6700' }}>unpriced</span>}</td>
+      <td style={{ padding: '5px 8px' }}>{n.totalTokens + n.embeddingTokens + n.rerankingTokens === 0 ? '' : n.estimatedTotalCost !== null ? usd(n.estimatedTotalCost, 6) : <span style={{ color: 'var(--warning)' }}>unpriced</span>}</td>
     </tr>
   );
   return [row, ...n.children.flatMap((c) => rows(c, depth + 1))];

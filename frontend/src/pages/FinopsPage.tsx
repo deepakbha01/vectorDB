@@ -10,9 +10,9 @@ import { TokenCostPanel } from '../components/token/TokenCostPanel';
 const CATEGORY: Record<CostCategory, string> = { inference: 'Inference', vector_db: 'Vector database', embedding: 'Embedding', infrastructure: 'Infrastructure', operations: 'Operations' };
 const RESOURCE: Record<CostResource, string> = { gpu: 'GPU', cpu: 'CPU', storage: 'Storage', network: 'Network', api: 'API spend', people: 'People / support', other: 'Other' };
 const VALIDATION = {
-  pass_with_conditions: { label: 'Within budget - estimates to confirm', color: '#9a6700' },
-  further_assessment: { label: 'Requires further assessment', color: '#7d3cbd' },
-  fail: { label: 'Over budget', color: '#b03a2e' },
+  pass_with_conditions: { label: 'Within budget - estimates to confirm', color: 'var(--warning)' },
+  further_assessment: { label: 'Requires further assessment', color: 'var(--violet)' },
+  fail: { label: 'Over budget', color: 'var(--danger)' },
 } as const;
 const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
 const small = (n: number) => (n >= 1 ? `$${n.toFixed(2)}` : `$${n.toPrecision(3)}`);
@@ -71,15 +71,15 @@ export function FinopsPage() {
           </div>
         ) : (
           <>
-            <p style={{ fontSize: 13, color: '#5a6472', marginTop: -8, maxWidth: 1000 }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: -8, maxWidth: 1000 }}>
               Operating cost of the recommended architecture, built from the sizing in earlier phases (<Link to={`/projects/${project.id}/inference`}>Inference</Link>,{' '}
               <Link to={`/projects/${project.id}/vector-db-selection`}>Vector DB</Link>, <Link to={`/projects/${project.id}/data-pipeline`}>Data &amp; Embeddings</Link>,{' '}
               <Link to={`/projects/${project.id}/infrastructure-design`}>Infrastructure Design</Link>) and a directional rate card, and compared across on-premises, Azure,
               AWS, OCI, GCP and hybrid.
             </p>
-            {defaultsError && <div className="card" style={{ maxWidth: 900, color: '#9a6700' }}>{defaultsError}</div>}
+            {defaultsError && <div className="card" style={{ maxWidth: 900, color: 'var(--warning)' }}>{defaultsError}</div>}
             {defaults && (
-              <div className="card" style={{ maxWidth: 1150, borderLeft: '4px solid #9a6700', fontSize: 13 }}>
+              <div className="card" style={{ maxWidth: 1150, borderLeft: '4px solid var(--warning)', fontSize: 13 }}>
                 <strong>Not a quote.</strong> {defaults.preview.disclaimer} Rate card reviewed {defaults.preview.ratesReviewed}.
               </div>
             )}
@@ -121,7 +121,7 @@ function FinopsResultView({ r, version, createdAt }: { r: FinopsResult; version:
       </div>
 
       {r.gaps.length > 0 && (
-        <div className="card" style={{ borderLeft: '4px solid #9a6700' }}>
+        <div className="card" style={{ borderLeft: '4px solid var(--warning)' }}>
           <div className="metric-label">Not included yet</div>
           <Bullets items={r.gaps} />
         </div>
@@ -134,11 +134,11 @@ function FinopsResultView({ r, version, createdAt }: { r: FinopsResult; version:
           rows={[...(c ? [c] : []), ...r.comparison].map((o) => [
             <span key="l" style={{ fontWeight: o.id === 'chosen' ? 700 : 400 }}>
               {o.label}
-              {!o.allowed && o.feasible && <div style={{ fontSize: 11, color: '#9a6700' }}>not an allowed target</div>}
+              {!o.allowed && o.feasible && <div style={{ fontSize: 11, color: 'var(--warning)' }}>not an allowed target</div>}
             </span>,
             ...(Object.keys(CATEGORY) as CostCategory[]).map((k) => (o.byCategory ? money(o.byCategory[k]) : '—')),
             o.monthlyUsd !== null ? <strong key="t">{money(o.monthlyUsd)}</strong> : '—',
-            o.feasible ? (r.cheapestAllowed?.id === o.id ? <span key="c" style={{ color: '#1e8449', fontSize: 12 }}>cheapest allowed</span> : '') : <span key="n" style={{ color: '#b03a2e', fontSize: 12 }}>{o.notFeasibleReasons.join(' ')}</span>,
+            o.feasible ? (r.cheapestAllowed?.id === o.id ? <span key="c" style={{ color: 'var(--success)', fontSize: 12 }}>cheapest allowed</span> : '') : <span key="n" style={{ color: 'var(--danger)', fontSize: 12 }}>{o.notFeasibleReasons.join(' ')}</span>,
           ])}
         />
       </div>
@@ -148,7 +148,7 @@ function FinopsResultView({ r, version, createdAt }: { r: FinopsResult; version:
           <div className="metric-label">Chosen design - every line and how it was derived</div>
           <Table
             headers={['Category', 'Item', 'Monthly', 'Evidence', 'Basis']}
-            rows={c.lines.map((l) => [CATEGORY[l.category], l.item, money(l.monthlyUsd), evidence(l.evidenceType), <span key="b" style={{ fontSize: 12, color: '#5a6472' }}>{l.basis}</span>])}
+            rows={c.lines.map((l) => [CATEGORY[l.category], l.item, money(l.monthlyUsd), evidence(l.evidenceType), <span key="b" style={{ fontSize: 12, color: 'var(--muted)' }}>{l.basis}</span>])}
           />
         </div>
       )}
@@ -163,7 +163,7 @@ function FinopsResultView({ r, version, createdAt }: { r: FinopsResult; version:
         {r.unitEconomics.length > 0 && (
           <div className="card">
             <div className="metric-label">Unit economics (estimated)</div>
-            <Table headers={['', 'USD', 'Basis']} rows={r.unitEconomics.map((u) => [u.label, small(u.usd), <span key="b" style={{ fontSize: 12, color: '#5a6472' }}>{u.basis}</span>])} />
+            <Table headers={['', 'USD', 'Basis']} rows={r.unitEconomics.map((u) => [u.label, small(u.usd), <span key="b" style={{ fontSize: 12, color: 'var(--muted)' }}>{u.basis}</span>])} />
           </div>
         )}
         {r.oneOff.length > 0 && (
@@ -197,7 +197,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
       <thead>
-        <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+        <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
           {headers.map((h, i) => (
             <th key={i} style={{ padding: '6px 8px' }}>
               {h}
@@ -207,7 +207,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} style={{ borderBottom: '1px solid #eceff3' }}>
+          <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
             {row.map((cell, j) => (
               <td key={j} style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                 {cell}

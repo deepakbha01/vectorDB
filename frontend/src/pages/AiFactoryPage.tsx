@@ -18,24 +18,24 @@ import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
 const STATUS_STYLE: Record<StepStatus, { label: string; color: string; bg: string }> = {
-  current: { label: 'Current', color: '#1e8449', bg: '#eaf7ef' },
-  stale: { label: 'Out of date', color: '#b03a2e', bg: '#fdecea' },
-  review: { label: 'Review', color: '#9a6700', bg: '#fff6dd' },
-  in_progress: { label: 'In progress', color: '#2f6fde', bg: '#eaf1fd' },
-  not_started: { label: 'Not started', color: '#5a6472', bg: '#f1f3f5' },
-  not_yet_available: { label: 'Coming soon', color: '#7a7f8c', bg: '#f5f5f7' },
+  current: { label: 'Current', color: 'var(--success)', bg: 'var(--success-soft)' },
+  stale: { label: 'Out of date', color: 'var(--danger)', bg: 'var(--danger-soft)' },
+  review: { label: 'Review', color: 'var(--warning)', bg: 'var(--warning-soft)' },
+  in_progress: { label: 'In progress', color: 'var(--primary-text)', bg: 'var(--primary-soft)' },
+  not_started: { label: 'Not started', color: 'var(--muted)', bg: 'var(--surface-2)' },
+  not_yet_available: { label: 'Coming soon', color: 'var(--muted)', bg: 'var(--surface-2)' },
 };
 const EVIDENCE_STYLE: Record<EvidenceType, { label: string; color: string }> = {
-  measured: { label: 'Measured', color: '#1e8449' },
-  estimated: { label: 'Estimated', color: '#2f6fde' },
-  vendor_listed: { label: 'Vendor-listed', color: '#6b3fa0' },
-  assumption: { label: 'Assumption', color: '#9a6700' },
+  measured: { label: 'Measured', color: 'var(--success)' },
+  estimated: { label: 'Estimated', color: 'var(--primary-text)' },
+  vendor_listed: { label: 'Vendor-listed', color: 'var(--violet)' },
+  assumption: { label: 'Assumption', color: 'var(--warning)' },
 };
 const ELIGIBILITY_STYLE: Record<Eligibility, { label: string; color: string }> = {
-  eligible: { label: 'Eligible', color: '#1e8449' },
-  conditional: { label: 'Conditional', color: '#9a6700' },
-  not_eligible: { label: 'Not eligible', color: '#b03a2e' },
-  not_assessed: { label: 'Not assessed', color: '#7a7f8c' },
+  eligible: { label: 'Eligible', color: 'var(--success)' },
+  conditional: { label: 'Conditional', color: 'var(--warning)' },
+  not_eligible: { label: 'Not eligible', color: 'var(--danger)' },
+  not_assessed: { label: 'Not assessed', color: 'var(--muted)' },
 };
 const STEP_SECTIONS: Record<string, Array<keyof AssessmentState>> = {
   use_case: ['useCase'],
@@ -105,7 +105,7 @@ export function AiFactoryPage() {
 
         {overview && step && (
           <>
-            <p style={{ fontSize: 13, color: '#5a6472', marginTop: -8, maxWidth: 1000 }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: -8, maxWidth: 1000 }}>
               A guided view over the existing phases: what each step has decided, whether it is still current, and what an upstream change affects. It reads the phases; it never changes them.
               {' '}
               <span style={{ whiteSpace: 'nowrap' }}>
@@ -146,10 +146,10 @@ function StepList({ steps, selected, onSelect }: { steps: StepState[]; selected:
           onClick={() => onSelect(s.number)}
           style={{
             display: 'flex', width: '100%', alignItems: 'center', gap: 8, padding: '8px 10px', border: 'none', borderRadius: 6, cursor: 'pointer', textAlign: 'left',
-            background: s.number === selected ? '#eaf1fd' : 'transparent', fontWeight: s.number === selected ? 600 : 400, fontSize: 13,
+            background: s.number === selected ? 'var(--primary-soft)' : 'transparent', fontWeight: s.number === selected ? 600 : 400, fontSize: 13,
           }}
         >
-          <span style={{ color: '#7a7f8c', fontVariantNumeric: 'tabular-nums' }}>{pad(s.number)}</span>
+          <span style={{ color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>{pad(s.number)}</span>
           <span style={{ flex: 1 }}>{s.title}</span>
           <StatusDot status={s.status} />
         </button>
@@ -175,7 +175,7 @@ function StepDetail({ step, overview, projectId, decisions, onNext }: { step: St
             </span>
           </span>
         </div>
-        {step.note && <p style={{ fontSize: 13, color: '#5a6472', margin: '8px 0 0' }}>{step.note}</p>}
+        {step.note && <p style={{ fontSize: 13, color: 'var(--muted)', margin: '8px 0 0' }}>{step.note}</p>}
 
         {lineage.length > 0 && (
           <Table
@@ -189,7 +189,7 @@ function StepDetail({ step, overview, projectId, decisions, onNext }: { step: St
                 {l.reasons.map((r) => (
                   <div key={r.message}>{r.message}</div>
                 ))}
-                {l.changedDiscoveryFields?.length ? <div style={{ color: '#5a6472' }}>Changed answers: {l.changedDiscoveryFields.join(', ')}</div> : null}
+                {l.changedDiscoveryFields?.length ? <div style={{ color: 'var(--muted)' }}>Changed answers: {l.changedDiscoveryFields.join(', ')}</div> : null}
                 {!l.reasons.length && l.latest ? 'Up to date' : null}
               </span>,
               <Link key="o" to={`/projects/${projectId}/${l.route}`}>
@@ -199,7 +199,7 @@ function StepDetail({ step, overview, projectId, decisions, onNext }: { step: St
           />
         )}
         {step.key === 'use_case' && (
-          <p style={{ fontSize: 13, color: '#5a6472', margin: '8px 0 0' }}>
+          <p style={{ fontSize: 13, color: 'var(--muted)', margin: '8px 0 0' }}>
             Captured when the project was created. A dedicated AI Workload Profile (criticality, users, workload type, data types) arrives in Wave 2.
           </p>
         )}
@@ -219,11 +219,11 @@ function StepDetail({ step, overview, projectId, decisions, onNext }: { step: St
               Assessment state · {key} {s.source ? `· from ${s.source.phase.replace(/_/g, ' ')} v${s.source.version}` : ''}
             </div>
             {s.status === 'not_yet_available' ? (
-              <p style={{ fontSize: 13, color: '#5a6472', margin: 0 }}>Not part of the application yet - planned for Wave {s.plannedWave}.</p>
+              <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>Not part of the application yet - planned for Wave {s.plannedWave}.</p>
             ) : Object.keys(s.summary).length ? (
               <Table headers={['Field', 'Value']} rows={Object.entries(s.summary).map(([k, v]) => [k, show(v)])} />
             ) : (
-              <p style={{ fontSize: 13, color: '#5a6472', margin: 0 }}>Nothing recorded yet.</p>
+              <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>Nothing recorded yet.</p>
             )}
           </div>
         );
@@ -245,7 +245,7 @@ function StepDetail({ step, overview, projectId, decisions, onNext }: { step: St
 function DecisionCard({ d }: { d: DecisionRecord }) {
   const [showCandidates, setShowCandidates] = useState(false);
   return (
-    <div className="card" style={{ borderLeft: `4px solid ${d.status === 'not_feasible' ? '#b03a2e' : d.status === 'decided' ? '#2f6fde' : '#9a6700'}` }}>
+    <div className="card" style={{ borderLeft: `4px solid ${d.status === 'not_feasible' ? 'var(--danger)' : d.status === 'decided' ? 'var(--primary-text)' : 'var(--warning)'}` }}>
       <div className="metric-label">
         {d.title} decision · v{d.source.version} · {d.status.replace('_', ' ')} · confidence {d.confidence.replace('_', ' ')}
       </div>
@@ -257,7 +257,7 @@ function DecisionCard({ d }: { d: DecisionRecord }) {
           rows={d.alternatives.map((a) => [a.label, <Eligible key="e" e={a.eligibility} />, a.reason])}
         />
       )}
-      <button type="button" onClick={() => setShowCandidates((s) => !s)} style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: '#2f6fde', cursor: 'pointer', fontSize: 13 }}>
+      <button type="button" onClick={() => setShowCandidates((s) => !s)} style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: 'var(--primary-text)', cursor: 'pointer', fontSize: 13 }}>
         {showCandidates ? 'Hide' : 'Show'} all {d.candidates.length} candidates{d.candidates.some((c) => c.eligibility !== 'not_assessed') ? ' (eligibility is checked before scoring)' : ''}
       </button>
       {showCandidates && (
@@ -305,7 +305,7 @@ function ImpactPanel({ projectId, versions }: { projectId: string; versions: num
     return (
       <div className="card">
         <div className="metric-label">Impact analysis</div>
-        <p style={{ fontSize: 13, color: '#5a6472', margin: '6px 0 0' }}>Re-submit Discovery with changed answers to see which phases need re-running.</p>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '6px 0 0' }}>Re-submit Discovery with changed answers to see which phases need re-running.</p>
       </div>
     );
   }
@@ -346,11 +346,11 @@ function ImpactPanel({ projectId, versions }: { projectId: string; versions: num
           {impact.affected.length > 0 && (
             <Table
               headers={['Phase', 'Action', 'Because']}
-              rows={impact.affected.map((a) => [a.label, <strong key="a" style={{ color: a.action === 'rerun' ? '#b03a2e' : '#9a6700' }}>{a.action === 'rerun' ? 'Re-run' : 'Review'}</strong>, a.because.join('; ')])}
+              rows={impact.affected.map((a) => [a.label, <strong key="a" style={{ color: a.action === 'rerun' ? 'var(--danger)' : 'var(--warning)' }}>{a.action === 'rerun' ? 'Re-run' : 'Review'}</strong>, a.because.join('; ')])}
             />
           )}
           {impact.unaffected.length > 0 && impact.changes.length > 0 && (
-            <p style={{ fontSize: 12, color: '#5a6472', margin: '8px 0 0' }}>Not affected: {impact.unaffected.map((u) => u.label).join(', ')}.</p>
+            <p style={{ fontSize: 12, color: 'var(--muted)', margin: '8px 0 0' }}>Not affected: {impact.unaffected.map((u) => u.label).join(', ')}.</p>
           )}
         </>
       )}
@@ -476,8 +476,8 @@ function Bullets({ title, items, muted }: { title: string; items: string[]; mute
   if (!items.length) return null;
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#5a6472' }}>{title}</div>
-      <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13, color: muted ? '#5a6472' : undefined }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>{title}</div>
+      <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13, color: muted ? 'var(--muted)' : undefined }}>
         {items.map((x) => (
           <li key={x}>{x}</li>
         ))}
@@ -491,7 +491,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
         <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+          <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
             {headers.map((h) => (
               <th key={h} style={{ padding: '6px 8px' }}>
                 {h}
@@ -501,7 +501,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} style={{ borderBottom: '1px solid #eceff3' }}>
+            <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
               {row.map((c, j) => (
                 <td key={j} style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                   {c}

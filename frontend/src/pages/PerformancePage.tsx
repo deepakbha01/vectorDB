@@ -7,14 +7,14 @@ import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
 const STATUS: Record<MetricStatus, { label: string; color: string }> = {
-  pass: { label: 'PASS', color: '#1e8449' },
-  pass_with_conditions: { label: 'PASS WITH CONDITIONS', color: '#9a6700' },
-  fail: { label: 'FAIL', color: '#b03a2e' },
-  requires_benchmark: { label: 'REQUIRES BENCHMARK', color: '#7d3cbd' },
-  not_applicable: { label: 'Not applicable', color: '#7a7f8c' },
+  pass: { label: 'PASS', color: 'var(--success)' },
+  pass_with_conditions: { label: 'PASS WITH CONDITIONS', color: 'var(--warning)' },
+  fail: { label: 'FAIL', color: 'var(--danger)' },
+  requires_benchmark: { label: 'REQUIRES BENCHMARK', color: 'var(--violet)' },
+  not_applicable: { label: 'Not applicable', color: 'var(--muted)' },
 };
 
-const linkBtn = { background: 'none', border: 'none', padding: 0, color: '#2f6fde', cursor: 'pointer', fontSize: 13 } as const;
+const linkBtn = { background: 'none', border: 'none', padding: 0, color: 'var(--primary-text)', cursor: 'pointer', fontSize: 13 } as const;
 const withUnit = (v: number, unit: string) => `${v.toLocaleString(undefined, { maximumFractionDigits: 3 })}${unit ? (unit === '%' ? '%' : ` ${unit}`) : ''}`;
 
 type Row = { metric: string; value: string; source: string; measuredAt: string };
@@ -84,12 +84,12 @@ export function PerformancePage() {
           </div>
         ) : (
           <>
-            <p style={{ fontSize: 13, color: '#5a6472', marginTop: -8, maxWidth: 1000 }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: -8, maxWidth: 1000 }}>
               Can the recommended architecture meet the workload's requirements? A metric passes or fails only on <strong>measured</strong> evidence - the{' '}
               <Link to={`/projects/${project.id}/optimization`}>vector benchmark</Link>, <Link to={`/projects/${project.id}/ingestion`}>ingestion runs</Link>, or results
               recorded below with their source. Without a measurement it REQUIRES BENCHMARK, whatever the estimate says; estimates are shown only as an early warning.
             </p>
-            {defaultsError && <div className="card" style={{ maxWidth: 900, color: '#9a6700' }}>{defaultsError}</div>}
+            {defaultsError && <div className="card" style={{ maxWidth: 900, color: 'var(--warning)' }}>{defaultsError}</div>}
             {defaults && (
               <form className="discovery-form" style={{ maxWidth: 1100 }} onSubmit={onSubmit}>
                 <section className="discovery-section">
@@ -115,7 +115,7 @@ export function PerformancePage() {
                         </select>,
                         <span key="v" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                           <input type="number" step="any" value={r.value} onChange={(e) => update(i, { value: e.target.value })} style={{ width: 110 }} />
-                          <span style={{ fontSize: 12, color: '#5a6472' }}>{unitOf(r.metric)}</span>
+                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{unitOf(r.metric)}</span>
                         </span>,
                         <input key="s" value={r.source} onChange={(e) => update(i, { source: e.target.value })} placeholder="e.g. vLLM benchmark_serving, staging cluster, 40 concurrent" style={{ width: '100%' }} />,
                         <input key="d" type="date" value={r.measuredAt} onChange={(e) => update(i, { measuredAt: e.target.value })} />,
@@ -134,7 +134,7 @@ export function PerformancePage() {
                   <button className="primary-btn" type="submit" disabled={saving || incomplete}>
                     {saving ? 'Assessing...' : latest ? 'Re-assess (new version)' : 'Run performance assessment'}
                   </button>
-                  {incomplete && <span style={{ fontSize: 12, color: '#9a6700', marginLeft: 10 }}>Every measurement needs a metric, a number and a source.</span>}
+                  {incomplete && <span style={{ fontSize: 12, color: 'var(--warning)', marginLeft: 10 }}>Every measurement needs a metric, a number and a source.</span>}
                 </div>
               </form>
             )}
@@ -165,7 +165,7 @@ function PerformanceResultView({ r, version, createdAt }: { r: PerformanceResult
       </div>
 
       {r.gaps.length > 0 && (
-        <div className="card" style={{ borderLeft: '4px solid #9a6700' }}>
+        <div className="card" style={{ borderLeft: '4px solid var(--warning)' }}>
           <div className="metric-label">Missing inputs</div>
           <Bullets items={r.gaps} />
         </div>
@@ -195,7 +195,7 @@ function PerformanceResultView({ r, version, createdAt }: { r: PerformanceResult
       {r.benchmarkPlan.length > 0 && (
         <div className="card" style={{ overflowX: 'auto' }}>
           <div className="metric-label">Benchmark plan - what to measure next</div>
-          <Table headers={['Metric', 'How to measure', '']} rows={r.benchmarkPlan.map((b) => [b.metric, b.how, b.warning ? <span key="w" style={{ color: '#b03a2e' }}>{b.warning}</span> : ''])} />
+          <Table headers={['Metric', 'How to measure', '']} rows={r.benchmarkPlan.map((b) => [b.metric, b.how, b.warning ? <span key="w" style={{ color: 'var(--danger)' }}>{b.warning}</span> : ''])} />
         </div>
       )}
     </div>
@@ -205,8 +205,8 @@ function PerformanceResultView({ r, version, createdAt }: { r: PerformanceResult
 function Cell({ value, note, warn }: { value: string; note: string; warn?: boolean }) {
   return (
     <span>
-      <span style={{ fontWeight: 600, color: warn ? '#b03a2e' : undefined }}>{value}</span>
-      <div style={{ fontSize: 11, color: '#7a7f8c' }}>{note}</div>
+      <span style={{ fontWeight: 600, color: warn ? 'var(--danger)' : undefined }}>{value}</span>
+      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{note}</div>
     </span>
   );
 }
@@ -226,7 +226,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
       <thead>
-        <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+        <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
           {headers.map((h, i) => (
             <th key={i} style={{ padding: '6px 8px' }}>
               {h}
@@ -236,7 +236,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} style={{ borderBottom: '1px solid #eceff3' }}>
+          <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
             {row.map((cell, j) => (
               <td key={j} style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                 {cell}

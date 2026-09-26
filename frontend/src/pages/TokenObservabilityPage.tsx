@@ -13,10 +13,10 @@ import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
 const EVIDENCE: Record<EvidenceType, { label: string; color: string }> = {
-  estimated: { label: 'Estimated', color: '#2f6fde' },
-  assumption: { label: 'Assumption', color: '#9a6700' },
-  measured: { label: 'Measured', color: '#1e8449' },
-  vendor_listed: { label: 'Vendor-listed', color: '#5a6472' },
+  estimated: { label: 'Estimated', color: 'var(--primary-text)' },
+  assumption: { label: 'Assumption', color: 'var(--warning)' },
+  measured: { label: 'Measured', color: 'var(--success)' },
+  vendor_listed: { label: 'Vendor-listed', color: 'var(--muted)' },
 };
 const evidence = (e: EvidenceType) => <span style={{ color: EVIDENCE[e].color, fontSize: 12 }}>{EVIDENCE[e].label}</span>;
 const tokens = (n: number) => n.toLocaleString();
@@ -113,14 +113,14 @@ export function TokenObservabilityPage() {
           </div>
         ) : (
           <>
-            <p style={{ fontSize: 13, color: '#5a6472', marginTop: -8, maxWidth: 1000 }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: -8, maxWidth: 1000 }}>
               How many tokens this AI solution consumes, where, and what they cost - projected from <Link to={`/projects/${project.id}/inference`}>Inference</Link>,{' '}
               <Link to={`/projects/${project.id}/model-selection`}>Model Selection</Link>, <Link to={`/projects/${project.id}/rag-agent`}>RAG / Agent</Link> and{' '}
               <Link to={`/projects/${project.id}/data-pipeline`}>Data &amp; Embeddings</Link>, and measured from usage events once they arrive.
             </p>
             {/* Mode banner (spec §4, §19): estimated and observed figures are never shown as one. */}
-            <div className="card" style={{ maxWidth: 1250, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', borderLeft: '4px solid #2f5fd0' }}>
-              <div role="tablist" aria-label="Mode" style={{ display: 'flex', border: '1px solid #dfe3e8', borderRadius: 6, overflow: 'hidden' }}>
+            <div className="card" style={{ maxWidth: 1250, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', borderLeft: '4px solid var(--primary-text)' }}>
+              <div role="tablist" aria-label="Mode" style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
                 {(Object.keys(MODES) as Array<keyof typeof MODES>).map((m) => (
                   <button
                     key={m}
@@ -128,15 +128,15 @@ export function TokenObservabilityPage() {
                     aria-selected={mode === m}
                     type="button"
                     onClick={() => update({ mode: m })}
-                    style={{ padding: '6px 12px', border: 'none', fontSize: 13, background: mode === m ? '#2f5fd0' : '#fff', color: mode === m ? '#fff' : '#1b2028' }}
+                    style={{ padding: '6px 12px', border: 'none', fontSize: 13, background: mode === m ? 'var(--primary-strong)' : 'var(--surface-2)', color: mode === m ? '#fff' : 'var(--text)' }}
                   >
                     {MODES[m].label}
                   </button>
                 ))}
               </div>
-              <span style={{ fontSize: 13, color: '#5a6472', flex: 1 }}>{MODES[mode].note}</span>
+              <span style={{ fontSize: 13, color: 'var(--muted)', flex: 1 }}>{MODES[mode].note}</span>
               {openAlerts > 0 && (
-                <button type="button" onClick={() => update({ mode: 'live' })} style={{ background: 'none', border: '1px solid #fab219', borderRadius: 12, padding: '2px 10px', fontSize: 12, color: '#1b2028', cursor: 'pointer' }}>
+                <button type="button" onClick={() => update({ mode: 'live' })} style={{ background: 'none', border: '1px solid var(--warning)', borderRadius: 12, padding: '2px 10px', fontSize: 12, color: 'var(--text)', cursor: 'pointer' }}>
                   ▲ {openAlerts} open alert{openAlerts === 1 ? '' : 's'}
                 </button>
               )}
@@ -147,14 +147,14 @@ export function TokenObservabilityPage() {
             </div>
             {mode === 'estimated' ? (
               <>
-                {previewError && <div className="card" style={{ maxWidth: 900, color: '#9a6700', marginTop: 12 }}>{previewError}</div>}
+                {previewError && <div className="card" style={{ maxWidth: 900, color: 'var(--warning)', marginTop: 12 }}>{previewError}</div>}
                 {preview && (
                   <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center' }}>
                     <button className="primary-btn" type="button" onClick={save} disabled={saving}>
                       {saving ? 'Saving...' : latest ? 'Re-estimate (new version)' : 'Save estimate'}
                     </button>
                     {shown && (
-                      <button type="button" className="primary-btn" style={{ background: '#fff', color: '#2f5fd0', border: '1px solid #2f5fd0' }} onClick={() => exportEstimate(shown.r, project.name)}>
+                      <button type="button" className="secondary-btn" onClick={() => exportEstimate(shown.r, project.name)}>
                         Export CSV
                       </button>
                     )}
@@ -226,13 +226,13 @@ function EstimateView({ r, title, sources, view }: { r: TokenEstimateResult; tit
             <div className="metric-value" style={{ fontSize: 20 }}>
               {value}
             </div>
-            {sub && <div style={{ fontSize: 12, color: '#5a6472' }}>{sub}</div>}
+            {sub && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{sub}</div>}
           </div>
         ))}
       </div>
 
       {r.gaps.length > 0 && (
-        <div className="card" style={{ borderLeft: '4px solid #9a6700' }}>
+        <div className="card" style={{ borderLeft: '4px solid var(--warning)' }}>
           <div className="metric-label">Not included yet</div>
           <Bullets items={r.gaps} />
         </div>
@@ -241,7 +241,7 @@ function EstimateView({ r, title, sources, view }: { r: TokenEstimateResult; tit
       {technical && r.perRequest.input.length > 0 && (
         <div className="card" style={{ overflowX: 'auto' }}>
           <div className="metric-label">What goes into the final LLM call (per request)</div>
-          <Table headers={['Part', 'Tokens', 'Evidence', 'Source']} rows={r.perRequest.input.map((l) => [l.label, tokens(l.tokens), evidence(l.evidenceType), <span key="s" style={{ fontSize: 12, color: '#5a6472' }}>{l.source}</span>])} />
+          <Table headers={['Part', 'Tokens', 'Evidence', 'Source']} rows={r.perRequest.input.map((l) => [l.label, tokens(l.tokens), evidence(l.evidenceType), <span key="s" style={{ fontSize: 12, color: 'var(--muted)' }}>{l.source}</span>])} />
         </div>
       )}
 
@@ -275,7 +275,7 @@ function EstimateView({ r, title, sources, view }: { r: TokenEstimateResult; tit
             <div style={{ fontSize: 13, marginTop: 8 }}>
               {tokens(r.agent.tokensPerTask)} tokens per task{r.agent.costPerTaskUsd !== null ? ` · ~${money(r.agent.costPerTaskUsd)} per task` : ''}
             </div>
-            <div style={{ fontSize: 12, color: '#5a6472', marginTop: 4 }}>{r.agent.loopGuard}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{r.agent.loopGuard}</div>
           </div>
         )}
       </div>
@@ -284,7 +284,7 @@ function EstimateView({ r, title, sources, view }: { r: TokenEstimateResult; tit
         <div className="metric-label">Cost - monthly, at the prices in force today</div>
         <Table
           headers={['Item', 'Tokens / month', 'Price / 1M', 'Monthly', 'Price used']}
-          rows={r.cost.lines.map((l) => [l.item, compact(l.tokens), l.pricePer1M === null ? '—' : `$${l.pricePer1M}`, l.usd === null ? <span key="u" style={{ color: '#9a6700' }}>not priced</span> : money(l.usd), <span key="p" style={{ fontSize: 12, color: '#5a6472' }}>{l.price}</span>])}
+          rows={r.cost.lines.map((l) => [l.item, compact(l.tokens), l.pricePer1M === null ? '—' : `$${l.pricePer1M}`, l.usd === null ? <span key="u" style={{ color: 'var(--warning)' }}>not priced</span> : money(l.usd), <span key="p" style={{ fontSize: 12, color: 'var(--muted)' }}>{l.price}</span>])}
         />
         <p style={{ fontSize: 13, margin: '8px 0 0' }}>
           {r.cost.note}
@@ -301,7 +301,7 @@ function EstimateView({ r, title, sources, view }: { r: TokenEstimateResult; tit
         )}
         <div className="card">
           <div className="metric-label">Built from</div>
-          <Table headers={['', 'Source', 'Detail']} rows={Object.entries(sources).map(([k, s]) => [k, s.source, <span key="d" style={{ fontSize: 12, color: '#5a6472' }}>{s.detail}</span>])} />
+          <Table headers={['', 'Source', 'Detail']} rows={Object.entries(sources).map(([k, s]) => [k, s.source, <span key="d" style={{ fontSize: 12, color: 'var(--muted)' }}>{s.detail}</span>])} />
         </div>
       </div>
 
@@ -328,7 +328,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
       <thead>
-        <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+        <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
           {headers.map((h, i) => (
             <th key={i} style={{ padding: '6px 8px' }}>
               {h}
@@ -338,7 +338,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} style={{ borderBottom: '1px solid #eceff3' }}>
+          <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
             {row.map((cell, j) => (
               <td key={j} style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                 {cell}

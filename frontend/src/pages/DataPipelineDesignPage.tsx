@@ -390,7 +390,7 @@ export function DataPipelineDesignPage() {
             </button>
 
             {showTechnical && design.validationWarnings.length > 0 && (
-              <div className="card" style={{ marginBottom: 16, borderColor: '#c0392b' }}>
+              <div className="card" style={{ marginBottom: 16, borderColor: 'var(--danger)' }}>
                 <div className="metric-label">Validation warnings</div>
                 <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13 }}>
                   {design.validationWarnings.map((w) => (
@@ -439,7 +439,7 @@ export function DataPipelineDesignPage() {
                     </li>
                   ))}
                 </ol>
-                <div style={{ marginTop: 10, fontSize: 13, color: '#5a6472' }}>
+                <div style={{ marginTop: 10, fontSize: 13, color: 'var(--muted)' }}>
                   Error handling: {design.errorHandling.retryCount} retries @ {design.errorHandling.retryBackoffMs}ms backoff,
                   dead-letter {design.errorHandling.deadLetterEnabled ? 'enabled' : 'disabled'}, batch size{' '}
                   {design.errorHandling.batchSize}.
@@ -453,11 +453,11 @@ export function DataPipelineDesignPage() {
                   Metadata fields
                 </div>
                 {design.metadataFields.length === 0 ? (
-                  <p style={{ fontSize: 13, color: '#5a6472', margin: 0 }}>No metadata fields configured.</p>
+                  <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>No metadata fields configured.</p>
                 ) : (
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
-                      <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+                      <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
                         <th style={{ padding: '4px 8px' }}>Field</th>
                         <th style={{ padding: '4px 8px' }}>Type</th>
                         <th style={{ padding: '4px 8px' }}>Required</th>
@@ -469,7 +469,7 @@ export function DataPipelineDesignPage() {
                     </thead>
                     <tbody>
                       {design.metadataFields.map((f) => (
-                        <tr key={f.name} style={{ borderBottom: '1px solid #eceff3' }}>
+                        <tr key={f.name} style={{ borderBottom: '1px solid var(--border)' }}>
                           <td style={{ padding: '4px 8px' }}>{f.name}</td>
                           <td style={{ padding: '4px 8px' }}>{f.type}</td>
                           <td style={{ padding: '4px 8px' }}>{f.required ? 'Yes' : 'No'}</td>
@@ -530,7 +530,7 @@ export function DataPipelineDesignPage() {
                 <div className="metric-label" style={{ marginBottom: 4 }}>
                   Generated schemas
                 </div>
-                <p style={{ fontSize: 12, color: '#5a6472', margin: '0 0 10px' }}>
+                <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 10px' }}>
                   Every supported platform's schema/config is generated for reference, regardless of which one this project uses -
                   see Phase 4 (Implementation) for the schema actually deployed.
                 </p>
@@ -540,8 +540,8 @@ export function DataPipelineDesignPage() {
                     // This design was generated before schema support for this platform was added.
                     return (
                       <details key={key} style={{ marginBottom: 8 }}>
-                        <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#5a6472' }}>{label}</summary>
-                        <p style={{ fontSize: 12, color: '#5a6472', margin: '6px 0 0' }}>
+                        <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--muted)' }}>{label}</summary>
+                        <p style={{ fontSize: 12, color: 'var(--muted)', margin: '6px 0 0' }}>
                           Not available for this design version - re-run "Revise Design" to generate it.
                         </p>
                       </details>
@@ -551,9 +551,9 @@ export function DataPipelineDesignPage() {
                   return (
                     <details key={key} style={{ marginBottom: 8 }}>
                       <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>{label}</summary>
-                      <pre style={{ background: '#f5f6f8', padding: 10, borderRadius: 6, fontSize: 12, overflowX: 'auto', marginTop: 6 }}>{body}</pre>
+                      <pre style={{ background: 'var(--surface-2)', padding: 10, borderRadius: 6, fontSize: 12, overflowX: 'auto', marginTop: 6 }}>{body}</pre>
                       {output.notes.length > 0 && (
-                        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: '#5a6472' }}>
+                        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: 'var(--muted)' }}>
                           {output.notes.map((n) => (
                             <li key={n}>{n}</li>
                           ))}
@@ -696,7 +696,7 @@ export function DataPipelineDesignPage() {
                       {preview.stats.maxSizeChars})
                     </div>
                     {preview.notes.map((n) => (
-                      <p key={n} style={{ fontSize: 12, color: '#5a6472', margin: '4px 0' }}>
+                      <p key={n} style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0' }}>
                         {n}
                       </p>
                     ))}
@@ -754,7 +754,7 @@ export function DataPipelineDesignPage() {
                   </div>
                 </div>
                 {selectedModel && (
-                  <div style={{ fontSize: 12, color: '#5a6472', marginTop: 8 }}>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
                     <div>
                       Dimension {selectedModel.dimension} - max input {selectedModel.maxInputTokens} tokens - $
                       {selectedModel.costPerMillionTokens}/1M tokens - quality {selectedModel.qualityTier} - languages{' '}
@@ -798,7 +798,7 @@ export function DataPipelineDesignPage() {
                     return (
                       <div
                         key={field.rowId}
-                        style={{ border: rowHasIssue ? '1px solid #c0392b' : '1px solid #dfe3e8', borderRadius: 6, padding: 8 }}
+                        style={{ border: rowHasIssue ? '1px solid var(--danger)' : '1px solid var(--border)', borderRadius: 6, padding: 8 }}
                       >
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                           <input
@@ -822,7 +822,7 @@ export function DataPipelineDesignPage() {
                           <button
                             type="button"
                             className="primary-btn"
-                            style={{ background: '#c0392b' }}
+                            style={{ background: 'var(--danger)' }}
                             onClick={() => setMetadataFields((fields) => fields.filter((f) => f.rowId !== field.rowId))}
                           >
                             Remove
@@ -889,7 +889,7 @@ export function DataPipelineDesignPage() {
               </section>
 
               {dimensionMismatch && (
-                <div className="card" style={{ marginBottom: 16, borderColor: '#c0392b' }}>
+                <div className="card" style={{ marginBottom: 16, borderColor: 'var(--danger)' }}>
                   <div className="metric-label">Dimension mismatch</div>
                   <p style={{ fontSize: 13 }}>
                     Discovery estimated <strong>{dimensionMismatch.discoveryDimension}</strong> dimensions, but the selected model
