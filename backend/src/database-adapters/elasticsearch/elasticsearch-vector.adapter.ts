@@ -14,6 +14,8 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
+import { esFilter, normaliseIndexType, normaliseMetric, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
  * Connects to the customer's target Elasticsearch/OpenSearch cluster
@@ -21,7 +23,7 @@ import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
  * details come only from TARGET_ELASTICSEARCH_* environment variables.
  */
 @Injectable()
-export class ElasticsearchVectorAdapter implements VectorDatabaseAdapter {
+export class ElasticsearchVectorAdapter implements VectorDatabaseAdapter, VectorExplorer {
   readonly platformId = 'elasticsearch' as const;
   private readonly logger = new Logger(ElasticsearchVectorAdapter.name);
   private client: Client | null = null;
@@ -130,5 +132,75 @@ export class ElasticsearchVectorAdapter implements VectorDatabaseAdapter {
     const index = this.indexName(collectionOrTableName);
     this.logger.warn(`Deleting Elasticsearch index '${index}' (confirmed).`);
     await this.getClient().indices.delete({ index });
+  }
+
+  // ------------------------------------------------------ Data Explorer (read-only)
+
+  /** An index's field mappings and its (first) dense_vector field. */
+  private async mappingOf(index: string): Promise<{ vectorField: string | null; vector: any; properties: Record<string, any> }> {
+    const m = (await this.getClient().indices.getMapping({ index })) as any;
+    const properties = (Object.values(m)[0] as any)?.mappings?.properties ?? {};
+    const entry = Object.entries(properties).find(([, p]: [string, any]) => p?.type === 'dense_vector');
+    return { vectorField: entry?.[0] ?? null, vector: entry?.[1] ?? null, properties };
+  }
+
+  /** Open, non-system indices that hold a dense_vector field. */
+  async listCollections(): Promise<string[]> {
+    const m = (await this.getClient().indices.getMapping({ index: '*', expand_wildcards: 'open' } as any)) as any;
+    return Object.entries(m)
+      .filter(([name, v]: [string, any]) => !name.startsWith('.') && Object.values(v?.mappings?.properties ?? {}).some((p: any) => p?.type === 'dense_vector'))
+      .map(([name]) => name)
+      .sort();
+  }
+
+  async describeCollection(name: string): Promise<ExplorerCollectionInfo> {
+    const { vectorField, vector, properties } = await this.mappingOf(name);
+    const count = (await this.getClient().count({ index: name })) as any;
+    const indexType = vector?.index === false ? null : vector?.index_options?.type ?? null;
+    return {
+      name,
+      recordCount: typeof count.count === 'number' ? count.count : null,
+      countIsEstimate: false,
+      dimension: typeof vector?.dims === 'number' ? vector.dims : null,
+      metric: normaliseMetric(vector?.similarity ?? null),
+      indexes: indexType ? [{ type: normaliseIndexType(indexType), detail: `${indexType} on ${vectorField}${vector.index_options ? ` ${JSON.stringify(vector.index_options)}` : ''}` }] : [],
+      fields: Object.entries(properties)
+        .filter(([f, p]: [string, any]) => f !== vectorField && p?.type)
+        .map(([f, p]: [string, any]) => ({ name: f, type: String(p.type) })),
+      notes: vector && !vector.index_options && vector.index !== false ? ['The index type is the cluster default for dense_vector.'] : [],
+    };
+  }
+
+  /** Elasticsearch pages by offset (from + size), 10,000 deep at most by default. */
+  async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
+    const offset = options.cursor === null ? 0 : Number(options.cursor);
+    if (!Number.isInteger(offset) || offset < 0) throw new BadRequestException('Invalid page cursor.');
+    if (offset + options.limit > 10_000) throw new BadRequestException('Elasticsearch pages at most 10,000 records deep; narrow the list with a filter.');
+    const { vectorField } = await this.mappingOf(name);
+    const info = await this.describeCollection(name);
+    const clauses = esFilter(options.filter, info.fields);
+    const r = (await this.getClient().search({ index: name, from: offset, size: options.limit + 1, query: clauses.length ? { bool: { filter: clauses } } : { match_all: {} } } as any)) as any;
+    const hits = (r.hits?.hits ?? []) as any[];
+    return {
+      records: hits.slice(0, options.limit).map((h) => {
+        const { [vectorField ?? 'embedding']: vec, ...metadata } = h._source ?? {};
+        return { id: String(h._id), metadata: trimMetadata(metadata), ...vectorFields(vec, options.withVectors) };
+      }),
+      nextCursor: hits.length > options.limit ? String(offset + options.limit) : null,
+    };
+  }
+
+  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+    const { vectorField } = await this.mappingOf(name);
+    const info = await this.describeCollection(name);
+    const clauses = esFilter(query.filter, info.fields);
+    const r = (await this.getClient().search({
+      index: name,
+      knn: { field: vectorField ?? 'embedding', query_vector: query.vector, k: query.topK, num_candidates: Math.max(query.topK * 10, 100), ...(clauses.length ? { filter: { bool: { filter: clauses } } } : {}) },
+    } as any)) as any;
+    return ((r.hits?.hits ?? []) as any[]).map((h) => {
+      const { [vectorField ?? 'embedding']: _vec, ...metadata } = h._source ?? {};
+      return { id: String(h._id), score: h._score ?? 0, metadata: trimMetadata(metadata) };
+    });
   }
 }

@@ -65,3 +65,16 @@ export interface ExplorerSearchResult {
   embedding: { providerId: string; modelId: string; live: boolean } | null;
   notes: string[];
 }
+
+export interface ExplorerMap {
+  collection: string;
+  method: 'pca' | 'umap';
+  requested: number;
+  sampled: number;
+  dimension: number | null;
+  colorBy: string | null;
+  groups: Array<{ value: string; count: number }>;
+  points: Array<{ id: string; x: number; y: number; group: string | null }>;
+  explainedVariance: [number, number] | null;
+  notes: string[];
+}

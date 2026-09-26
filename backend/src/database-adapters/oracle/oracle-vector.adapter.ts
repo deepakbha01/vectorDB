@@ -15,6 +15,11 @@ import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
 import { splitSqlStatements } from '../../common/sql-statements';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
+import { oracleWhere, trimMetadata, vectorFields } from '../explorer-helpers';
+
+/** Oracle 23ai vector index subtypes → the Index Design choices. */
+const ORACLE_INDEX_SUBTYPE: Record<string, string> = { INMEMORY_NEIGHBOR_GRAPH: 'hnsw', NEIGHBOR_PARTITIONS: 'ivf_flat' };
 
 oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT;
 
@@ -30,7 +35,7 @@ function lowercaseKeys(row: Record<string, unknown>): Record<string, unknown> {
  * on why upsert/search map dynamically onto per-field metadata columns.
  */
 @Injectable()
-export class OracleVectorAdapter implements VectorDatabaseAdapter, OnModuleDestroy {
+export class OracleVectorAdapter implements VectorDatabaseAdapter, VectorExplorer, OnModuleDestroy {
   readonly platformId = 'oracle' as const;
   private readonly logger = new Logger(OracleVectorAdapter.name);
   private pool: Pool | null = null;
@@ -192,5 +197,99 @@ export class OracleVectorAdapter implements VectorDatabaseAdapter, OnModuleDestr
     } finally {
       await connection.close();
     }
+  }
+
+  // ------------------------------------------------------ Data Explorer (read-only)
+
+  private async query<T = Record<string, unknown>>(sql: string, binds: Record<string, unknown> | unknown[] = {}): Promise<T[]> {
+    const connection = await (await this.getPool()).getConnection();
+    try {
+      return ((await connection.execute(sql, binds as any)).rows ?? []) as T[];
+    } finally {
+      await connection.close();
+    }
+  }
+
+  /** Our tables are created unquoted, so Oracle stores them upper case; the explorer shows them lower case. */
+  private upper(name: string): string {
+    if (!/^[A-Za-z_][A-Za-z0-9_$#]*$/.test(name)) throw new BadRequestException(`Invalid table name '${name}'.`);
+    return name.toUpperCase();
+  }
+
+  /** Tables owned by the connected user that have an EMBEDDING column. */
+  async listCollections(): Promise<string[]> {
+    const rows = await this.query<{ TABLE_NAME: string }>(`SELECT table_name FROM user_tab_columns WHERE column_name = 'EMBEDDING' ORDER BY table_name`);
+    return rows.map((r) => r.TABLE_NAME.toLowerCase());
+  }
+
+  private async columnsOf(table: string): Promise<Array<{ name: string; type: string }>> {
+    const rows = await this.query<{ COLUMN_NAME: string; DATA_TYPE: string }>(`SELECT column_name, data_type FROM user_tab_columns WHERE table_name = :t ORDER BY column_id`, { t: table });
+    return rows.map((r) => ({ name: r.COLUMN_NAME, type: r.DATA_TYPE }));
+  }
+
+  async describeCollection(name: string): Promise<ExplorerCollectionInfo> {
+    const table = this.upper(name);
+    const columns = await this.columnsOf(table);
+    const notes: string[] = [];
+    const dim = await this.query<{ D: number }>(`SELECT VECTOR_DIMENSION_COUNT(embedding) AS d FROM "${table}" FETCH FIRST 1 ROWS ONLY`);
+    // Exact below a million rows; above that the optimizer statistics.
+    const stats = await this.query<{ NUM_ROWS: number | null }>(`SELECT num_rows FROM user_tables WHERE table_name = :t`, { t: table });
+    const estimate = stats[0]?.NUM_ROWS ?? null;
+    let recordCount: number;
+    let countIsEstimate = false;
+    if (estimate !== null && estimate >= 1_000_000) {
+      recordCount = Number(estimate);
+      countIsEstimate = true;
+    } else {
+      recordCount = Number((await this.query<{ N: number }>(`SELECT COUNT(*) AS n FROM "${table}"`))[0].N);
+    }
+    let indexes: ExplorerCollectionInfo['indexes'] = [];
+    try {
+      const idx = await this.query<{ INDEX_NAME: string; INDEX_SUBTYPE: string | null }>(`SELECT index_name, index_subtype FROM user_indexes WHERE table_name = :t AND index_type = 'VECTOR'`, { t: table });
+      indexes = idx.map((i) => ({ type: ORACLE_INDEX_SUBTYPE[i.INDEX_SUBTYPE ?? ''] ?? 'other', detail: `${i.INDEX_NAME} (${i.INDEX_SUBTYPE ?? 'vector index'})` }));
+    } catch {
+      notes.push('Vector indexes could not be read from USER_INDEXES on this database version.');
+    }
+    notes.push("The index's distance metric is not read here; searches here use cosine distance.");
+    return {
+      name,
+      recordCount,
+      countIsEstimate,
+      dimension: dim[0]?.D !== undefined && dim[0]?.D !== null ? Number(dim[0].D) : null,
+      metric: null,
+      indexes,
+      fields: columns.filter((c) => !['ID', 'EMBEDDING', 'CREATED_AT'].includes(c.name)).map((c) => ({ name: c.name.toLowerCase(), type: c.type })),
+      notes,
+    };
+  }
+
+  /** Pages in id order, continuing after the last id seen. */
+  async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
+    const table = this.upper(name);
+    const where = oracleWhere(options.filter, (await this.columnsOf(table)).map((c) => c.name));
+    const conditions = [options.cursor === null ? null : 'id > :cur', where.sql || null].filter(Boolean);
+    const binds: Record<string, unknown> = { ...where.binds, n: options.limit + 1, ...(options.cursor === null ? {} : { cur: options.cursor }) };
+    const rows = (await this.query(`SELECT * FROM "${table}"${conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''} ORDER BY id FETCH FIRST :n ROWS ONLY`, binds)).map(lowercaseKeys);
+    const page = rows.slice(0, options.limit);
+    return {
+      records: page.map((row) => {
+        const { id, embedding, created_at, ...metadata } = row;
+        return { id: String(id), metadata: trimMetadata(metadata), ...vectorFields(embedding, options.withVectors) };
+      }),
+      nextCursor: rows.length > options.limit ? String(page[page.length - 1].id) : null,
+    };
+  }
+
+  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+    const table = this.upper(name);
+    const where = oracleWhere(query.filter, (await this.columnsOf(table)).map((c) => c.name));
+    const rows = await this.query(
+      `SELECT t.*, VECTOR_DISTANCE(embedding, :qvec, COSINE) AS distance FROM "${table}" t${where.sql ? ` WHERE ${where.sql}` : ''} ORDER BY distance FETCH FIRST :k ROWS ONLY`,
+      { ...where.binds, qvec: { val: new Float32Array(query.vector), type: oracledb.DB_TYPE_VECTOR }, k: query.topK },
+    );
+    return rows.map((raw) => {
+      const { id, embedding, distance, created_at, ...metadata } = lowercaseKeys(raw);
+      return { id: String(id), score: 1 - Number(distance), metadata: trimMetadata(metadata) };
+    });
   }
 }

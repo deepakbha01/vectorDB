@@ -14,8 +14,8 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
-import { milvusExpr, normaliseIndexType, normaliseMetric, trimMetadata, vectorPreview } from '../explorer-helpers';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
+import { milvusExpr, normaliseIndexType, normaliseMetric, trimMetadata, vectorFields } from '../explorer-helpers';
 
 const MILVUS_DATA_TYPES: Record<string, DataType> = {
   VarChar: DataType.VarChar,
@@ -195,7 +195,7 @@ export class MilvusVectorAdapter implements VectorDatabaseAdapter, VectorExplore
   }
 
   /** Milvus pages by offset (up to 16,384 rows deep); the cursor is that offset. */
-  async browse(name: string, options: { limit: number; cursor: string | null; filter: ExplorerFilter }): Promise<ExplorerPage> {
+  async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
     const offset = options.cursor === null ? 0 : Number(options.cursor);
     if (!Number.isInteger(offset) || offset < 0) throw new BadRequestException('Invalid page cursor.');
     if (offset + options.limit > 16_384) throw new BadRequestException('Milvus can page at most 16,384 rows deep; narrow the list with a filter.');
@@ -214,7 +214,7 @@ export class MilvusVectorAdapter implements VectorDatabaseAdapter, VectorExplore
         const { [s.primary]: id, ...rest } = row;
         const vec = s.vectorField ? rest[s.vectorField] : undefined;
         if (s.vectorField) delete rest[s.vectorField];
-        return { id: String(id), metadata: trimMetadata(rest), ...vectorPreview(vec) };
+        return { id: String(id), metadata: trimMetadata(rest), ...vectorFields(vec, options.withVectors) };
       }),
       nextCursor: (r.data ?? []).length > options.limit ? String(offset + options.limit) : null,
     };

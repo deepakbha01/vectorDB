@@ -1,5 +1,23 @@
 import { BadRequestException } from '@nestjs/common';
-import { coerceFilter, milvusExpr, normaliseIndexType, normaliseMetric, pgWhere, qdrantFilter, trimValue, vectorPreview } from './explorer-helpers';
+import {
+  chromaWhere,
+  coerceFilter,
+  esFilter,
+  fieldsFromSample,
+  lanceWhere,
+  milvusExpr,
+  mongoFilter,
+  normaliseIndexType,
+  normaliseMetric,
+  oracleWhere,
+  pgWhere,
+  pineconeFilter,
+  qdrantFilter,
+  redisFilter,
+  trimValue,
+  vectorFields,
+  vectorPreview,
+} from './explorer-helpers';
 import { isExplorable } from './vector-explorer';
 
 describe('Data Explorer helpers', () => {
@@ -60,5 +78,52 @@ describe('Data Explorer helpers', () => {
     const base = { platformId: 'milvus', healthCheck: jest.fn() } as any;
     expect(isExplorable(base)).toBe(false);
     expect(isExplorable({ ...base, listCollections: jest.fn(), describeCollection: jest.fn(), browse: jest.fn(), searchFiltered: jest.fn() })).toBe(true);
+  });
+});
+
+describe('Data Explorer helpers - phase 2 databases', () => {
+  it('builds exact-match filters for Pinecone, Chroma and MongoDB', () => {
+    expect(pineconeFilter({ dept: 'legal', year: 2024 })).toEqual({ dept: { $eq: 'legal' }, year: { $eq: 2024 } });
+    expect(chromaWhere({ dept: 'legal' })).toEqual({ dept: { $eq: 'legal' } });
+    expect(chromaWhere({ dept: 'legal', year: 2024 })).toEqual({ $and: [{ dept: { $eq: 'legal' } }, { year: { $eq: 2024 } }] });
+    expect(chromaWhere({})).toBeUndefined();
+    expect(mongoFilter({ dept: 'legal' })).toEqual({ dept: { $eq: 'legal' } });
+    expect(() => mongoFilter({ $where: 'sleep(1000)' })).toThrow(/Invalid field name/);
+    expect(() => mongoFilter({ 'a.b': 1 })).toThrow(/Invalid field name/);
+  });
+
+  it('uses term for keyword fields and match_phrase for analysed text in Elasticsearch', () => {
+    expect(esFilter({ dept: 'legal', body: 'termination clause' }, [{ name: 'dept', type: 'keyword' }, { name: 'body', type: 'text' }])).toEqual([
+      { term: { dept: 'legal' } },
+      { match_phrase: { body: 'termination clause' } },
+    ]);
+  });
+
+  it('escapes RediSearch tag, text and numeric values', () => {
+    const fields = [{ name: 'dept', type: 'TAG' }, { name: 'year', type: 'NUMERIC' }, { name: 'title', type: 'TEXT' }];
+    expect(redisFilter({ dept: 'legal-eu team', year: 2024, title: 'say "hi"' }, fields)).toBe(String.raw`@dept:{legal\-eu\ team} @year:[2024 2024] @title:"say \"hi\""`);
+    expect(() => redisFilter({ 'a b': 1 }, fields)).toThrow(/Invalid field name/);
+  });
+
+  it('quotes LanceDB columns and doubles quotes in literals', () => {
+    expect(lanceWhere({ dept: "o'brien", year: 2024, ok: true })).toBe("`dept` = 'o''brien' AND `year` = 2024 AND `ok` = true");
+  });
+
+  it('binds Oracle values against real (upper-case) columns, booleans as 1 / 0', () => {
+    expect(oracleWhere({ dept: 'legal', public: true }, ['ID', 'DEPT', 'PUBLIC'])).toEqual({ sql: '"DEPT" = :f0 AND "PUBLIC" = :f1', binds: { f0: 'legal', f1: 1 } });
+    expect(() => oracleWhere({ region: 'eu' }, ['DEPT'])).toThrow(/Unknown column/);
+  });
+
+  it('infers fields from schemaless records, skipping the id and vector', () => {
+    expect(fieldsFromSample([{ _id: 1, dept: 'legal', embedding: [1] }, { year: 2024, ok: true, dept: null }], ['_id', 'embedding'])).toEqual([
+      { name: 'dept', type: 'string' },
+      { name: 'ok', type: 'boolean' },
+      { name: 'year', type: 'number' },
+    ]);
+  });
+
+  it('returns the whole vector only when asked', () => {
+    expect(vectorFields([1, 2, 3])).toEqual({ vectorPreview: [1, 2, 3], dimension: 3 });
+    expect(vectorFields(new Float32Array([1, 2]), true)).toEqual({ vectorPreview: [1, 2], dimension: 2, vector: [1, 2] });
   });
 });

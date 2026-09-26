@@ -7,8 +7,8 @@ import { AuditLogEntry } from '../audit/audit-log-entry.entity';
 import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
 
-/** The documents list only - a collection that happens to be called "documents" is not a record read. */
-export const DOCUMENTS_READ = /\/data-explorer\/collections\/[^/?]+\/documents(\?|$)/;
+/** The documents list and the embedding map - a collection that happens to be called "documents" is not a record read. */
+export const DOCUMENTS_READ = /\/data-explorer\/collections\/[^/?]+\/(documents|map)(\?|$)/;
 
 /**
  * Audits reads of record contents from a customer's vector database (the
@@ -36,7 +36,7 @@ export class DataExplorerReadAuditInterceptor implements NestInterceptor {
 
   private async record(req: { originalUrl?: string; url: string; params: Record<string, string>; query: Record<string, unknown>; user?: { id: string; email: string } }, statusCode: number, body: unknown, start: number) {
     const path = req.originalUrl ?? req.url;
-    const rows = body && typeof body === 'object' ? ((body as { rows?: unknown[] }).rows?.length ?? null) : null;
+    const rows = body && typeof body === 'object' ? ((body as { rows?: unknown[]; points?: unknown[] }).rows?.length ?? (body as { points?: unknown[] }).points?.length ?? null) : null;
     this.logger.log(`user=${req.user?.email ?? 'anonymous'} action=READ_VECTOR_DATA path=${path} status=${statusCode} rows=${rows ?? 'n/a'}`);
     try {
       await this.entries.save(

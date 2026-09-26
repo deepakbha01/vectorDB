@@ -3,11 +3,14 @@ import { Link, useParams } from 'react-router-dom';
 import { apiClient, extractErrorMessage, Project } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { useFeatures } from '../api/features';
-import { CheckStatus, ExplorerCollections, ExplorerDocuments, ExplorerOverview, ExplorerSearchResult, ExplorerStatus } from '../api/dataExplorer';
+import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from 'recharts';
+import { CheckStatus, ExplorerCollections, ExplorerDocuments, ExplorerMap, ExplorerOverview, ExplorerSearchResult, ExplorerStatus } from '../api/dataExplorer';
+import { SCATTER, useChart } from '../components/token/charts';
+import { useTheme } from '../theme';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
-type View = 'overview' | 'documents' | 'search';
+type View = 'overview' | 'documents' | 'search' | 'map';
 type FilterRow = { field: string; value: string };
 
 /** Status words go with every colour (a check is never colour alone). */
@@ -109,7 +112,7 @@ export function DataExplorerPage() {
                 )}
                 <span style={{ flex: 1 }} />
                 <div role="tablist" aria-label="View" style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
-                  {(['overview', 'documents', 'search'] as View[]).map((v) => (
+                  {(['overview', 'documents', 'search', 'map'] as View[]).map((v) => (
                     <button
                       key={v}
                       type="button"
@@ -118,7 +121,7 @@ export function DataExplorerPage() {
                       onClick={() => setView(v)}
                       style={{ padding: '6px 14px', border: 'none', fontSize: 13, background: view === v ? 'var(--primary-strong)' : 'var(--surface-2)', color: view === v ? '#fff' : 'var(--text)' }}
                     >
-                      {v === 'overview' ? 'Overview' : v === 'documents' ? 'Documents' : 'Search'}
+                      {v === 'overview' ? 'Overview' : v === 'documents' ? 'Documents' : v === 'search' ? 'Search' : 'Map'}
                     </button>
                   ))}
                 </div>
@@ -132,6 +135,7 @@ export function DataExplorerPage() {
             )}
             {collection && view === 'documents' && canRead && overview && <DocumentsView key={collection} base={base} collection={collection} fields={overview.info.fields.map((f) => f.name)} />}
             {collection && view === 'search' && canRead && overview && <SearchView key={collection} base={base} collection={collection} fields={overview.info.fields.map((f) => f.name)} />}
+            {collection && view === 'map' && canRead && overview && <MapView key={collection} base={base} collection={collection} fields={overview.info.fields.map((f) => f.name)} />}
           </div>
         )}
       </div>
@@ -382,6 +386,175 @@ function SearchView({ base, collection, fields }: { base: string; collection: st
           <Table headers={['#', 'ID', 'Score', ...cols]} rows={result.results.map((r, i) => [String(i + 1), <code key="id">{r.id}</code>, r.score.toFixed(4), ...cols.map((c) => cell(r.metadata[c]))])} />
           {!result.results.length && <div style={{ fontSize: 13, color: 'var(--muted)' }}>No matches.</div>}
           {result.notes.map((n) => (
+            <div key={n} style={{ fontSize: 12, color: 'var(--muted)' }}>
+              {n}
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The embedding map: a sample of vectors projected to 2D on the server.
+ * Colours are the three hues that stay distinct on every pair (validated per
+ * theme); further values fold into "Other", and "(none)" is drawn hollow so it
+ * is told apart by shape, not colour alone. Every point is also in the table.
+ */
+function MapView({ base, collection, fields }: { base: string; collection: string; fields: string[] }) {
+  const { theme } = useTheme();
+  const c = useChart();
+  const palette = SCATTER[theme];
+  const [sample, setSample] = useState(500);
+  const [method, setMethod] = useState<'pca' | 'umap'>('pca');
+  const [colorBy, setColorBy] = useState('');
+  const [filters, setFilters] = useState<FilterRow[]>([]);
+  const [map, setMap] = useState<ExplorerMap | null>(null);
+  const [asTable, setAsTable] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const draw = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ sample: String(sample), method });
+      if (colorBy) params.set('colorBy', colorBy);
+      const f = toFilter(filters);
+      if (Object.keys(f).length) params.set('filter', JSON.stringify(f));
+      const { data } = await apiClient.get<ExplorerMap>(`${base}/collections/${encodeURIComponent(collection)}/map?${params}`);
+      setMap(data);
+    } catch (e) {
+      setError(extractErrorMessage(e, 'Could not draw the map.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const colourOf = (group: string | null, i: number) => (group === null || group === 'Other' || group === '(none)' ? palette.other : palette.groups[i] ?? palette.other);
+  const series = map ? (map.colorBy ? map.groups.map((g) => g.value) : [null]) : [];
+  // Colour follows the value (alphabetical among the named groups), not its count, so redraws keep colours.
+  const named = series.filter((g) => g !== null && g !== 'Other' && g !== '(none)').sort();
+
+  return (
+    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="metric-label">Embedding map - a sample projected to 2D on the server; this read is audited</div>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          Sample
+          <select value={sample} onChange={(e) => setSample(Number(e.target.value))} style={{ fontSize: 13, padding: '4px 6px' }}>
+            {[100, 250, 500, 1000].map((n) => (
+              <option key={n} value={n}>
+                {n.toLocaleString()} records
+              </option>
+            ))}
+          </select>
+        </label>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          Projection
+          <select value={method} onChange={(e) => setMethod(e.target.value as 'pca' | 'umap')} style={{ fontSize: 13, padding: '4px 6px' }}>
+            <option value="pca">PCA - distances along the axes mean something</option>
+            <option value="umap">UMAP - shows clusters</option>
+          </select>
+        </label>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          Colour by
+          <select value={colorBy} onChange={(e) => setColorBy(e.target.value)} style={{ fontSize: 13, padding: '4px 6px' }}>
+            <option value="">(nothing)</option>
+            {fields.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <FilterEditor fields={fields} rows={filters} onChange={setFilters} />
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        <button type="button" className="primary-btn" disabled={busy} onClick={draw}>
+          {busy ? 'Drawing…' : map ? 'Redraw' : 'Draw map'}
+        </button>
+        {map && map.points.length > 0 && (
+          <button type="button" onClick={() => setAsTable((v) => !v)} style={{ background: 'none', border: 'none', color: 'var(--primary-text)', fontSize: 13 }}>
+            {asTable ? 'Show the map' : 'Show as a table'}
+          </button>
+        )}
+      </div>
+      {error && <div className="error-text">{error}</div>}
+      {map && (
+        <>
+          <div style={{ fontSize: 13 }}>
+            <strong>{map.sampled.toLocaleString()}</strong> of {map.requested.toLocaleString()} requested · {map.dimension ?? '—'} dimensions · {map.method.toUpperCase()}
+            {map.explainedVariance && (
+              <span style={{ color: 'var(--muted)' }}>
+                {' '}
+                · the axes keep {Math.round(map.explainedVariance[0] * 1000) / 10}% and {Math.round(map.explainedVariance[1] * 1000) / 10}% of the variance
+              </span>
+            )}
+          </div>
+          {map.colorBy && (
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13 }} aria-label="Legend">
+              {series.map((g) => {
+                const i = named.indexOf(g);
+                const hollow = g === '(none)';
+                return (
+                  <span key={String(g)} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: hollow ? 'transparent' : colourOf(g, i), border: `2px solid ${colourOf(g, i)}` }} />
+                    {g} ({map.groups.find((x) => x.value === g)?.count ?? 0})
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          {map.points.length > 0 &&
+            (asTable ? (
+              <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+                <Table headers={['ID', ...(map.colorBy ? [map.colorBy] : []), 'x', 'y']} rows={map.points.map((p) => [<code key="id">{p.id}</code>, ...(map.colorBy ? [p.group ?? '—'] : []), p.x.toFixed(3), p.y.toFixed(3)])} />
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={460}>
+                <ScatterChart margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+                  <CartesianGrid stroke={c.grid} />
+                  <XAxis type="number" dataKey="x" name="x" tick={c.tick} stroke={c.axis} tickFormatter={(n: number) => n.toFixed(1)} />
+                  <YAxis type="number" dataKey="y" name="y" tick={c.tick} stroke={c.axis} tickFormatter={(n: number) => n.toFixed(1)} width={48} />
+                  <Tooltip
+                    cursor={{ stroke: c.axis }}
+                    content={({ active, payload }) => {
+                      const p = active && payload?.[0] ? (payload[0].payload as ExplorerMap['points'][number]) : null;
+                      return p ? (
+                        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12 }}>
+                          <div>
+                            <code>{p.id}</code>
+                          </div>
+                          {map.colorBy && (
+                            <div style={{ color: 'var(--muted)' }}>
+                              {map.colorBy}: {p.group}
+                            </div>
+                          )}
+                        </div>
+                      ) : null;
+                    }}
+                  />
+                  {series.map((g) => {
+                    const i = named.indexOf(g);
+                    const colour = colourOf(g, i);
+                    const hollow = g === '(none)';
+                    return (
+                      <Scatter
+                        key={String(g)}
+                        name={String(g ?? 'records')}
+                        data={map.points.filter((p) => (map.colorBy ? p.group === g : true))}
+                        fill={colour}
+                        isAnimationActive={false}
+                        shape={(props: { cx?: number; cy?: number }) => <circle cx={props.cx} cy={props.cy} r={4} fill={hollow ? 'none' : colour} stroke={hollow ? colour : c.surface} strokeWidth={hollow ? 1.5 : 1} />}
+                      />
+                    );
+                  })}
+                </ScatterChart>
+              </ResponsiveContainer>
+            ))}
+          {map.notes.map((n) => (
             <div key={n} style={{ fontSize: 12, color: 'var(--muted)' }}>
               {n}
             </div>

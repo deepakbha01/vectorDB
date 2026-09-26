@@ -14,8 +14,8 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
-import { normaliseIndexType, normaliseMetric, pgWhere, trimMetadata, vectorPreview } from '../explorer-helpers';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
+import { normaliseIndexType, normaliseMetric, pgWhere, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
  * Connects to the customer's target PostgreSQL+pgvector instance - a
@@ -357,7 +357,7 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplo
     };
   }
 
-  async browse(name: string, options: { limit: number; cursor: string | null; filter: ExplorerFilter }): Promise<ExplorerPage> {
+  async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
     const table = sanitizeSqlIdentifier(name, 'collectionOrTableName');
     const columns = (await this.columnsOf(table)).map((c) => c.name);
     const where = pgWhere(options.filter, columns, options.cursor === null ? 1 : 2);
@@ -371,7 +371,7 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplo
     return {
       records: rows.map((row) => {
         const { id, embedding, created_at, ...metadata } = row;
-        return { id: String(id), metadata: trimMetadata(metadata), ...vectorPreview(embedding) };
+        return { id: String(id), metadata: trimMetadata(metadata), ...vectorFields(embedding, options.withVectors) };
       }),
       nextCursor: r.rows.length > options.limit ? String(rows[rows.length - 1].id) : null,
     };

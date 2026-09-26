@@ -11,6 +11,8 @@ import {
 import { IndexTuningParameter } from '../../schema-generator/schema-generator.types';
 import { IndexType } from '../../index-recommendation-engine/enums/index-type.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
+import { chromaWhere, fieldsFromSample, normaliseMetric, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
  * Connects to a self-hosted Chroma server (typically a single lightweight
@@ -20,7 +22,7 @@ import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
  * own pre-computed embeddings rather than asking Chroma to embed text.
  */
 @Injectable()
-export class ChromaVectorAdapter implements VectorDatabaseAdapter {
+export class ChromaVectorAdapter implements VectorDatabaseAdapter, VectorExplorer {
   readonly platformId = 'chroma' as const;
   private readonly logger = new Logger(ChromaVectorAdapter.name);
   private client: ChromaClient | null = null;
@@ -115,5 +117,56 @@ export class ChromaVectorAdapter implements VectorDatabaseAdapter {
     const name = this.collectionName(collectionOrTableName);
     this.logger.warn(`Deleting Chroma collection '${name}' (confirmed).`);
     await this.getClient().deleteCollection({ name });
+  }
+
+  // ------------------------------------------------------ Data Explorer (read-only)
+
+  /** Opened by its listed name exactly (no sanitising), never with an embedding function. */
+  private open(name: string): Promise<Collection> {
+    return this.getClient().getCollection({ name, embeddingFunction: null as any });
+  }
+
+  async listCollections(): Promise<string[]> {
+    return (await this.getClient().listCollections({ limit: 1000 })).map((c) => c.name).sort();
+  }
+
+  async describeCollection(name: string): Promise<ExplorerCollectionInfo> {
+    const c = await this.open(name);
+    const sample = await c.get({ limit: 20, include: ['embeddings' as any, 'metadatas' as any] });
+    const cfg = (c as any).configuration ?? {};
+    const space = (c.metadata as Record<string, unknown> | undefined)?.['hnsw:space'] ?? cfg.hnsw?.space ?? null;
+    const notes: string[] = ['Chroma has no fixed schema: fields are those seen in the first 20 records.'];
+    if (!space) notes.push("The collection sets no distance; Chroma's default is L2.");
+    const first = sample.embeddings?.[0] as unknown;
+    return {
+      name,
+      recordCount: await c.count(),
+      countIsEstimate: false,
+      dimension: Array.isArray(first) || ArrayBuffer.isView(first) ? (first as ArrayLike<number>).length : null,
+      metric: normaliseMetric(typeof space === 'string' ? space : 'l2'),
+      indexes: [{ type: 'hnsw', detail: `Chroma HNSW${cfg.hnsw ? ` ${JSON.stringify(cfg.hnsw)}` : ''}` }],
+      fields: fieldsFromSample((sample.metadatas ?? []) as Array<Record<string, unknown>>),
+      notes,
+    };
+  }
+
+  /** Chroma pages by offset. */
+  async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
+    const offset = options.cursor === null ? 0 : Number(options.cursor);
+    if (!Number.isInteger(offset) || offset < 0) throw new BadRequestException('Invalid page cursor.');
+    const c = await this.open(name);
+    const r = await c.get({ limit: options.limit + 1, offset, where: chromaWhere(options.filter) as any, include: ['embeddings' as any, 'metadatas' as any] });
+    const ids = r.ids.slice(0, options.limit);
+    return {
+      records: ids.map((id, i) => ({ id: String(id), metadata: trimMetadata((r.metadatas?.[i] as Record<string, unknown>) ?? {}), ...vectorFields(r.embeddings?.[i], options.withVectors) })),
+      nextCursor: r.ids.length > options.limit ? String(offset + options.limit) : null,
+    };
+  }
+
+  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+    const c = await this.open(name);
+    const r = await c.query({ queryEmbeddings: [query.vector], nResults: query.topK, where: chromaWhere(query.filter) as any, include: ['metadatas' as any, 'distances' as any] });
+    const ids = r.ids[0] ?? [];
+    return ids.map((id, i) => ({ id: String(id), score: 1 - Number(r.distances?.[0]?.[i] ?? 0), metadata: trimMetadata((r.metadatas?.[0]?.[i] as Record<string, unknown>) ?? {}) }));
   }
 }
