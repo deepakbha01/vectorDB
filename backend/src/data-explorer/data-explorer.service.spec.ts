@@ -33,7 +33,7 @@ function setup(o: { platform?: VectorPlatform; explorable?: boolean; collections
 describe('DataExplorerService', () => {
   it('reports status without failing: no platform, unsupported platform, connected', async () => {
     expect(await setup({ platform: VectorPlatform.UNDETERMINED }).service.status('p', requester)).toEqual(expect.objectContaining({ supported: false, connected: false }));
-    expect((await setup({ explorable: false, platform: VectorPlatform.PINECONE }).service.status('p', requester)).message).toMatch(/does not support pinecone yet/);
+    expect((await setup({ explorable: false, platform: VectorPlatform.ACTIAN }).service.status('p', requester)).message).toMatch(/Actian has no Node.js driver/);
     expect(await setup().service.status('p', requester)).toEqual(expect.objectContaining({ supported: true, connected: true, designedCollection: 'docs' }));
   });
 
@@ -92,5 +92,40 @@ describe('DataExplorerService', () => {
     await jest.advanceTimersByTimeAsync(10_001);
     expect(await slow).toBeInstanceOf(ServiceUnavailableException);
     jest.useRealTimers();
+  });
+});
+
+describe('DataExplorerService - embedding map and naming', () => {
+  it("maps the design's collection name through the database's naming", async () => {
+    const { service, adapter } = setup({ collections: ['Docs'] });
+    adapter.designedName = (n: string) => n.charAt(0).toUpperCase() + n.slice(1);
+    expect((await service.collections('p', requester)).collections).toEqual([{ name: 'Docs', designed: true }]);
+    expect((await service.status('p', requester)).designedCollection).toBe('Docs');
+  });
+
+  it('samples vectors page by page, projects them on the server, and colours by a field', async () => {
+    const { service, adapter } = setup();
+    const rec = (i: number) => ({ id: `r${i}`, metadata: { dept: i % 3 === 0 ? 'legal' : i % 3 === 1 ? 'hr' : null }, vectorPreview: null, dimension: 3, vector: [i % 2, 1 - (i % 2), i / 100] });
+    adapter.browse
+      .mockResolvedValueOnce({ records: Array.from({ length: 100 }, (_, i) => rec(i)), nextCursor: 'c1' })
+      .mockResolvedValueOnce({ records: Array.from({ length: 20 }, (_, i) => rec(100 + i)), nextCursor: null });
+    const m = await service.map('p', requester, 'docs', { sample: 500, method: 'pca', colorBy: 'dept' });
+    expect(adapter.browse).toHaveBeenNthCalledWith(1, 'docs', expect.objectContaining({ limit: 100, cursor: null, withVectors: true }));
+    expect(adapter.browse).toHaveBeenNthCalledWith(2, 'docs', expect.objectContaining({ cursor: 'c1' }));
+    expect(m).toEqual(expect.objectContaining({ sampled: 120, requested: 500, dimension: 3, colorBy: 'dept' }));
+    expect(m.points[0]).toEqual({ id: 'r0', x: expect.any(Number), y: expect.any(Number), group: 'legal' });
+    // Only ids, positions and the colour-by value leave the server.
+    expect(Object.keys(m.points[0]).sort()).toEqual(['group', 'id', 'x', 'y']);
+    expect(m.groups.map((g) => g.value).sort()).toEqual(['(none)', 'hr', 'legal']);
+    expect(m.explainedVariance).not.toBeNull();
+  });
+
+  it('refuses an unknown colour field and says when there are too few vectors', async () => {
+    const { service, adapter } = setup();
+    await expect(service.map('p', requester, 'docs', { colorBy: 'owner' })).rejects.toThrow(/no field 'owner'/);
+    adapter.browse.mockResolvedValueOnce({ records: [{ id: 'a', metadata: {}, vectorPreview: null, dimension: null }], nextCursor: null });
+    const m = await service.map('p', requester, 'docs', {});
+    expect(m.points).toEqual([]);
+    expect(m.notes.join(' ')).toMatch(/without a vector/);
   });
 });

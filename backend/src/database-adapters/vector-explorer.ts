@@ -1,9 +1,9 @@
 import { VectorDatabaseAdapter, VectorSearchResult } from './vector-database-adapter.interface';
 
 /**
- * Read-only exploration of a target vector database (Data Explorer, phase 1:
- * pgvector, Qdrant, Milvus). Optional on an adapter: one without it is shown
- * as "not supported yet". Nothing here writes, loads or changes the target.
+ * Read-only exploration of a target vector database (Data Explorer). Every
+ * live adapter implements it; one without it (Actian - no Node.js driver) is
+ * shown as "not supported". Nothing here writes, loads or changes the target.
  */
 
 export interface ExplorerField {
@@ -13,7 +13,7 @@ export interface ExplorerField {
 }
 
 export interface ExplorerIndex {
-  /** Normalised: hnsw | ivf_flat | pq | other. */
+  /** Normalised: hnsw | ivf_flat | pq | managed (chosen by the service, e.g. Pinecone) | other. */
   type: string;
   /** The database's own description of it (index definition, parameters). */
   detail: string;
@@ -40,6 +40,8 @@ export interface ExplorerRecord {
   /** The first few components only - enough to recognise a vector, not to copy it. */
   vectorPreview: number[] | null;
   dimension: number | null;
+  /** The whole vector - only when browse is asked for it (the embedding map); never sent to the browser. */
+  vector?: number[];
 }
 
 export interface ExplorerPage {
@@ -51,11 +53,25 @@ export interface ExplorerPage {
 /** Exact-match conditions on metadata fields - the portable subset every phase-1 database supports. */
 export type ExplorerFilter = Record<string, string | number | boolean>;
 
+export interface BrowseOptions {
+  limit: number;
+  cursor: string | null;
+  filter: ExplorerFilter;
+  /** Include each record's whole vector (for the embedding map). */
+  withVectors?: boolean;
+}
+
 export interface VectorExplorer {
   listCollections(): Promise<string[]>;
   describeCollection(name: string): Promise<ExplorerCollectionInfo>;
-  browse(name: string, options: { limit: number; cursor: string | null; filter: ExplorerFilter }): Promise<ExplorerPage>;
+  browse(name: string, options: BrowseOptions): Promise<ExplorerPage>;
   searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]>;
+  /**
+   * What the design's collection name becomes in this database (Weaviate
+   * capitalises class names, Pinecone uses hyphens, Oracle upper-cases).
+   * Absent: the name is used as is.
+   */
+  designedName?(designName: string): string;
 }
 
 export function isExplorable(adapter: VectorDatabaseAdapter): adapter is VectorDatabaseAdapter & VectorExplorer {

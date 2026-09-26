@@ -51,6 +51,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "typeorm": "^0.3.20",
+    "umap-js": "^1.4.0",
     "weaviate-client": "^3.14.0"
   },
   "devDependencies": {

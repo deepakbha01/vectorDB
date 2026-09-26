@@ -14,8 +14,8 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
-import { normaliseMetric, qdrantFilter, trimMetadata, vectorPreview } from '../explorer-helpers';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
+import { normaliseMetric, qdrantFilter, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
  * Connects to the customer's target Qdrant instance (self-hosted on
@@ -147,7 +147,7 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter, VectorExplore
     };
   }
 
-  async browse(name: string, options: { limit: number; cursor: string | null; filter: ExplorerFilter }): Promise<ExplorerPage> {
+  async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
     let offset: unknown;
     if (options.cursor !== null) {
       try {
@@ -167,7 +167,7 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter, VectorExplore
     return {
       records: (r.points ?? []).map((p: any) => {
         const vec = Array.isArray(p.vector) || p.vector === undefined ? p.vector : Object.values(p.vector)[0];
-        return { id: String(p.id), metadata: trimMetadata((p.payload as Record<string, unknown>) ?? {}), ...vectorPreview(vec) };
+        return { id: String(p.id), metadata: trimMetadata((p.payload as Record<string, unknown>) ?? {}), ...vectorFields(vec, options.withVectors) };
       }),
       // The next point id (number or UUID), kept as JSON so its type survives the round trip.
       nextCursor: r.next_page_offset === null || r.next_page_offset === undefined ? null : JSON.stringify(r.next_page_offset),

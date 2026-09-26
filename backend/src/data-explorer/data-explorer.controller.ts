@@ -9,7 +9,7 @@ import { UserRole } from '../users/user.entity';
 import { DataExplorerEnabledGuard } from './data-explorer-enabled.guard';
 import { DataExplorerReadAuditInterceptor } from './data-explorer-read-audit.interceptor';
 import { DataExplorerService } from './data-explorer.service';
-import { ExplorerDocumentsQueryDto, ExplorerSearchDto } from './dto/explorer-search.dto';
+import { ExplorerDocumentsQueryDto, ExplorerMapQueryDto, ExplorerSearchDto } from './dto/explorer-search.dto';
 
 /**
  * Data Explorer - read-only view into the project's target vector database.
@@ -43,6 +43,13 @@ export class DataExplorerController {
   @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
   documents(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('name') name: string, @Query() q: ExplorerDocumentsQueryDto, @CurrentUser() user: AuthenticatedUser) {
     return this.service.documents(projectId, user, name, q);
+  }
+
+  /** The embedding map: a projected sample. Ids and one field per point, so it is treated as a record read. */
+  @Get('collections/:name/map')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  map(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('name') name: string, @Query() q: ExplorerMapQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.map(projectId, user, name, q);
   }
 
   /** POST only because the query can be a long text or vector; it changes nothing. */

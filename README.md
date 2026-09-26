@@ -391,8 +391,9 @@ Simulated from load tests, Live from usage events or OpenTelemetry. See
 
 The Data Explorer (behind `DATA_EXPLORER_ENABLED`) is a read-only view into
 the project's target vector database - collections, records and search -
-with a design-vs-deployed check against the project's own phases. Phase 1:
-PostgreSQL + pgvector, Qdrant, Milvus. See `USER_GUIDE.md` §12.
+with a design-vs-deployed check against the project's own phases, and an
+embedding map (PCA / UMAP, projected on the server). It covers every live
+target platform (all but Actian). See `USER_GUIDE.md` §12.
 
 ## Architecture
 

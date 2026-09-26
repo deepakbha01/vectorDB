@@ -11,12 +11,22 @@ import { IndexDesignService } from '../index-design/index-design.service';
 import { DiscoveryService } from '../discovery/discovery.service';
 import { EmbeddingClientService } from '../embedding-client/embedding-client.service';
 import { compareDesign, DesignedCollection } from './data-explorer.compare';
-import { ExplorerSearchDto } from './dto/explorer-search.dto';
+import { ExplorerMapQueryDto, ExplorerSearchDto } from './dto/explorer-search.dto';
+import { project } from './projection';
 
 export const CALL_TIMEOUT_MS = 10_000;
 export const MAX_PAGE = 100;
 export const DEFAULT_PAGE = 25;
 export const MAX_FILTER_FIELDS = 5;
+export const DEFAULT_MAP_SAMPLE = 500;
+export const MAX_MAP_SAMPLE = 1000;
+/**
+ * Colour groups on the map: the most common values, then "Other". Three, because
+ * on a scatter every pair of colours must stay distinguishable (including for
+ * colour-blind readers); only three hues pass that in both themes.
+ */
+export const MAP_GROUPS = 3;
+const UNSUPPORTED = 'The Data Explorer does not support this platform (Actian has no Node.js driver).';
 
 /**
  * Data Explorer (phase 1): read-only look inside the project's target vector
@@ -62,7 +72,7 @@ export class DataExplorerService {
     const project = await this.projectsService.findOne(projectId, requester);
     if (project.platform === VectorPlatform.UNDETERMINED) throw new BadRequestException('This project has no target platform yet. Complete Vector DB Selection first.');
     const adapter = this.adapters.getAdapter(project.platform);
-    if (!isExplorable(adapter)) throw new BadRequestException(`The Data Explorer does not support ${project.platform} yet (phase 1: PostgreSQL + pgvector, Qdrant, Milvus).`);
+    if (!isExplorable(adapter)) throw new BadRequestException(UNSUPPORTED);
     return { platform: project.platform, adapter };
   }
 
@@ -72,7 +82,12 @@ export class DataExplorerService {
     if (!names.includes(name)) throw new NotFoundException(`The target database has no collection '${name}'.`);
   }
 
-  private async design(projectId: string, requester: AuthenticatedUser): Promise<DesignedCollection> {
+  /** What the design's collection is called in this database. */
+  private designedName(adapter: VectorExplorer, name: string): string {
+    return adapter.designedName ? adapter.designedName(name) : name;
+  }
+
+  private async design(projectId: string, requester: AuthenticatedUser, adapter?: VectorExplorer): Promise<DesignedCollection> {
     const [pipeline, index, discovery] = await Promise.all([
       this.pipelines.getLatest(projectId, requester),
       this.indexDesigns.getLatest(projectId, requester),
@@ -80,7 +95,7 @@ export class DataExplorerService {
     ]);
     return {
       pipeline: pipeline
-        ? { version: pipeline.version, collectionName: pipeline.collectionName, dimension: pipeline.embeddingDimension, metric: pipeline.similarityMetric, metadataFields: pipeline.metadataFields.map((f) => f.name) }
+        ? { version: pipeline.version, collectionName: adapter ? this.designedName(adapter, pipeline.collectionName) : pipeline.collectionName, dimension: pipeline.embeddingDimension, metric: pipeline.similarityMetric, metadataFields: pipeline.metadataFields.map((f) => f.name) }
         : null,
       index: index ? { version: index.version, type: index.decision } : null,
       discovery: discovery ? { version: discovery.assessment.version, estimatedVectorCount: discovery.assessment.estimatedVectorCount } : null,
@@ -92,9 +107,13 @@ export class DataExplorerService {
     const project = await this.projectsService.findOne(projectId, requester);
     const pipeline = await this.pipelines.getLatest(projectId, requester);
     const base = { platform: project.platform, designedCollection: pipeline?.collectionName ?? null };
+    if (project.platform !== VectorPlatform.UNDETERMINED && pipeline) {
+      const a = this.adapters.getAdapter(project.platform);
+      if (isExplorable(a)) base.designedCollection = this.designedName(a, pipeline.collectionName);
+    }
     if (project.platform === VectorPlatform.UNDETERMINED) return { ...base, supported: false, connected: false, message: 'No target platform yet. Complete Vector DB Selection first.' };
     const adapter = this.adapters.getAdapter(project.platform);
-    if (!isExplorable(adapter)) return { ...base, supported: false, connected: false, message: `The Data Explorer does not support ${project.platform} yet (phase 1: PostgreSQL + pgvector, Qdrant, Milvus).` };
+    if (!isExplorable(adapter)) return { ...base, supported: false, connected: false, message: UNSUPPORTED };
     try {
       const connected = await this.call('health check', () => adapter.healthCheck());
       return { ...base, supported: true, connected, message: connected ? null : 'The target database did not answer the health check. Check its TARGET_* settings on the server.' };
@@ -106,13 +125,14 @@ export class DataExplorerService {
   async collections(projectId: string, requester: AuthenticatedUser) {
     const { adapter } = await this.target(projectId, requester);
     const [names, pipeline] = await Promise.all([this.call('list collections', () => adapter.listCollections()), this.pipelines.getLatest(projectId, requester)]);
-    return { designedCollection: pipeline?.collectionName ?? null, collections: names.map((name) => ({ name, designed: name === pipeline?.collectionName })) };
+    const designed = pipeline ? this.designedName(adapter, pipeline.collectionName) : null;
+    return { designedCollection: designed, collections: names.map((name) => ({ name, designed: name === designed })) };
   }
 
   async overview(projectId: string, requester: AuthenticatedUser, name: string) {
     const { platform, adapter } = await this.target(projectId, requester);
     await this.collection(adapter, name);
-    const [info, design] = await Promise.all([this.call('describe collection', () => adapter.describeCollection(name)), this.design(projectId, requester)]);
+    const [info, design] = await Promise.all([this.call('describe collection', () => adapter.describeCollection(name)), this.design(projectId, requester, adapter)]);
     return { platform, info, checks: compareDesign(name, info, design) };
   }
 
@@ -146,6 +166,77 @@ export class DataExplorerService {
     const limit = Math.min(MAX_PAGE, Math.max(1, q.limit ?? DEFAULT_PAGE));
     const page = await this.call('browse', () => adapter.browse(name, { limit, cursor: q.cursor ?? null, filter }));
     return { collection: name, limit, filter, rows: page.records, nextCursor: page.nextCursor };
+  }
+
+  /**
+   * The embedding map: a sample of the collection's vectors projected to 2D on
+   * the server. Only ids, positions and the colour-by value leave the server -
+   * never the vectors or other metadata.
+   */
+  async map(projectId: string, requester: AuthenticatedUser, name: string, q: ExplorerMapQueryDto) {
+    const { adapter } = await this.target(projectId, requester);
+    await this.collection(adapter, name);
+    const info = await this.call('describe collection', () => adapter.describeCollection(name));
+    if (q.colorBy && !info.fields.some((f) => f.name === q.colorBy)) throw new BadRequestException(`The collection has no field '${q.colorBy}'.`);
+    const filter = await this.filterFor(adapter, name, this.parseFilterParam(q.filter));
+    const sample = Math.min(MAX_MAP_SAMPLE, Math.max(10, q.sample ?? DEFAULT_MAP_SAMPLE));
+    const method = q.method ?? 'pca';
+
+    // The first records in the database's own order, 100 at a time.
+    const rows: Array<{ id: string; vector: number[]; group: string | null }> = [];
+    let cursor: string | null = null;
+    let dimension: number | null = null;
+    let skipped = 0;
+    do {
+      const page = await this.call('read vectors', () => adapter.browse(name, { limit: Math.min(100, sample - rows.length), cursor, filter, withVectors: true }));
+      for (const r of page.records) {
+        if (!r.vector?.length) {
+          skipped++;
+          continue;
+        }
+        dimension ??= r.vector.length;
+        if (r.vector.length !== dimension) {
+          skipped++;
+          continue;
+        }
+        const v = q.colorBy ? r.metadata[q.colorBy] : undefined;
+        rows.push({ id: r.id, vector: r.vector, group: q.colorBy ? (v === null || v === undefined ? null : String(v).slice(0, 80)) : null });
+      }
+      cursor = page.nextCursor;
+    } while (cursor && rows.length < sample);
+
+    if (rows.length < 3) {
+      return { collection: name, method, requested: sample, sampled: rows.length, dimension, colorBy: q.colorBy ?? null, groups: [], points: [], explainedVariance: null, notes: [skipped ? `${skipped} record(s) came back without a vector.` : 'Too few records with vectors to draw a map (at least 3).'] };
+    }
+    const started = Date.now();
+    const projection = project(rows.map((r) => r.vector), method);
+
+    // Colour groups: the most common values; the rest become "Other".
+    const counts = new Map<string, number>();
+    for (const r of rows) if (r.group !== null) counts.set(r.group, (counts.get(r.group) ?? 0) + 1);
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, MAP_GROUPS).map(([v]) => v);
+    const groupOf = (g: string | null) => (g === null ? '(none)' : top.includes(g) ? g : 'Other');
+    const groups = q.colorBy ? [...top, 'Other', '(none)'].map((value) => ({ value, count: rows.filter((r) => groupOf(r.group) === value).length })).filter((g) => g.count > 0) : [];
+
+    return {
+      collection: name,
+      method,
+      requested: sample,
+      sampled: rows.length,
+      dimension,
+      colorBy: q.colorBy ?? null,
+      groups,
+      points: rows.map((r, i) => ({ id: r.id, x: projection.points[i][0], y: projection.points[i][1], group: q.colorBy ? groupOf(r.group) : null })),
+      explainedVariance: projection.explainedVariance,
+      notes: [
+        `The first ${rows.length.toLocaleString('en-US')} records in the database's own order${Object.keys(filter).length ? ' matching the filter' : ''} - a sample, not the whole collection.`,
+        method === 'umap'
+          ? 'UMAP keeps neighbourhoods: close points are similar, but distances between clusters and cluster sizes carry no meaning.'
+          : 'PCA keeps the two directions of greatest variance; points far apart on an axis differ most along it.',
+        skipped ? `${skipped} record(s) without a usable vector were left out.` : null,
+        `Projected in ${Date.now() - started} ms on the server; the vectors themselves never leave it.`,
+      ].filter(Boolean),
+    };
   }
 
   async search(projectId: string, requester: AuthenticatedUser, name: string, dto: ExplorerSearchDto) {

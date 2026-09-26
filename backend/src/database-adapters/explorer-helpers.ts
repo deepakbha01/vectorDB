@@ -42,6 +42,28 @@ export function vectorPreview(v: unknown): { vectorPreview: number[] | null; dim
   return { vectorPreview: arr.slice(0, PREVIEW_COMPONENTS).map((x) => Math.round(x * 1e6) / 1e6), dimension: arr.length };
 }
 
+/** The whole vector as numbers (pgvector text, array or typed array), or undefined. */
+export function fullVector(v: unknown): number[] | undefined {
+  if (typeof v === 'string' && v.startsWith('[')) {
+    try {
+      return JSON.parse(v) as number[];
+    } catch {
+      return undefined;
+    }
+  }
+  if (Array.isArray(v)) return v as number[];
+  if (ArrayBuffer.isView(v) && !(v instanceof DataView)) return Array.from(v as unknown as ArrayLike<number>);
+  return undefined;
+}
+
+/** A record's preview, plus its whole vector when asked for. */
+export function vectorFields(v: unknown, withVectors = false): { vectorPreview: number[] | null; dimension: number | null; vector?: number[] } {
+  const p = vectorPreview(v);
+  if (!withVectors) return p;
+  const full = fullVector(v);
+  return full ? { ...p, vector: full } : p;
+}
+
 /**
  * Converts filter values (which arrive as text) to each field's type, and
  * refuses fields the collection does not have - so a typo is a clear error,
@@ -94,6 +116,99 @@ export function milvusExpr(filter: ExplorerFilter): string {
       return `${name} == ${String(value)}`;
     })
     .join(' and ');
+}
+
+const FIELD = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const field = (name: string) => {
+  if (!FIELD.test(name)) throw new BadRequestException(`Invalid field name '${name}'.`);
+  return name;
+};
+
+/** Pinecone / Chroma / MongoDB: `{ field: { $eq: value } }` per condition. */
+function eqConditions(filter: ExplorerFilter): Array<Record<string, { $eq: string | number | boolean }>> {
+  return Object.entries(filter).map(([name, value]) => ({ [field(name)]: { $eq: value } }));
+}
+
+/** Pinecone ANDs the keys of one object. */
+export function pineconeFilter(filter: ExplorerFilter): Record<string, unknown> | undefined {
+  const c = eqConditions(filter);
+  return c.length ? Object.assign({}, ...c) : undefined;
+}
+
+/** Chroma needs an explicit $and for more than one condition. */
+export function chromaWhere(filter: ExplorerFilter): Record<string, unknown> | undefined {
+  const c = eqConditions(filter);
+  return c.length === 0 ? undefined : c.length === 1 ? c[0] : { $and: c };
+}
+
+/** MongoDB: field names cannot start an operator or reach into a sub-document. */
+export function mongoFilter(filter: ExplorerFilter): Record<string, unknown> {
+  return Object.assign({}, ...eqConditions(filter));
+}
+
+/** Elasticsearch: exact `term` on keyword / numeric / boolean fields, `match_phrase` on analysed text. */
+export function esFilter(filter: ExplorerFilter, fields: ExplorerField[]): Array<Record<string, unknown>> {
+  const types = new Map(fields.map((f) => [f.name, f.type]));
+  return Object.entries(filter).map(([name, value]) => (types.get(field(name)) === 'text' ? { match_phrase: { [name]: value } } : { term: { [name]: value } }));
+}
+
+/** Characters RediSearch treats as syntax inside a TAG value. */
+const REDIS_TAG_SPECIAL = /[,.<>{}[\]"':;!@#$%^&*()\-+=~|/\\ ]/g;
+
+/** RediSearch query syntax: TAG `@f:{v}`, NUMERIC `@f:[v v]`, TEXT `@f:"v"`, with special characters escaped. */
+export function redisFilter(filter: ExplorerFilter, fields: ExplorerField[]): string {
+  const types = new Map(fields.map((f) => [f.name, f.type.toUpperCase()]));
+  return Object.entries(filter)
+    .map(([name, value]) => {
+      const t = types.get(field(name));
+      if (t === 'NUMERIC') {
+        const n = Number(value);
+        if (!Number.isFinite(n)) throw new BadRequestException(`Field '${name}' is numeric.`);
+        return `@${name}:[${n} ${n}]`;
+      }
+      const s = String(value);
+      if (t === 'TEXT') return `@${name}:"${s.replace(/["\\]/g, (c) => `\\${c}`)}"`;
+      return `@${name}:{${s.replace(REDIS_TAG_SPECIAL, (c) => `\\${c}`)}}`;
+    })
+    .join(' ');
+}
+
+/** SQL string literal with quotes doubled (LanceDB / DataFusion). */
+export function sqlLiteral(v: string | number | boolean): string {
+  return typeof v === 'string' ? `'${v.replace(/'/g, "''")}'` : String(v);
+}
+
+/** LanceDB `where` clause: backtick-quoted columns, escaped literals. */
+export function lanceWhere(filter: ExplorerFilter): string {
+  return Object.entries(filter)
+    .map(([name, value]) => `\`${field(name)}\` = ${sqlLiteral(value)}`)
+    .join(' AND ');
+}
+
+/** Oracle: `"COL" = :f0` per field, bound; columns come from the table's own catalogue (upper case). */
+export function oracleWhere(filter: ExplorerFilter, columns: string[]): { sql: string; binds: Record<string, unknown> } {
+  const allowed = new Set(columns.map((c) => c.toUpperCase()));
+  const parts: string[] = [];
+  const binds: Record<string, unknown> = {};
+  Object.entries(filter).forEach(([name, value], i) => {
+    const col = name.toUpperCase();
+    if (!FIELD.test(name) || !allowed.has(col)) throw new BadRequestException(`Unknown column '${name}'.`);
+    binds[`f${i}`] = typeof value === 'boolean' ? (value ? 1 : 0) : value;
+    parts.push(`"${col}" = :f${i}`);
+  });
+  return { sql: parts.join(' AND '), binds };
+}
+
+/** Field names and JS types seen in a sample of schemaless records (Pinecone, Chroma, MongoDB). */
+export function fieldsFromSample(records: Array<Record<string, unknown>>, skip: string[] = []): ExplorerField[] {
+  const seen = new Map<string, string>();
+  for (const r of records) {
+    for (const [k, v] of Object.entries(r ?? {})) {
+      if (skip.includes(k) || v === null || v === undefined || seen.has(k)) continue;
+      seen.set(k, typeof v === 'number' ? 'number' : typeof v === 'boolean' ? 'boolean' : Array.isArray(v) ? 'array' : typeof v === 'object' ? 'object' : 'string');
+    }
+  }
+  return [...seen.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([name, type]) => ({ name, type }));
 }
 
 /** Maps each database's metric names onto the platform's SimilarityMetric values. */

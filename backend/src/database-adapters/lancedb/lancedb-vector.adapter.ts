@@ -12,6 +12,8 @@ import {
 import { IndexTuningParameter, MetadataFieldDefinition } from '../../schema-generator/schema-generator.types';
 import { IndexType } from '../../index-recommendation-engine/enums/index-type.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
+import { lanceWhere, normaliseIndexType, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /** Escapes a value for use inside a LanceDB SQL-like `delete`/`where` predicate string. */
 function sqlLiteral(value: string): string {
@@ -25,7 +27,7 @@ function sqlLiteral(value: string): string {
  * come only from TARGET_LANCEDB_URI environment variable.
  */
 @Injectable()
-export class LanceDbVectorAdapter implements VectorDatabaseAdapter {
+export class LanceDbVectorAdapter implements VectorDatabaseAdapter, VectorExplorer {
   readonly platformId = 'lancedb' as const;
   private readonly logger = new Logger(LanceDbVectorAdapter.name);
   private connection: lancedb.Connection | null = null;
@@ -123,5 +125,66 @@ export class LanceDbVectorAdapter implements VectorDatabaseAdapter {
     const name = this.tableName(collectionOrTableName);
     this.logger.warn(`Dropping LanceDB table '${name}' (confirmed).`);
     await (await this.getConnection()).dropTable(name);
+  }
+
+  // ------------------------------------------------------ Data Explorer (read-only)
+
+  async listCollections(): Promise<string[]> {
+    return (await (await this.getConnection()).tableNames()).sort();
+  }
+
+  async describeCollection(name: string): Promise<ExplorerCollectionInfo> {
+    const table = await (await this.getConnection()).openTable(name);
+    const schema = await table.schema();
+    const embedding = schema.fields.find((f) => f.name === 'embedding');
+    const indices = await table.listIndices();
+    return {
+      name,
+      recordCount: await table.countRows(),
+      countIsEstimate: false,
+      dimension: (embedding?.type as unknown as { listSize?: number })?.listSize ?? null,
+      // LanceDB's index listing does not state a metric; this platform's search uses cosine.
+      metric: null,
+      indexes: indices.filter((i) => i.columns.includes('embedding')).map((i) => ({ type: normaliseIndexType(i.indexType), detail: `${i.indexType} (${i.name})` })),
+      fields: schema.fields.filter((f) => f.name !== 'id' && f.name !== 'embedding').map((f) => ({ name: f.name, type: String(f.type) })),
+      notes: ['LanceDB does not report an index metric; searches here use cosine distance.'],
+    };
+  }
+
+  /** Arrow rows → plain objects; the vector comes back as an Arrow vector. */
+  private plainRow(row: any): Record<string, unknown> {
+    const o: Record<string, unknown> = typeof row?.toJSON === 'function' ? row.toJSON() : { ...row };
+    const e = o.embedding as any;
+    if (e && typeof e.toArray === 'function') o.embedding = e.toArray();
+    return o;
+  }
+
+  /** LanceDB pages by offset; order is the table's storage order (stable while the table does not change). */
+  async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
+    const offset = options.cursor === null ? 0 : Number(options.cursor);
+    if (!Number.isInteger(offset) || offset < 0) throw new BadRequestException('Invalid page cursor.');
+    const table = await (await this.getConnection()).openTable(name);
+    const where = lanceWhere(options.filter);
+    let query = table.query();
+    if (where) query = query.where(where);
+    const rows = (await query.limit(options.limit + 1).offset(offset).toArray()).map((r) => this.plainRow(r));
+    return {
+      records: rows.slice(0, options.limit).map((row) => {
+        const { id, embedding, ...metadata } = row;
+        return { id: String(id), metadata: trimMetadata(metadata), ...vectorFields(embedding, options.withVectors) };
+      }),
+      nextCursor: rows.length > options.limit ? String(offset + options.limit) : null,
+    };
+  }
+
+  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+    const table = await (await this.getConnection()).openTable(name);
+    let search = (table.search(query.vector, 'vector') as lancedb.VectorQuery).distanceType('cosine').limit(query.topK);
+    const where = lanceWhere(query.filter);
+    if (where) search = search.where(where);
+    return (await search.toArray()).map((r: any) => {
+      const { id, embedding, _distance, ...metadata } = this.plainRow(r);
+      return { id: String(id), score: 1 - Number(_distance ?? 0), metadata: trimMetadata(metadata) };
+    });
   }
 }

@@ -146,8 +146,10 @@ When enabled (`DATA_EXPLORER_ENABLED`), **Data Explorer** appears under
 *Project tools*. It is a **read-only** look inside the project's target vector
 database - the platform chosen in Vector DB Selection, connected through the
 server's `TARGET_*` settings. It never writes to, loads or changes the
-database. Phase 1 covers PostgreSQL + pgvector, Qdrant and Milvus; other
-platforms say "not supported yet".
+database. It works with every platform the tool connects to - PostgreSQL +
+pgvector, Oracle, Milvus, Qdrant, Pinecone, Weaviate, Chroma, Elasticsearch,
+Redis, MongoDB Atlas and LanceDB. Actian says "not supported" (it has no
+Node.js driver).
 
 Pick a collection (the one your Data & Embedding design deploys is marked
 *designed*), then:
@@ -164,8 +166,22 @@ Pick a collection (the one your Data & Embedding design deploys is marked
   as ingestion does) or paste a vector; set Top K and filters. Results show
   their score, and the query time against the Discovery P95 target (one
   query - the Performance phase measures percentiles).
+- **Map** - *Draw map* projects a sample of 100-1,000 records to 2D on the
+  server: **PCA** (distances along the axes mean something; it says how much
+  of the variance the picture keeps) or **UMAP** (shows clusters; distances
+  between clusters mean nothing). *Colour by* a field colours its three most
+  common values; the rest are *Other*, and records without a value are drawn
+  hollow. *Show as a table* lists every point. Only ids, positions and the
+  colour-by value reach the browser - never the vectors.
 
-Documents and Search show customer data, so they are for admins and
+How each database behaves: Pinecone lists records but cannot filter the list
+(filter in Search instead); MongoDB Atlas can filter a search only on the
+fields its vector index declares; Milvus collections must be loaded in Milvus
+first; offset-paged databases (Milvus, Weaviate, Elasticsearch, Chroma,
+Redis, LanceDB) page up to their own depth limits. Where a database chooses
+its own index (Pinecone), the design check shows the index as *Unknown*.
+
+Documents, Search and Map show customer data, so they are for admins and
 architects, and every read is recorded in the Audit Log (who, what, how many
 records - never the records themselves). Long values are shortened. A Milvus
 collection must be loaded in Milvus first; the explorer does not load it.

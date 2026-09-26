@@ -30,7 +30,7 @@ export interface DesignedCollection {
 
 const fmt = (n: number) => n.toLocaleString('en-US');
 const METRIC_LABEL: Record<string, string> = { cosine: 'cosine', dot_product: 'dot product', euclidean: 'euclidean (L2)' };
-const INDEX_LABEL: Record<string, string> = { hnsw: 'HNSW', ivf_flat: 'IVF-Flat', pq: 'PQ', other: 'other' };
+const INDEX_LABEL: Record<string, string> = { hnsw: 'HNSW', ivf_flat: 'IVF-Flat', pq: 'PQ', managed: 'managed', other: 'other' };
 const metricLabel = (m: string | null) => (m ? METRIC_LABEL[m] ?? m : '—');
 /** One decimal; a handful of records against millions reads "under 0.1%", not "0%". */
 const volumeShare = (n: number, of: number) => {
@@ -73,6 +73,8 @@ export function compareDesign(viewing: string, info: ExplorerCollectionInfo, des
   checks.push(
     !design.index
       ? { key: 'index', label: 'ANN index', designed: '—', actual: builtLabel, status: 'unknown', source: indexSource, note: 'No Index Design yet.' }
+      : built.includes('managed')
+        ? { key: 'index', label: 'ANN index', designed: INDEX_LABEL[design.index.type] ?? design.index.type, actual: 'managed by the service', status: 'unknown', source: indexSource, note: 'The database chooses and tunes its own index, so there is no index type to compare.' }
       : !built.length
         ? { key: 'index', label: 'ANN index', designed: INDEX_LABEL[design.index.type] ?? design.index.type, actual: 'none', status: 'mismatch', source: indexSource, note: 'No ANN index is built: search is a full scan until it is.' }
         : { key: 'index', label: 'ANN index', designed: INDEX_LABEL[design.index.type] ?? design.index.type, actual: builtLabel, status: built.includes(design.index.type) ? 'match' : 'mismatch', source: indexSource, note: null },

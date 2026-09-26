@@ -28,8 +28,14 @@ const CHART: Record<Theme, { series1: string; series2: string; grid: string; axi
   light: { series1: '#2a78d6', series2: '#eb6834', grid: '#e1e0d9', axis: '#c3c2b7', muted: '#898781', ink2: '#52514e', surface: '#ffffff', hover: 'rgba(11, 11, 11, 0.04)' },
 };
 
+/** Scatter (embedding map) colours: the three hues that stay distinct on every pair, per theme (dataviz validator, --pairs all). */
+export const SCATTER: Record<Theme, { groups: string[]; other: string }> = {
+  light: { groups: ['#2a78d6', '#eb6834', '#1baf7a'], other: '#898781' },
+  dark: { groups: ['#3987e5', '#d95926', '#199e70'], other: '#94a3b8' },
+};
+
 /** The literal chart palette for the current theme. */
-function useChart() {
+export function useChart() {
   const c = CHART[useTheme().theme];
   return { ...c, tick: { fill: c.muted, fontSize: 11 } };
 }

@@ -48,6 +48,10 @@ describe('compareDesign - design vs deployed', () => {
     expect(byKey(compareDesign('scratch', info({ name: 'scratch' }), design())).collection).toEqual(expect.objectContaining({ status: 'info', designed: 'docs', actual: 'scratch' }));
   });
 
+  it('treats an index the service manages (Pinecone) as unknown, not a mismatch', () => {
+    expect(byKey(compareDesign('docs', info({ indexes: [{ type: 'managed', detail: '' }] }), design())).index).toEqual(expect.objectContaining({ status: 'unknown', actual: 'managed by the service' }));
+  });
+
   it('shows a tiny share as under 0.1%, not 0%', () => {
     expect(byKey(compareDesign('docs', info({ recordCount: 3 }), design())).volume.note).toBe('under 0.1% of the expected volume.');
   });

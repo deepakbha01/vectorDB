@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsInt, IsNumber, IsObject, IsOptional, IsString, Length, Max, MaxLength, Min } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Length, Max, MaxLength, Min } from 'class-validator';
 
 /** A search in the Data Explorer: text (embedded with the project's model) or a raw vector. */
 export class ExplorerSearchDto {
@@ -26,6 +26,33 @@ export class ExplorerSearchDto {
   @IsOptional()
   @IsObject()
   filter?: Record<string, string | number | boolean>;
+}
+
+/** The embedding map. */
+export class ExplorerMapQueryDto {
+  /** Records to sample (10-1,000; default 500). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(10)
+  @Max(1000)
+  sample?: number;
+
+  @IsOptional()
+  @IsIn(['pca', 'umap'])
+  method?: 'pca' | 'umap';
+
+  /** A metadata field to colour points by. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  colorBy?: string;
+
+  /** JSON object of field → value, e.g. {"department":"legal"}. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  filter?: string;
 }
 
 /** Paging through records. */

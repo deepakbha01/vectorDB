@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createClient, RedisClientType } from 'redis';
+import { createClient, RedisClientType, RESP_TYPES } from 'redis';
 import {
   SchemaDefinition,
   VectorDatabaseAdapter,
@@ -11,6 +11,15 @@ import {
 import { IndexTuningParameter, MetadataFieldDefinition } from '../../schema-generator/schema-generator.types';
 import { IndexType } from '../../index-recommendation-engine/enums/index-type.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
+import { normaliseIndexType, normaliseMetric, redisFilter, trimMetadata, vectorFields } from '../explorer-helpers';
+
+/** Little-endian float32 bytes back to numbers. */
+function fromVectorBuffer(buf: Buffer): number[] {
+  const out: number[] = [];
+  for (let i = 0; i + 4 <= buf.length; i += 4) out.push(buf.readFloatLE(i));
+  return out;
+}
 
 /** RediSearch requires vectors as raw little-endian float32 bytes, not a plain array. */
 function toVectorBuffer(vector: number[]): Buffer {
@@ -28,7 +37,7 @@ function toVectorBuffer(vector: number[]): Buffer {
  * schema generated in Phase 2.
  */
 @Injectable()
-export class RedisVectorAdapter implements VectorDatabaseAdapter, OnModuleDestroy {
+export class RedisVectorAdapter implements VectorDatabaseAdapter, VectorExplorer, OnModuleDestroy {
   readonly platformId = 'redis' as const;
   private readonly logger = new Logger(RedisVectorAdapter.name);
   private client: RedisClientType | null = null;
@@ -152,5 +161,75 @@ export class RedisVectorAdapter implements VectorDatabaseAdapter, OnModuleDestro
     const collection = this.collectionName(collectionOrTableName);
     this.logger.warn(`Dropping RediSearch index '${collection}_idx' and its documents (confirmed).`);
     await (await this.getClient()).ft.dropIndex(`${collection}_idx`, { DD: true } as any);
+  }
+
+  // ------------------------------------------------------ Data Explorer (read-only)
+
+  /** Collections are RediSearch indexes named `<collection>_idx` over hashes `<collection>:<id>` (createSchema's layout). */
+  async listCollections(): Promise<string[]> {
+    const names = (await (await this.getClient()).ft._list()) as unknown as string[];
+    return names.filter((n) => String(n).endsWith('_idx')).map((n) => String(n).slice(0, -4)).sort();
+  }
+
+  /** FT.INFO attributes, with keys lower-cased (their case differs between server versions). */
+  private async attributes(name: string): Promise<{ info: any; attrs: Array<Record<string, any>> }> {
+    const info = (await (await this.getClient()).ft.info(`${name}_idx`)) as any;
+    const attrs = ((info.attributes ?? []) as any[]).map((a) => Object.fromEntries(Object.entries(a).map(([k, v]) => [k.toLowerCase(), v])));
+    return { info, attrs };
+  }
+
+  async describeCollection(name: string): Promise<ExplorerCollectionInfo> {
+    const { info, attrs } = await this.attributes(name);
+    const vector = attrs.find((a) => String(a.type).toUpperCase() === 'VECTOR');
+    const algorithm = vector?.algorithm ? String(vector.algorithm) : null;
+    return {
+      name,
+      recordCount: info.num_docs !== undefined ? Number(info.num_docs) : null,
+      countIsEstimate: false,
+      dimension: vector?.dim !== undefined ? Number(vector.dim) : null,
+      metric: normaliseMetric(vector?.distance_metric ? String(vector.distance_metric) : null),
+      indexes: algorithm ? [{ type: normaliseIndexType(algorithm), detail: `${algorithm} (${vector?.data_type ?? vector?.type ?? 'vector'})` }] : [],
+      fields: attrs.filter((a) => a !== vector && String(a.attribute ?? a.identifier) !== 'id').map((a) => ({ name: String(a.attribute ?? a.identifier), type: String(a.type) })),
+      notes: [],
+    };
+  }
+
+  /** Vectors are stored as bytes; read them back as buffers, one hash field per record. */
+  private async vectorOf(key: string): Promise<number[] | undefined> {
+    const client = (await this.getClient()).withTypeMapping({ [RESP_TYPES.BLOB_STRING]: Buffer });
+    const buf = (await client.hGet(key, 'embedding')) as unknown as Buffer | null;
+    return buf ? fromVectorBuffer(buf) : undefined;
+  }
+
+  /** RediSearch pages by offset (LIMIT from size). */
+  async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
+    const offset = options.cursor === null ? 0 : Number(options.cursor);
+    if (!Number.isInteger(offset) || offset < 0) throw new BadRequestException('Invalid page cursor.');
+    const { attrs } = await this.attributes(name);
+    const fields = attrs.filter((a) => String(a.type).toUpperCase() !== 'VECTOR').map((a) => ({ name: String(a.attribute ?? a.identifier), type: String(a.type) }));
+    const q = redisFilter(options.filter, fields) || '*';
+    const r = (await (await this.getClient()).ft.search(`${name}_idx`, q, { LIMIT: { from: offset, size: options.limit + 1 }, RETURN: fields.map((f) => f.name), DIALECT: 2 } as any)) as any;
+    const docs = ((r.documents ?? []) as any[]).slice(0, options.limit);
+    const records = [];
+    for (const d of docs) {
+      const { id: _id, ...metadata } = d.value ?? {};
+      records.push({ id: String(d.id).replace(`${name}:`, ''), metadata: trimMetadata(metadata), ...vectorFields(await this.vectorOf(String(d.id)), options.withVectors) });
+    }
+    return { records, nextCursor: (r.documents ?? []).length > options.limit ? String(offset + options.limit) : null };
+  }
+
+  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+    const info = await this.describeCollection(name);
+    const pre = redisFilter(query.filter, info.fields);
+    const r = (await (await this.getClient()).ft.search(`${name}_idx`, `${pre ? `(${pre})` : '*'}=>[KNN ${Math.trunc(query.topK)} @embedding $BLOB AS score]`, {
+      PARAMS: { BLOB: toVectorBuffer(query.vector) },
+      SORTBY: { BY: 'score' },
+      RETURN: [...info.fields.map((f) => f.name), 'score'],
+      DIALECT: 2,
+    } as any)) as any;
+    return ((r.documents ?? []) as any[]).map((d) => {
+      const { id: _id, embedding: _e, score, ...metadata } = d.value ?? {};
+      return { id: String(d.id).replace(`${name}:`, ''), score: 1 - Number(score), metadata: trimMetadata(metadata) };
+    });
   }
 }

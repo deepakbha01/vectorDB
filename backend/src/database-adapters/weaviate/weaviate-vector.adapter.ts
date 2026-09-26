@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import weaviate, { ApiKey, WeaviateClient } from 'weaviate-client';
+import weaviate, { ApiKey, Filters, WeaviateClient } from 'weaviate-client';
 import {
   SchemaDefinition,
   VectorDatabaseAdapter,
@@ -14,6 +14,8 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
+import { normaliseIndexType, normaliseMetric, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
  * Connects to the customer's target Weaviate instance (self-hosted on
@@ -24,7 +26,7 @@ import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
  * all agree on the collection's real name.
  */
 @Injectable()
-export class WeaviateVectorAdapter implements VectorDatabaseAdapter {
+export class WeaviateVectorAdapter implements VectorDatabaseAdapter, VectorExplorer {
   readonly platformId = 'weaviate' as const;
   private readonly logger = new Logger(WeaviateVectorAdapter.name);
   private client: WeaviateClient | null = null;
@@ -126,5 +128,69 @@ export class WeaviateVectorAdapter implements VectorDatabaseAdapter {
     const className = this.className(collectionOrTableName);
     this.logger.warn(`Deleting Weaviate class '${className}' (confirmed).`);
     await (await this.getClient()).collections.delete(className);
+  }
+
+  // ------------------------------------------------------ Data Explorer (read-only)
+
+  /** Weaviate class names are PascalCase (createSchema capitalises the design's name). */
+  designedName(designName: string): string {
+    return this.className(designName);
+  }
+
+  async listCollections(): Promise<string[]> {
+    return (await (await this.getClient()).collections.listAll()).map((c) => c.name).sort();
+  }
+
+  /** Exact match on each property, ANDed. */
+  private filters(collection: any, filter: ExplorerFilter): unknown {
+    const parts = Object.entries(filter).map(([name, value]) => collection.filter.byProperty(name).equal(value));
+    return parts.length === 0 ? undefined : parts.length === 1 ? parts[0] : Filters.and(...parts);
+  }
+
+  /** The first (usually only) vector of an object, named or unnamed. */
+  private firstVector(o: any): unknown {
+    const v = o?.vectors;
+    if (!v) return undefined;
+    return Array.isArray(v) ? v : Object.values(v)[0];
+  }
+
+  async describeCollection(name: string): Promise<ExplorerCollectionInfo> {
+    const collection = (await this.getClient()).collections.use(name);
+    const config = (await collection.config.get()) as any;
+    const [vecName, vec] = Object.entries((config.vectorizers ?? {}) as Record<string, { indexType?: string; indexConfig?: { distance?: string } }>)[0] ?? [null, null];
+    const total = (await collection.aggregate.overAll()) as any;
+    const sample = (await collection.query.fetchObjects({ limit: 1, includeVector: true } as any)) as any;
+    const first = this.firstVector(sample.objects?.[0]) as ArrayLike<number> | undefined;
+    const notes: string[] = [];
+    if (vecName && vecName !== 'default') notes.push(`Named vector '${vecName}' is shown.`);
+    return {
+      name,
+      recordCount: typeof total.totalCount === 'number' ? total.totalCount : null,
+      countIsEstimate: false,
+      dimension: first ? first.length : null,
+      metric: normaliseMetric(vec?.indexConfig?.distance ?? null),
+      indexes: vec?.indexType ? [{ type: normaliseIndexType(vec.indexType), detail: `${vec.indexType} (${vec.indexConfig?.distance ?? 'distance not stated'})` }] : [],
+      fields: ((config.properties ?? []) as Array<{ name: string; dataType: string }>).map((p) => ({ name: p.name, type: p.dataType })),
+      notes,
+    };
+  }
+
+  /** Weaviate pages by offset (its cursor API cannot be combined with filters); 10,000 deep at most by default. */
+  async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
+    const offset = options.cursor === null ? 0 : Number(options.cursor);
+    if (!Number.isInteger(offset) || offset < 0) throw new BadRequestException('Invalid page cursor.');
+    const collection = (await this.getClient()).collections.use(name);
+    const r = (await collection.query.fetchObjects({ limit: options.limit + 1, offset, filters: this.filters(collection, options.filter), includeVector: true } as any)) as any;
+    const objects = (r.objects ?? []) as any[];
+    return {
+      records: objects.slice(0, options.limit).map((o) => ({ id: String(o.uuid), metadata: trimMetadata((o.properties as Record<string, unknown>) ?? {}), ...vectorFields(this.firstVector(o), options.withVectors) })),
+      nextCursor: objects.length > options.limit ? String(offset + options.limit) : null,
+    };
+  }
+
+  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+    const collection = (await this.getClient()).collections.use(name);
+    const r = (await collection.query.nearVector(query.vector, { limit: query.topK, filters: this.filters(collection, query.filter), returnMetadata: ['distance'] } as any)) as any;
+    return ((r.objects ?? []) as any[]).map((o) => ({ id: String(o.uuid), score: 1 - (o.metadata?.distance ?? 0), metadata: trimMetadata((o.properties as Record<string, unknown>) ?? {}) }));
   }
 }
