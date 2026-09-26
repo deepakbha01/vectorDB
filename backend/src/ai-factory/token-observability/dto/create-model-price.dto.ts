@@ -13,6 +13,12 @@ export class CreateModelPriceDto {
   @Length(1, 200)
   model: string;
 
+  /** Region the price applies to (e.g. "eastus", "eu-west-1"); omitted = every region. */
+  @IsOptional()
+  @IsString()
+  @Length(1, 64)
+  region?: string;
+
   @IsIn(TOKEN_TYPES)
   tokenType: PriceTokenType;
 

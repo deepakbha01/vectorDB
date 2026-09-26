@@ -93,7 +93,7 @@ export function normalizeEvent(
   if ((reasoning ?? 0) > output) return { eventId: e.eventId, reason: 'reasoningTokens exceed outputTokens (reasoning tokens are part of output)' };
 
   // Priced at the price in force when the call happened - later price changes never rewrite this.
-  const c = costOf(prices, e.provider, e.model, { input, output, cachedInput: cached, reasoning, embedding, reranking }, timestamp, projectId, treatment);
+  const c = costOf(prices, e.provider, e.model, { input, output, cachedInput: cached, reasoning, embedding, reranking }, timestamp, projectId, treatment, e.region ?? null);
 
   return {
     eventId: e.eventId,

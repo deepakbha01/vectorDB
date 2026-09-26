@@ -1,5 +1,5 @@
 import { ValidationPipe } from '@nestjs/common';
-import { buildTrace, growth, growthVsBaseline, previousWindow, resolveFilters, SpanRow, UsageFilters, whereClause, withShare } from './usage-query';
+import { buildTrace, defaultBucket, growth, growthVsBaseline, previousWindow, resolveFilters, SpanRow, UsageFilters, whereClause, withShare } from './usage-query';
 import { UsageQueryDto } from './dto/usage-query.dto';
 import { UsageEventBatchDto } from './dto/usage-events.dto';
 import { TokenObservabilityController } from './token-observability.controller';
@@ -22,9 +22,17 @@ describe('resolveFilters', () => {
     expect(f).toEqual(expect.objectContaining({ mode: 'simulated', bucket: 'hour', dims: { service: 'claims', model: 'mid' } }));
   });
 
+  it('picks hour, day or week by range length, and honours week and month when asked (validation spec §6)', () => {
+    const day = 86_400_000;
+    expect([defaultBucket(2 * day), defaultBucket(30 * day), defaultBucket(180 * day)]).toEqual(['hour', 'day', 'week']);
+    expect((resolveFilters({ from: '2026-06-01T00:00:00Z', bucket: 'month' }, now) as UsageFilters).bucket).toBe('month');
+    expect((resolveFilters({ bucket: 'week' }, now) as UsageFilters).bucket).toBe('week');
+  });
+
   it.each([
     [{ from: '2026-09-26T00:00:00Z' }, /before/],
     [{ from: '2025-01-01T00:00:00Z' }, /at most 400 days/],
+    [{ from: '2026-06-01T00:00:00Z', bucket: 'hour' }, /Hourly trends cover at most 31 days/],
   ])('rejects %p', (q, msg) => {
     expect((resolveFilters(q as UsageQueryDto, now) as { error: string }).error).toMatch(msg);
   });

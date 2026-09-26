@@ -470,3 +470,64 @@ describe('deleting a project (dashboard delete)', () => {
     expect(kept).toEqual({ projectId: null, path: '/api/projects/x/discovery' });
   });
 });
+
+describe('validation spec gaps: regional prices, week / month trends, successful tasks, hotspots', () => {
+  let p2: string;
+  const window = { from: '2026-08-25T00:00:00Z', to: '2026-09-26T00:00:00Z' };
+
+  beforeAll(async () => {
+    const [u] = await ds.query(`SELECT id FROM users LIMIT 1`);
+    const [p] = await ds.query(`INSERT INTO projects (name, "ownerId") VALUES ('IT gaps', $1) RETURNING id`, [u.id]);
+    p2 = p.id;
+    // A contracted price for EU usage only; usage elsewhere keeps the catalogue price.
+    await pricing.addProjectPrice(p2, admin, { provider: MANAGED_API_TIER, model: 'mid', tokenType: 'input', region: 'eu-west-1', pricePer1M: 10, effectiveFrom: '2026-08-01T00:00:00Z', source: 'EU contract' });
+    await usage.ingestForProject(
+      p2,
+      batch([
+        ev({ eventId: 'g-eu', timestamp: '2026-09-25T10:00:00Z', region: 'eu-west-1', requestId: 'r1', inputTokens: 1_000_000, outputTokens: 0 }),
+        ev({ eventId: 'g-any', timestamp: '2026-09-25T10:05:00Z', requestId: 'r1', inputTokens: 1_000_000, outputTokens: 0 }),
+        ev({ eventId: 'g-fail', timestamp: '2026-09-25T10:10:00Z', requestId: 'r2', requestStatus: 'error' }),
+        ev({ eventId: 'g-r2ok', timestamp: '2026-09-25T10:11:00Z', requestId: 'r2' }),
+        ev({ eventId: 'g-old', timestamp: '2026-09-01T10:00:00Z', requestId: 'r3' }),
+      ]),
+      now,
+    );
+  });
+
+  it('prices usage at the regional rate for its region, and the region-less rate elsewhere', async () => {
+    const rows = await ds.query(`SELECT "eventId", "estimatedInputCost" AS cost FROM ai_usage_events WHERE "projectId" = $1 AND "eventId" IN ('g-eu', 'g-any') ORDER BY 1`, [p2]);
+    expect(rows.map((r: { eventId: string; cost: string }) => [r.eventId, Number(r.cost)])).toEqual([
+      ['g-any', 3],
+      ['g-eu', 10],
+    ]);
+    const prices = await pricing.list(p2, admin);
+    expect(prices.find((r) => r.projectId === p2)).toEqual(expect.objectContaining({ region: 'eu-west-1', pricePer1M: 10 }));
+  });
+
+  it('buckets trends by ISO week and by calendar month', async () => {
+    const week = await usage.trends(p2, admin, { ...window, bucket: 'week' });
+    expect(week.points.map((x) => x.bucket)).toEqual(['2026-08-31T00:00:00Z', '2026-09-21T00:00:00Z']);
+    const month = await usage.trends(p2, admin, { ...window, bucket: 'month' });
+    expect(month.points).toEqual([expect.objectContaining({ bucket: '2026-09-01T00:00:00Z', totalTokens: 2_003_300 })]);
+  });
+
+  it('counts a task as successful only when none of its events failed, and divides all tokens and cost by those', async () => {
+    const t = await usage.tokens(p2, admin, window);
+    expect(t).toEqual(expect.objectContaining({ requests: 3, successfulTasks: 2, taskSuccessRatePercent: 66.7, tokensPerSuccessfulTask: 1_001_650 }));
+    const c = await usage.cost(p2, admin, window);
+    expect(c.successfulTasks).toBe(2);
+    expect(c.costPerSuccessfulTask).toBeCloseTo((c.observedCost ?? 0) / 2, 2);
+    expect(c.costPerRequest).toBeCloseTo((c.observedCost ?? 0) / 3, 2);
+  });
+
+  it('answers the nine hotspots from the database, saying why the ones without enough data are empty', async () => {
+    const h = await usage.hotspots(p2, admin, window);
+    const byKey = Object.fromEntries(h.hotspots.map((x) => [x.key, x]));
+    expect(h.hotspots).toHaveLength(9);
+    expect(byKey.topApplication).toEqual(expect.objectContaining({ subject: 'claims', value: 2_003_300 }));
+    expect(byKey.topModel).toEqual(expect.objectContaining({ subject: `${MANAGED_API_TIER} / mid` }));
+    // Three requests is below the 10-request minimum for per-request rankings.
+    expect(byKey.tokensPerRequest).toEqual(expect.objectContaining({ subject: null, detail: expect.stringMatching(/10 or more requests/) }));
+    expect(byKey.tokenSpike.subject).toBeNull();
+  });
+});

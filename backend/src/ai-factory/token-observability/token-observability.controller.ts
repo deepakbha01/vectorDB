@@ -127,6 +127,12 @@ export class TokenObservabilityController {
     return this.usage.rag(projectId, user, q);
   }
 
+  /** The nine factual token hotspots (validation spec §7) for the range and filters. */
+  @Get('hotspots')
+  hotspots(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Query() q: UsageQueryDto) {
+    return this.usage.hotspots(projectId, user, q);
+  }
+
   @Get('cost')
   cost(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Query() q: UsageQueryDto) {
     return this.usage.cost(projectId, user, q);

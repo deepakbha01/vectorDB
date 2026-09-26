@@ -17,6 +17,8 @@ export interface PricingTreatment {
 export interface DesiredPrice {
   provider: string;
   model: string;
+  /** Omitted / null: every region. */
+  region?: string | null;
   tokenType: PriceTokenType;
   pricePer1M: number;
   currency?: string;
@@ -30,6 +32,8 @@ export interface PriceRow {
   projectId: string | null;
   provider: string;
   model: string;
+  /** null = every region. Optional so callers that predate regions still type-check. */
+  region?: string | null;
   tokenType: PriceTokenType;
   pricePer1M: number;
   currency: string;
@@ -40,7 +44,7 @@ export interface PriceRow {
 
 export const MANAGED_API_TIER = 'managed_api_tier';
 
-const keyOf = (p: { provider: string; model: string; tokenType: string }) => `${p.provider}\u0000${p.model}\u0000${p.tokenType}`;
+const keyOf = (p: { provider: string; model: string; tokenType: string; region?: string | null }) => `${p.provider}\u0000${p.model}\u0000${p.tokenType}\u0000${p.region ?? ''}`;
 
 /** Catalogue prices from the existing config files plus the extra rows in token-observability.yaml. */
 export function cataloguePrices(
@@ -96,13 +100,24 @@ export function planPriceSync(
   return { close, insert };
 }
 
-/** The row in force at `at`: a project override first, then the catalogue. */
-export function resolvePrice(rows: PriceRow[], provider: string, model: string, tokenType: PriceTokenType, at: Date, projectId: string | null): PriceRow | null {
+/**
+ * The row in force at `at`, most specific first: this project in this region,
+ * this project in any region, the catalogue in this region, the catalogue in
+ * any region. A price for another region never applies; usage with no region
+ * only takes region-less prices.
+ */
+export function resolvePrice(rows: PriceRow[], provider: string, model: string, tokenType: PriceTokenType, at: Date, projectId: string | null, region: string | null = null): PriceRow | null {
   const inForce = rows.filter(
     (r) => r.provider === provider && r.model === model && r.tokenType === tokenType && r.effectiveFrom <= at && (r.effectiveTo === null || at < r.effectiveTo),
   );
   const pick = (xs: PriceRow[]) => xs.sort((a, b) => b.effectiveFrom.getTime() - a.effectiveFrom.getTime())[0] ?? null;
-  return (projectId ? pick(inForce.filter((r) => r.projectId === projectId)) : null) ?? pick(inForce.filter((r) => r.projectId === null));
+  const regions = region === null ? [null] : [region, null];
+  const owners = projectId ? [projectId, null] : [null];
+  for (const p of owners) for (const g of regions) {
+    const hit = pick(inForce.filter((r) => r.projectId === p && (r.region ?? null) === g));
+    if (hit) return hit;
+  }
+  return null;
 }
 
 export interface TokenCounts {
@@ -131,16 +146,16 @@ export interface CostBreakdown {
  * output price). Input-side cost covers input, cached input, embedding and
  * reranking; output-side covers output and reasoning.
  */
-export function costOf(rows: PriceRow[], provider: string, model: string, t: TokenCounts, at: Date, projectId: string | null, treatment: Pick<PricingTreatment, 'cachedInputPriceFactor' | 'reasoningBilledAs'>): CostBreakdown {
+export function costOf(rows: PriceRow[], provider: string, model: string, t: TokenCounts, at: Date, projectId: string | null, treatment: Pick<PricingTreatment, 'cachedInputPriceFactor' | 'reasoningBilledAs'>, region: string | null = null): CostBreakdown {
   const refs: PriceRef[] = [];
   const missing: PriceTokenType[] = [];
   let currency: string | null = null;
   const use = (type: PriceTokenType, tokens: number, factor = 1, fallback?: PriceTokenType): number => {
     if (!tokens) return 0;
-    let row = resolvePrice(rows, provider, model, type, at, projectId);
+    let row = resolvePrice(rows, provider, model, type, at, projectId, region);
     let f = 1;
     if (!row && fallback) {
-      row = resolvePrice(rows, provider, model, fallback, at, projectId);
+      row = resolvePrice(rows, provider, model, fallback, at, projectId, region);
       f = factor;
     }
     if (!row) {
@@ -148,7 +163,7 @@ export function costOf(rows: PriceRow[], provider: string, model: string, t: Tok
       return 0;
     }
     currency ??= row.currency;
-    if (!refs.some((r) => r.id === row!.id)) refs.push({ id: row.id, tokenType: row.tokenType, pricePer1M: row.pricePer1M, effectiveFrom: row.effectiveFrom.toISOString() });
+    if (!refs.some((r) => r.id === row!.id)) refs.push({ id: row.id, tokenType: row.tokenType, pricePer1M: row.pricePer1M, effectiveFrom: row.effectiveFrom.toISOString(), ...(row.region ? { region: row.region } : {}) });
     return (tokens / 1e6) * row.pricePer1M * f;
   };
   const cached = t.cachedInput ?? 0;
