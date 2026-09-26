@@ -450,5 +450,23 @@ describe('code-review fixes', () => {
     await simulations.remove(projectId, admin, failed.id);
     const retry = await simulations.upload(projectId, admin, file, 'Retry', NOW);
     expect(retry).toEqual(expect.objectContaining({ status: 'complete', accepted: 2500, duplicates: 0 }));
+  }, 30_000); // two 2,500-row uploads against a real database outrun Jest's 5 s default
+});
+
+describe('deleting a project (dashboard delete)', () => {
+  it('removes everything that belongs to the project but keeps its audit trail', async () => {
+    const [u] = await ds.query(`SELECT id FROM users LIMIT 1`);
+    const [p] = await ds.query(`INSERT INTO projects (name, "ownerId") VALUES ('IT delete me', $1) RETURNING id`, [u.id]);
+    await usage.ingestForProject(p.id, batch([ev({ eventId: 'del-1', timestamp: '2026-09-25T10:00:00Z' })]), new Date('2026-09-25T12:00:00Z'));
+    await ds.query(`INSERT INTO audit_log_entries ("projectId", "userId", "userEmail", method, path, "statusCode", "durationMs") VALUES ($1, $2, 'it@local', 'POST', '/api/projects/x/discovery', 201, 5)`, [p.id, u.id]);
+    const count = async (sql: string) => Number((await ds.query(sql, [p.id]))[0].n);
+
+    await ds.query(`DELETE FROM projects WHERE id = $1`, [p.id]);
+
+    expect(await count(`SELECT COUNT(*) AS n FROM ai_usage_events WHERE "projectId" = $1`)).toBe(0);
+    expect(await count(`SELECT COUNT(*) AS n FROM ai_usage_rollups WHERE "projectId" = $1`)).toBe(0);
+    // The audit entry survives, unlinked from the deleted project.
+    const [kept] = await ds.query(`SELECT "projectId", path FROM audit_log_entries WHERE path = '/api/projects/x/discovery' AND "userEmail" = 'it@local'`);
+    expect(kept).toEqual({ projectId: null, path: '/api/projects/x/discovery' });
   });
 });
