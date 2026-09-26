@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -55,5 +55,17 @@ export class ProjectsController {
     @Body() dto: SelectPlatformDto,
   ) {
     return this.projectsService.selectPlatform(id, user, dto.platform, dto.rationale);
+  }
+
+  /**
+   * Permanently deletes the project and everything recorded for it (every
+   * phase, AI Factory and Token Observability record). The audit log keeps
+   * its entries. Owners (admin / architect) and admins only.
+   */
+  @Delete(':id')
+  @HttpCode(200)
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.projectsService.remove(id, user);
   }
 }

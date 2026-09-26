@@ -103,4 +103,15 @@ describe('AuditLoggingInterceptor', () => {
     const result = await new Promise((resolve) => interceptor.intercept(makeContext(request), handler as any).subscribe(resolve));
     expect(result).toEqual({ ok: true });
   });
+
+  it('records a project deletion without linking the deleted project, keeping its id and name', async () => {
+    const request = { method: 'DELETE', url: '/api/projects/p1', params: { id: 'p1' }, body: {}, user: { id: 'u1', email: 'a@b.com' } };
+    const handler = { handle: () => of({ id: 'p1', name: 'RAG Assistant', deleted: true }) };
+
+    await new Promise((resolve) => interceptor.intercept(makeContext(request), handler as any).subscribe(resolve));
+    await flush();
+
+    expect(entries.save).toHaveBeenCalledWith(expect.objectContaining({ project: undefined, method: 'DELETE', path: '/api/projects/p1' }));
+    expect(JSON.stringify(entries.save.mock.calls[0][0].responseSummary)).toContain('RAG Assistant');
+  });
 });

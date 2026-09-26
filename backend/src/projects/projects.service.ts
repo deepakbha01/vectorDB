@@ -123,6 +123,18 @@ export class ProjectsService {
     return saved;
   }
 
+  /**
+   * Deletes the project; every table that belongs to it cascades in the
+   * database. Audit entries are kept (their project link is cleared). The
+   * customer's own target databases are never touched.
+   */
+  async remove(id: string, requester: AuthenticatedUser): Promise<{ id: string; name: string; deleted: true }> {
+    const project = await this.findOne(id, requester);
+    await this.projects.delete({ id });
+    this.logger.log(`user=${requester.email} action=delete_project projectId=${id} name="${project.name}"`);
+    return { id, name: project.name, deleted: true };
+  }
+
   private assertAccess(project: Project, requester: AuthenticatedUser): void {
     const isOwner = project.owner?.id === requester.id;
     const isAdmin = requester.role === UserRole.ADMIN;

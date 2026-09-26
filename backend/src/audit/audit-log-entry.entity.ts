@@ -15,7 +15,8 @@ export class AuditLogEntry {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Project, { onDelete: 'CASCADE', nullable: true })
+  // SET NULL, not CASCADE: deleting a project must not erase its audit trail.
+  @ManyToOne(() => Project, { onDelete: 'SET NULL', nullable: true })
   @Index()
   project?: Project;
 
