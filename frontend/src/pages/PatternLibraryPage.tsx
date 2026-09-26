@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiClient, PatternCatalogEntry } from '../api/client';
 import { TopBar } from '../components/TopBar';
@@ -13,6 +13,42 @@ function list(title: string, items: string[]) {
           <li key={i}>{i}</li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+const LLM_USAGE = { required: 'Required', optional: 'Optional', none: 'No LLM / vector-only' } as const;
+const NOT_CONFIGURED = <span style={{ color: 'var(--muted)', fontStyle: 'italic' }}>Not configured</span>;
+const orNot = (v: number | null | undefined, suffix = '') => (v === null || v === undefined ? NOT_CONFIGURED : `${v}${suffix}`);
+
+/** The pattern's token metadata: only what it can honestly say; the rest is set per project on Token Observability. */
+function tokenProfile(p: PatternCatalogEntry) {
+  const t = p.tokenObservabilityProfile;
+  if (!t) return null;
+  const rows: Array<[string, ReactNode]> = [
+    ['Workload type', t.workloadType.replace('_', ' ')],
+    ['LLM usage', LLM_USAGE[t.llmUsage]],
+    ['Requests that call the LLM', orNot(t.llmRequestSharePercent, '%')],
+    ['LLM calls per request', orNot(t.llmCallsPerRequest)],
+    ['Agent steps per task', orNot(t.agentStepsPerRequest)],
+    ['Search QPS (seeds Discovery)', orNot(p.defaultAssessment.qps as number | undefined)],
+    ['Token sizes, utilization, retry and cache rates', NOT_CONFIGURED],
+  ];
+  return (
+    <div className="card" style={{ marginTop: 12, borderLeft: '4px solid var(--primary-text)' }}>
+      <div className="metric-label">Token Observability profile - pattern defaults (editable per project)</div>
+      <table style={{ fontSize: 13, marginTop: 6, borderCollapse: 'collapse' }}>
+        <tbody>
+          {rows.map(([k, v]) => (
+            <tr key={k}>
+              <td style={{ padding: '2px 16px 2px 0', color: 'var(--muted)' }}>{k}</td>
+              <td style={{ padding: '2px 0' }}>{v}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {t.llmUsage === 'optional' && <div style={{ fontSize: 12, color: 'var(--warning)', marginTop: 6 }}>Search QPS is not LLM QPS - set the share of requests that call an LLM on the project's Token Observability page.</div>}
+      {list('Token guidance', t.guidance)}
     </div>
   );
 }
@@ -80,6 +116,7 @@ export function PatternLibraryPage() {
           {list('Recommended design considerations', p.recommendedDesignConsiderations)}
           {list('Candidate technology categories', p.candidateTechnologyCategories)}
           {list('Validation requirements', p.validationRequirements)}
+          {tokenProfile(p)}
         </div>
       ))}
     </div>

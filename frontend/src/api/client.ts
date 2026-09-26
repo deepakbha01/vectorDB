@@ -134,6 +134,15 @@ export interface PatternCatalogEntry {
   candidateTechnologyCategories: string[];
   validationRequirements: string[];
   defaultAssessment: Partial<DiscoveryAssessmentInput>;
+  /** Optional token metadata (validation spec S1-S2); null values mean Not configured. */
+  tokenObservabilityProfile?: {
+    workloadType: string;
+    llmUsage: 'required' | 'optional' | 'none';
+    llmRequestSharePercent: number | null;
+    llmCallsPerRequest: number | null;
+    agentStepsPerRequest: number | null;
+    guidance: string[];
+  };
 }
 
 export interface DashboardSummary {

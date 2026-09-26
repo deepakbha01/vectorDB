@@ -62,7 +62,25 @@ export interface TokenEstimateResult {
   assumptions: string[];
   gaps: string[];
   wouldChangeIf: string[];
+  /** Every estimation input with its provenance (absent on estimates saved before inputs existed). */
+  inputs?: ResolvedInput[];
+  daily?: { requests: number; totalTokens: number; operatingDaysPerMonth: number };
+  llm?: { usage: LlmUsage; requestSharePercent: number; llmRequestsPerMonth: number; retryRatePercent: number; cacheHitRatePercent: number };
 }
+
+export type LlmUsage = 'required' | 'optional' | 'none';
+export type InputProvenance = 'user_override' | 'calculated' | 'pattern_default' | 'not_configured';
+export interface ResolvedInput {
+  key: string;
+  label: string;
+  unit: string;
+  value: number | string | null;
+  provenance: InputProvenance;
+  source: string;
+}
+
+/** User overrides of the estimation inputs - mirrors EstimateOverridesDto. */
+export type EstimateOverrides = Partial<Record<string, number | string>>;
 
 export interface TokenEstimate {
   id: string;
@@ -75,6 +93,7 @@ export interface TokenEstimate {
 }
 
 export interface TokenEstimatePreview {
+  overrides?: EstimateOverrides;
   sources: Record<string, { source: string; detail: string }>;
   result: TokenEstimateResult;
 }

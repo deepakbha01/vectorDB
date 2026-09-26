@@ -43,6 +43,9 @@ estimation:
   # Agents are estimated at their bounded maximum steps (worst case). Set
   # below 1 to estimate a typical run as a share of the maximum.
   agentStepsShareOfMax: 1.0
+  # Days a month the workload runs, turning requests per day into a month.
+  # 30.4 = every day; use ~21.7 for business days only. Editable per estimate.
+  operatingDaysPerMonth: 30.4
 
 # ---------------------------------------------------------------------------
 # Observed usage (simulated / live events).
