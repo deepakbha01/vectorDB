@@ -88,6 +88,14 @@ export function PhaseNav({ project }: { project: Project }) {
               </NavLink>
             </li>
           )}
+          {features.tokenObservability && (
+            <li>
+              <NavLink to={`/projects/${project.id}/token-observability`} className={({ isActive }) => (isActive ? 'active' : '')}>
+                Token Observability
+                {lineage.token_observability === 'stale' && <span className="status-pill danger" title="Traffic, the model, the RAG / agent design, embedding or budget changed since this estimate">out of date</span>}
+              </NavLink>
+            </li>
+          )}
           {features.aiFactory && (
             <li>
               <NavLink to={`/projects/${project.id}/infrastructure-design`} className={({ isActive }) => (isActive ? 'active' : '')}>

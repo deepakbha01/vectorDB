@@ -89,7 +89,9 @@ export function readinessGate(x: FinalInputs): FinalResult['readiness'] {
     stage('security', ['security_governance'], fromValidation(summary(x.state.security).validation, 'Security & Governance')),
     technology,
     stage('performance', ['performance_benchmark'], fromValidation(summary(x.state.performance).statusKey, 'Performance & Benchmark')),
-    stage('cost', ['finops'], fromValidation(summary(x.state.cost).validation, 'Cost & FinOps')),
+    x.tokenObservability
+      ? stage('cost', ['finops', 'token_observability'], combine(fromValidation(summary(x.state.cost).validation, 'Cost & FinOps'), tokenEvidence(x.state.tokenObservability)))
+      : stage('cost', ['finops'], fromValidation(summary(x.state.cost).validation, 'Cost & FinOps')),
     stage('operations', ['operations_model'], fromValidation(summary(x.state.operations).verdict, 'Operations model')),
   ];
 
@@ -234,7 +236,7 @@ export function buildFinalRecommendation(x: FinalInputs): FinalResult {
     sec(13, 'Security architecture', 'security_governance', [line('Overall', S('security').overall), line('Validation', S('security').validation), line('Components', S('security').components), line('Required control gaps', (S('security').requiredControlGaps ?? []).length ? S('security').requiredControlGaps : 'none')]),
     sec(14, 'Performance requirements', 'performance_benchmark', [line('Status', S('performance').status), line('Measured metrics', S('performance').measured), line('Awaiting benchmark', S('performance').requiresBenchmark), line('Failing', (S('performance').failing ?? []).length ? S('performance').failing : 'none')]),
     sec(15, 'Benchmark plan', 'performance_benchmark', d('performance_benchmark')?.benchmarkRequired.slice(0, 8) ?? []),
-    sec(16, 'Cost assessment', 'finops', [line('Chosen design', S('cost').chosenMonthlyUsd ? `~$${Math.round(S('cost').chosenMonthlyUsd).toLocaleString()} / month (estimate, not a quote)` : null), line('Budget', S('cost').budget), line('Cheapest allowed option', S('cost').cheapestAllowed)]),
+    sec(16, 'Cost assessment', 'finops', [line('Chosen design', S('cost').chosenMonthlyUsd ? `~$${Math.round(S('cost').chosenMonthlyUsd).toLocaleString()} / month (estimate, not a quote)` : null), line('Budget', S('cost').budget), line('Cheapest allowed option', S('cost').cheapestAllowed), ...(x.tokenObservability ? [tokenLine(s.tokenObservability)] : [])]),
     sec(17, 'Operational model', 'operations_model', [line('Verdict', S('operations').verdict), line('Estimated availability', S('operations').estimatedAvailabilityPercent !== undefined ? `${S('operations').estimatedAvailabilityPercent}%` : null), line('Estimated recovery', S('operations').estimatedRecoveryMinutes !== undefined ? `${S('operations').estimatedRecoveryMinutes} min` : null), line('Operational load', S('operations').operationalLoad)]),
     sec(18, 'Risks', null, [...new Set(decisions.flatMap((r) => r.risks.map((k) => `${r.title}: ${k}`)))].slice(0, 15)),
     sec(19, 'Assumptions', null, [...new Set(decisions.flatMap((r) => r.assumptions.map((a) => `${r.title}: ${a.statement}`)))].slice(0, 15)),
@@ -261,4 +263,56 @@ export function buildFinalRecommendation(x: FinalInputs): FinalResult {
   const gaps = [...new Set([...readiness.stages.filter((g) => g.status === 'further_assessment').flatMap((g) => g.reasons), ...decisions.flatMap((r) => r.gaps)])];
 
   return { rulesVersion: FINAL_RULES_VERSION, readiness, executiveSummary, technical, architecture, alternatives, adr, implementationPlan, gaps };
+}
+
+const combine = (a: { status: StageStatus; reasons: string[] }, b: { status: StageStatus; reasons: string[] }) => ({ status: worst(a.status, b.status), reasons: [...a.reasons, ...b.reasons] });
+
+/**
+ * Token evidence for the cost stage (Token Observability): the estimate
+ * against the budget, whether usage has been measured, live cost against
+ * the estimate and open token alerts. No estimate yet is handled by the
+ * stage itself (the phase is missing).
+ */
+export function tokenEvidence(section: StateSection | undefined): { status: StageStatus; reasons: string[] } {
+  const s = (section?.summary ?? {}) as Record<string, any>;
+  if (s.expectedTokensPerRequest === undefined || s.expectedTokensPerRequest === null) return { status: 'pass', reasons: [] };
+  let status: StageStatus = 'pass';
+  const reasons: string[] = [];
+  const share: number | null = s.estimatedShareOfBudget ?? null;
+  const est = s.estimatedCost !== null && s.estimatedCost !== undefined ? `~$${Math.round(s.estimatedCost).toLocaleString()} / month` : 'not priced';
+  if (share !== null && share > 1) {
+    status = 'fail';
+    reasons.push(`Token cost estimate (${est}) is ${Math.round(share * 100)}% of the monthly budget.`);
+  } else if (share !== null && share >= 0.8) {
+    status = worst(status, 'pass_with_conditions');
+    reasons.push(`Token cost estimate (${est}) uses ${Math.round(share * 100)}% of the monthly budget.`);
+  } else {
+    reasons.push(`Token estimate v${s.estimateVersion ?? '?'}: ~${Number(s.expectedTokensPerRequest).toLocaleString()} tokens / request, ${est}.`);
+  }
+  if (s.telemetryStatus === 'no_telemetry' || !s.telemetryStatus) {
+    status = worst(status, 'pass_with_conditions');
+    reasons.push('Token usage is estimated only - validate it with a load test (Simulated) or live telemetry before go-live.');
+  }
+  if ((s.telemetryStatus === 'receiving' || s.telemetryStatus === 'stale') && s.actualCost !== null && s.actualCost !== undefined && s.estimatedCost) {
+    const ratio = s.actualCost / s.estimatedCost;
+    if (ratio >= 1.5) {
+      status = worst(status, 'pass_with_conditions');
+      reasons.push(`Live token cost over the last 30 days ($${Math.round(s.actualCost).toLocaleString()}) is ${ratio.toFixed(1)}× the estimate - re-estimate or find the driver.`);
+    }
+  }
+  if (s.alerts > 0) {
+    status = worst(status, 'pass_with_conditions');
+    reasons.push(`${s.alerts} open token alert(s)${s.criticalAlerts ? `, ${s.criticalAlerts} critical` : ''} - see Token Observability.`);
+  }
+  return { status, reasons };
+}
+
+/** ADR cost section: what the solution is expected to consume, and what was measured. */
+function tokenLine(section: StateSection | undefined): string {
+  const s = (section?.summary ?? {}) as Record<string, any>;
+  if (s.expectedTokensPerRequest === undefined || s.expectedTokensPerRequest === null) return 'Token consumption: not estimated yet (Token Observability)';
+  const monthly = s.expectedMonthlyTokens ? `, ~${Intl.NumberFormat('en', { notation: 'compact' }).format(s.expectedMonthlyTokens)} / month` : '';
+  const cost = s.estimatedCost !== null && s.estimatedCost !== undefined ? `, ~$${Math.round(s.estimatedCost).toLocaleString()} / month` : '';
+  const measured = s.telemetryStatus === 'receiving' || s.telemetryStatus === 'stale' ? '; live telemetry received' : s.telemetryStatus === 'simulated_only' ? '; measured in load tests' : '; estimate only';
+  return `Token consumption: ~${Number(s.expectedTokensPerRequest).toLocaleString()} tokens / request${monthly}${cost} (estimate v${s.estimateVersion ?? '?'}${measured})`;
 }

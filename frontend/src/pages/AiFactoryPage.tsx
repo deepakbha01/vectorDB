@@ -44,6 +44,7 @@ const STEP_SECTIONS: Record<string, Array<keyof AssessmentState>> = {
   vectordb_index: ['vectorDB', 'index'],
   model: ['model'],
   inference: ['inference'],
+  token_observability: ['tokenObservability'],
   infrastructure: ['infrastructure'],
   rag_agent: ['rag'],
   security: ['security'],
@@ -121,7 +122,7 @@ export function AiFactoryPage() {
                   overview={overview}
                   projectId={project.id}
                   decisions={decisions.filter((d) => step.phases.includes(d.phase))}
-                  onNext={selected < 13 ? () => setSelected(selected + 1) : undefined}
+                  onNext={selected < overview.steps.length ? () => setSelected(selected + 1) : undefined}
                 />
                 <Snapshots projectId={project.id} snapshots={snapshots} onSaved={load} />
               </div>

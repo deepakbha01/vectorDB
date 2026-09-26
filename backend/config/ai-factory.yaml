@@ -1,11 +1,11 @@
 # AI Factory - Wave 1 foundations: phase dependency graph, parameter impact
-# map, and the guided 01-13 workflow.
+# map, and the guided 01-14 workflow.
 #
 # Read only by the ai-factory module. It never changes how the existing
 # phases compute anything; it only describes how their deliverables relate so
 # the AI Factory view can show lineage, staleness and impact.
 
-rulesVersion: ai-factory-2026.09-11
+rulesVersion: ai-factory-2026.09-12
 
 # ---------------------------------------------------------------------------
 # Phase dependency graph. `dependsOn` lists the DIRECT upstream deliverables
@@ -81,6 +81,17 @@ phases:
       - { phase: inference, kind: hard }          # designed around its sizing
       - { phase: model_selection, kind: hard }    # routing uses primary / secondary / fallback
       - { phase: workload_profile, kind: hard }   # deployment targets and data classification gate eligibility
+  - key: token_observability
+    label: Token observability
+    route: token-observability
+    # Estimated mode projects tokens and cost from what these phases decided (spec: Token Observability §12, §17).
+    dependsOn:
+      - { phase: discovery, kind: hard }                # monthly budget; corpus size and growth for new-document embedding tokens
+      - { phase: data_embeddings, kind: hard }          # embedding model, its price and chunk size
+      - { phase: model_selection, kind: hard }          # primary model and its price tier
+      - { phase: inference, kind: hard }                # requests / month, input and output tokens, sourcing and contracted prices
+      - { phase: rag_agent_architecture, kind: hard }   # context budget, top-K, reranker and agent steps
+      - { phase: workload_profile, kind: advisory }     # RAG / agent scope when there is no RAG / agent design yet
   - key: infrastructure_design
     label: Infrastructure design
     route: infrastructure-design
@@ -171,6 +182,7 @@ phases:
       - { phase: performance_benchmark, kind: hard }
       - { phase: finops, kind: hard }
       - { phase: operations_model, kind: hard }
+      - { phase: token_observability, kind: hard }      # token estimate, measured usage and alerts in the cost gate (when enabled)
 
 # ---------------------------------------------------------------------------
 # Parameter impact map (spec §22). Which phases must be re-run when a
@@ -189,10 +201,10 @@ parameterImpact:
   # hasGpu, regulatoryRequirements).
   # corpus & scale
   environment: none
-  documentCount: [workload_profile, performance_benchmark, finops]
-  documentGrowthPercentPerMonth: [capacity, workload_profile, finops]
+  documentCount: [workload_profile, performance_benchmark, finops, token_observability]
+  documentGrowthPercentPerMonth: [capacity, workload_profile, finops, token_observability]
   avgDocumentSizeKb: none
-  chunksPerDocument: [performance_benchmark, finops]
+  chunksPerDocument: [performance_benchmark, finops, token_observability]
   estimatedVectorCount: [data_embeddings, vector_db_selection, workload_profile, performance_benchmark]
   embeddingDimension: [data_embeddings, vector_db_selection]
   similarityMetric: [data_embeddings]
@@ -230,7 +242,7 @@ parameterImpact:
   availableStorageGb: [capacity]
   hasGpu: [workload_profile, infrastructure_design, rag_agent_architecture]
   operationalCapability: [vector_db_selection, infrastructure_design, rag_agent_architecture, operations_model]
-  monthlyBudgetUsd: [vector_db_selection, inference, finops]
+  monthlyBudgetUsd: [vector_db_selection, inference, finops, token_observability]
   # multi-region & tenancy
   requiresMultiRegion: [vector_db_selection, infrastructure_design, finops, operations_model]
   deploymentRegionCount: [vector_db_selection]
@@ -263,13 +275,14 @@ steps:
   - { number: 4,  key: vectordb_index,  title: VectorDB & Index,      phases: [index_design, vector_db_selection],  coverage: full }
   - { number: 5,  key: model,           title: Model,                 phases: [model_selection],                    coverage: full,    note: "Primary, secondary and fallback model from a technology-neutral catalogue: mandatory eligibility first, then weighted scoring." }
   - { number: 6,  key: inference,       title: Inference,             phases: [inference, inference_architecture],  coverage: full,    note: "GPU sizing, latency and cost, plus the Inference Architecture: serving option (eligibility, then score), patterns, P50/P95/P99 estimates, and gateway, policy, router, autoscaling, fallback and observability design." }
-  - { number: 7,  key: infrastructure,  title: Infrastructure,        phases: [infrastructure_design, infrastructure], coverage: full, note: "Infrastructure Decision Record: placement of inference, vector database and application across on-premises, Azure, AWS, OCI and GCP (eligibility, then score), with compute, memory, storage, network, cluster, availability, DR, scaling and security; the vector-DB deployment plan provides the IaC." }
-  - { number: 8,  key: rag_agent,       title: RAG / Agent,           phases: [rag_agent_architecture],             coverage: full,    note: "GenAI Application Architecture: retrieval strategy, reranking and agent orchestration (eligibility, then score), with filtering, context and prompt construction, citation, grounding, guardrails, human approval, tool security and isolation, plus context-window and latency budgets." }
-  - { number: 9,  key: security,        title: Security,              phases: [security_governance],                coverage: full,    note: "AI Security & Governance Assessment: policy status per component (approved / with conditions / restricted / not eligible) from where it processes data, plus the 18 spec §12 control areas traced to the designs that address them." }
-  - { number: 10, key: performance,     title: Performance,           phases: [performance_benchmark, optimization], coverage: full,   note: "Performance & Benchmark Assessment: vector, embedding, LLM and infrastructure metrics with target, estimate and measurement kept apart; PASS / PASS WITH CONDITIONS / FAIL only on measured evidence, otherwise REQUIRES BENCHMARK." }
-  - { number: 11, key: cost,            title: Cost,                  phases: [finops],                             coverage: full,    note: "Cost & FinOps Assessment: inference, vector DB, embedding, infrastructure and operations costs for the chosen design, compared across on-premises, Azure, AWS, OCI, GCP and hybrid - every figure labelled, never presented as a quote." }
-  - { number: 12, key: operations,      title: Operations,            phases: [operations_model, capacity],         coverage: full,    note: "AI Operations Model: the 13 spec §14 areas, RTO / RPO / SLA checked against estimated recovery time and serial availability, scaling and failover policy, capacity thresholds, and whether the team can run what the design asks." }
-  - { number: 13, key: final,           title: Final Recommendation,  phases: [final_recommendation],               coverage: full,    note: "Production-readiness gate (data, requirements, security, technology, performance, cost, operations), the final architecture and ADR, a primary recommendation with up to two eligible alternatives, and an implementation plan." }
+  - { number: 7,  key: token_observability, title: Token Observability, phases: [token_observability], coverage: full,    note: "Token consumption estimated from the design (tokens per request and per month, RAG and agent breakdown, cost from versioned prices), measured from load tests (Simulated) and production (Live - usage events or OpenTelemetry), with trends, drill-down to traces, alerts, and token evidence in Cost & FinOps and the final readiness gate." }
+  - { number: 8,  key: infrastructure,  title: Infrastructure,        phases: [infrastructure_design, infrastructure], coverage: full, note: "Infrastructure Decision Record: placement of inference, vector database and application across on-premises, Azure, AWS, OCI and GCP (eligibility, then score), with compute, memory, storage, network, cluster, availability, DR, scaling and security; the vector-DB deployment plan provides the IaC." }
+  - { number: 9,  key: rag_agent,       title: RAG / Agent,           phases: [rag_agent_architecture],             coverage: full,    note: "GenAI Application Architecture: retrieval strategy, reranking and agent orchestration (eligibility, then score), with filtering, context and prompt construction, citation, grounding, guardrails, human approval, tool security and isolation, plus context-window and latency budgets." }
+  - { number: 10, key: security,        title: Security,              phases: [security_governance],                coverage: full,    note: "AI Security & Governance Assessment: policy status per component (approved / with conditions / restricted / not eligible) from where it processes data, plus the 18 spec §12 control areas traced to the designs that address them." }
+  - { number: 11, key: performance,     title: Performance,           phases: [performance_benchmark, optimization], coverage: full,   note: "Performance & Benchmark Assessment: vector, embedding, LLM and infrastructure metrics with target, estimate and measurement kept apart; PASS / PASS WITH CONDITIONS / FAIL only on measured evidence, otherwise REQUIRES BENCHMARK." }
+  - { number: 12, key: cost,            title: Cost,                  phases: [finops],                             coverage: full,    note: "Cost & FinOps Assessment: inference, vector DB, embedding, infrastructure and operations costs for the chosen design, compared across on-premises, Azure, AWS, OCI, GCP and hybrid - every figure labelled, never presented as a quote." }
+  - { number: 13, key: operations,      title: Operations,            phases: [operations_model, capacity],         coverage: full,    note: "AI Operations Model: the 13 spec §14 areas, RTO / RPO / SLA checked against estimated recovery time and serial availability, scaling and failover policy, capacity thresholds, and whether the team can run what the design asks." }
+  - { number: 14, key: final,           title: Final Recommendation,  phases: [final_recommendation],               coverage: full,    note: "Production-readiness gate (data, requirements, security, technology, performance, cost, operations), the final architecture and ADR, a primary recommendation with up to two eligible alternatives, and an implementation plan." }
 
 # ---------------------------------------------------------------------------
 # Wave 2 - AI Workload Profile (spec §4). Classification rules only; no cloud,

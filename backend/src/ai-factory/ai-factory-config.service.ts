@@ -13,6 +13,10 @@ import { SecurityCatalogue } from './security/security.types';
 import { PerformanceCatalogue } from './performance/performance.types';
 import { FinopsCatalogue } from './finops/finops.types';
 import { OperationsCatalogue } from './operations/operations.types';
+import { TokenObservabilityCatalogue } from './token-observability/token-observability.types';
+import { FeaturesController } from '../features/features.controller';
+
+const TOKEN_PHASE: PhaseKey = 'token_observability';
 
 /**
  * Loads config/ai-factory.yaml (dependency graph, parameter impact map,
@@ -23,7 +27,8 @@ import { OperationsCatalogue } from './operations/operations.types';
  * config/security-governance.yaml (policy rules and control areas) and
  * config/performance.yaml (benchmark metrics and assumed targets) and
  * config/finops.yaml (directional unit rates) and
- * config/operations.yaml (availability, recovery and operational-load rules). Separate from
+ * config/operations.yaml (availability, recovery and operational-load rules) and
+ * config/token-observability.yaml (pricing treatment, estimation assumptions). Separate from
  * PlatformConfigService so the vector engines' configuration is untouched.
  */
 @Injectable()
@@ -37,10 +42,14 @@ export class AiFactoryConfigService implements OnModuleInit {
   private performance: PerformanceCatalogue = {} as PerformanceCatalogue;
   private finops: FinopsCatalogue = {} as FinopsCatalogue;
   private operations: OperationsCatalogue = {} as OperationsCatalogue;
+  private tokenObservability: TokenObservabilityCatalogue = {} as TokenObservabilityCatalogue;
+  /** Token Observability switched on (AI_FACTORY_ENABLED and TOKEN_OBSERVABILITY_ENABLED). When off, its phase, edges, step and impact entries are left out entirely. */
+  private tokenObservabilityOn = true;
 
   constructor(private readonly config: ConfigService) {}
 
   onModuleInit() {
+    this.tokenObservabilityOn = new FeaturesController(this.config).flags().tokenObservability;
     const path = this.config.get<string>('AI_FACTORY_CONFIG_PATH') ?? './config/ai-factory.yaml';
     this.cfg = (yaml.load(fs.readFileSync(path, 'utf8')) as Record<string, any>) ?? {};
     const modelsPath = this.config.get<string>('AI_FACTORY_MODELS_CONFIG_PATH') ?? './config/models.yaml';
@@ -59,6 +68,8 @@ export class AiFactoryConfigService implements OnModuleInit {
     this.finops = yaml.load(fs.readFileSync(finopsPath, 'utf8')) as FinopsCatalogue;
     const operationsPath = this.config.get<string>('AI_FACTORY_OPERATIONS_CONFIG_PATH') ?? './config/operations.yaml';
     this.operations = yaml.load(fs.readFileSync(operationsPath, 'utf8')) as OperationsCatalogue;
+    const tokenPath = this.config.get<string>('TOKEN_OBSERVABILITY_CONFIG_PATH') ?? './config/token-observability.yaml';
+    this.tokenObservability = yaml.load(fs.readFileSync(tokenPath, 'utf8')) as TokenObservabilityCatalogue;
   }
 
   /** Test seams. */
@@ -130,6 +141,14 @@ export class AiFactoryConfigService implements OnModuleInit {
     return this.operations;
   }
 
+  setTokenObservabilityCatalogue(tokenObservability: TokenObservabilityCatalogue) {
+    this.tokenObservability = tokenObservability;
+  }
+
+  getTokenObservabilityCatalogue(): TokenObservabilityCatalogue {
+    return this.tokenObservability;
+  }
+
   getIndexEligibilityRules(): IndexEligibilityRules {
     return this.cfg.indexEligibility;
   }
@@ -143,7 +162,14 @@ export class AiFactoryConfigService implements OnModuleInit {
   }
 
   getPhases(): PhaseDefinition[] {
-    return this.cfg.phases ?? [];
+    const phases: PhaseDefinition[] = this.cfg.phases ?? [];
+    if (this.tokenObservabilityOn) return phases;
+    return phases.filter((p) => p.key !== TOKEN_PHASE).map((p) => ({ ...p, dependsOn: p.dependsOn.filter((d) => d.phase !== TOKEN_PHASE) }));
+  }
+
+  /** Test seam. */
+  setTokenObservabilityEnabled(on: boolean) {
+    this.tokenObservabilityOn = on;
   }
 
   getPhase(key: PhaseKey): PhaseDefinition | undefined {
@@ -151,7 +177,10 @@ export class AiFactoryConfigService implements OnModuleInit {
   }
 
   getSteps(): StepDefinition[] {
-    return this.cfg.steps ?? [];
+    const steps: StepDefinition[] = this.cfg.steps ?? [];
+    if (this.tokenObservabilityOn) return steps;
+    // Without the step the guided workflow is numbered as it was before it existed.
+    return steps.filter((s) => !s.phases.includes(TOKEN_PHASE)).map((s, i) => ({ ...s, number: i + 1 }));
   }
 
   getWorkloadProfileRules(): WorkloadProfileRules {
@@ -161,6 +190,8 @@ export class AiFactoryConfigService implements OnModuleInit {
   /** Discovery field → phases that read it directly ([] for fields reviewed as driving no decision). */
   getParameterImpact(): Record<string, PhaseKey[]> {
     const raw: Record<string, PhaseKey[] | 'none'> = this.cfg.parameterImpact ?? {};
-    return Object.fromEntries(Object.entries(raw).map(([field, phases]) => [field, phases === 'none' ? [] : phases]));
+    return Object.fromEntries(
+      Object.entries(raw).map(([field, phases]) => [field, phases === 'none' ? [] : this.tokenObservabilityOn ? phases : phases.filter((p) => p !== TOKEN_PHASE)]),
+    );
   }
 }

@@ -28,6 +28,8 @@ services:
       JWT_SECRET: change-me-to-a-long-random-value
       NODE_ENV: development
       FRONTEND_ORIGIN: http://localhost:5173
+      AI_FACTORY_ENABLED: ${AI_FACTORY_ENABLED:-false}
+      TOKEN_OBSERVABILITY_ENABLED: ${TOKEN_OBSERVABILITY_ENABLED:-false}
     ports:
       - "3000:3000"
     depends_on:
@@ -38,6 +40,25 @@ services:
     build: ./frontend
     ports:
       - "8080:80"
+    depends_on:
+      - backend
+
+  # Optional live telemetry (Token Observability, spec §11). Start with:
+  #   AI_FACTORY_INGEST_KEY=aftk_... docker compose --profile telemetry up
+  # Applications then send OTLP to localhost:4317 (gRPC) or localhost:4318 (HTTP).
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    profiles: ["telemetry"]
+    command: ["--config=/etc/otelcol/collector.yaml"]
+    volumes:
+      - ./otel/collector.yaml:/etc/otelcol/collector.yaml:ro
+    environment:
+      # Empty = the backend answers 401 and the collector logs it; the rest of the stack is unaffected.
+      AI_FACTORY_INGEST_KEY: ${AI_FACTORY_INGEST_KEY:-}
+      AI_FACTORY_OTLP_ENDPOINT: ${AI_FACTORY_OTLP_ENDPOINT:-http://backend:3000/api/observability/v1/traces}
+    ports:
+      - "4317:4317"
+      - "4318:4318"
     depends_on:
       - backend
 

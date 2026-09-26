@@ -374,6 +374,16 @@ See [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) for what "complete"
 does and doesn't mean - it documents real, specific gaps rather than
 claiming a demonstration project is production-ready without qualification.
 
+## AI Factory: Token Observability
+
+Behind `AI_FACTORY_ENABLED` and `TOKEN_OBSERVABILITY_ENABLED`, a Token
+Observability phase (guided step 7, after Inference) estimates, measures and
+alerts on token consumption across GenAI, RAG and agent workloads -
+Estimated from the design, Simulated from load tests, Live from usage events
+or OpenTelemetry - and feeds Cost & FinOps and the final readiness gate. See
+[TOKEN_OBSERVABILITY.md](TOKEN_OBSERVABILITY.md) for the API, configuration,
+security and retention.
+
 ## Architecture
 
 ```

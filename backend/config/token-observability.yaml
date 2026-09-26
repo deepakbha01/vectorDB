@@ -1,0 +1,124 @@
+# Token Observability (AI Factory Wave 12) - pricing treatment and estimation
+# assumptions. Read only by the ai-factory module (AiFactoryConfigService).
+#
+# Prices are NOT duplicated here. At startup the versioned price table
+# (ai_model_prices) is synced from:
+#   - inference.yaml  managedApiTiers   -> provider "managed_api_tier", input / output
+#   - embeddings.yaml providers.models  -> provider / model id, embedding
+#   - `pricing.prices` below             -> anything else (named provider models,
+#                                           cached-input, reasoning, reranking)
+# A changed figure closes the old row and opens a new one, so usage already
+# recorded keeps the cost it was given (spec §13).
+
+rulesVersion: token-observability-2026.09-1
+
+pricing:
+  currency: USD
+  # Effective date given to a catalogue price the first time it is seeded.
+  # Later changes take effect from the moment the server picks them up.
+  catalogueEffectiveFrom: "2026-06-01"
+  # When a model has no explicit cached_input price, cached input tokens are
+  # charged at input price x this factor. 1.0 = no cache discount assumed
+  # (conservative) - set the provider's actual discount per model below.
+  cachedInputPriceFactor: 1.0
+  # When a model has no explicit reasoning price, reasoning tokens are billed
+  # at its output price (how most providers bill them).
+  reasoningBilledAs: output
+  # Extra or contracted prices, USD (or `currency`) per 1M tokens. Example:
+  #  - { provider: acme, model: acme-large-2, tokenType: input,  pricePer1M: 2.50, effectiveFrom: "2026-09-01", source: "Acme price sheet 2026-09" }
+  #  - { provider: acme, model: acme-large-2, tokenType: output, pricePer1M: 10.00, effectiveFrom: "2026-09-01", source: "Acme price sheet 2026-09" }
+  prices: []
+
+# ---------------------------------------------------------------------------
+# Estimated mode (spec §12). Everything else comes from the phases the
+# estimate is built on: requests and token sizes from the Inference
+# assessment, context make-up from the RAG / agent design and rag-agent.yaml
+# token assumptions, query size from finops.yaml (embedding.avgQueryTokens).
+# ---------------------------------------------------------------------------
+estimation:
+  # Tokens an agent's LLM emits at each intermediate step to choose and call a
+  # tool (the final step emits the answer instead). Assumption - replace with
+  # measured traces once live telemetry exists.
+  toolCallOutputTokens: 150
+  # Agents are estimated at their bounded maximum steps (worst case). Set
+  # below 1 to estimate a typical run as a share of the maximum.
+  agentStepsShareOfMax: 1.0
+
+# ---------------------------------------------------------------------------
+# Observed usage (simulated / live events).
+# ---------------------------------------------------------------------------
+observed:
+  # More LLM calls than this in one trace is flagged as a possible agent loop
+  # when the RAG / agent design gives no step limit.
+  loopLlmCallsPerTrace: 10
+  # Live telemetry older than this counts as stale rather than receiving.
+  liveStaleAfterHours: 24
+
+# ---------------------------------------------------------------------------
+# Live telemetry (spec §11). OpenTelemetry spans (OTLP/HTTP JSON) are mapped
+# onto the normalized usage event. Each field lists attribute names to try in
+# order - the first one present wins - so newer and older GenAI semantic
+# convention names both work and new names can be added here without code
+# changes. `span` attributes are read from the span; `resource` attributes
+# from the resource (service.name etc.), and a span attribute of the same
+# field wins. Spans with no operation name are not GenAI calls and are skipped.
+# ---------------------------------------------------------------------------
+otel:
+  span:
+    operationType: [gen_ai.operation.name]
+    provider: [gen_ai.provider.name, gen_ai.system]
+    model: [gen_ai.response.model, gen_ai.request.model]
+    modelVersion: [ai_factory.model_version]
+    inputTokens: [gen_ai.usage.input_tokens, gen_ai.usage.prompt_tokens]
+    outputTokens: [gen_ai.usage.output_tokens, gen_ai.usage.completion_tokens]
+    cachedInputTokens: [gen_ai.usage.cache_read.input_tokens, gen_ai.usage.cache_read_input_tokens, gen_ai.usage.cached_tokens]
+    reasoningTokens: [gen_ai.usage.reasoning.output_tokens, gen_ai.usage.reasoning_tokens]
+    embeddingTokens: [ai_factory.embedding_tokens]
+    rerankingTokens: [ai_factory.reranking_tokens]
+    contextTokens: [ai_factory.context_tokens]
+    retrievalCount: [ai_factory.retrieval_count]
+    ttftMs: [ai_factory.ttft_ms]
+    toolName: [gen_ai.tool.name]
+    agentId: [gen_ai.agent.id, gen_ai.agent.name]
+    sessionId: [gen_ai.conversation.id, session.id]
+    requestId: [ai_factory.request_id]
+    ragStage: [ai_factory.rag_stage]
+    errorType: [error.type]
+    applicationId: [ai_factory.application_id]
+    serviceId: [ai_factory.service_id]
+    workflowId: [ai_factory.workflow_id]
+    tenantId: [ai_factory.tenant_id]
+  resource:
+    serviceId: [service.name]
+    applicationId: [ai_factory.application_id, service.namespace]
+    environment: [deployment.environment.name, deployment.environment]
+    region: [cloud.region]
+    tenantId: [ai_factory.tenant_id]
+    workflowId: [ai_factory.workflow_id]
+
+# ---------------------------------------------------------------------------
+# Alerts (spec §14). Evaluated on LIVE usage only, per project, every
+# `evaluateEveryMinutes` (TOKEN_ALERTS_ENABLED=false switches the schedule
+# off; "Evaluate now" still works). An alert stays open while its rule keeps
+# firing, and resolves itself when it stops. Rules without the data they need
+# (no budget, no estimate, too little history) stay silent rather than guess.
+# ---------------------------------------------------------------------------
+alerts:
+  evaluateEveryMinutes: 15
+  rules:
+    # Month-to-date cost, and the month projected at the current rate, against
+    # the monthly budget recorded in Discovery / Inference.
+    budget: { warningShare: 0.8, criticalShare: 1.0 }
+    # Tokens in the last hour against the average hour of the previous days.
+    spike: { baselineDays: 7, factor: 3, minTokens: 50000 }
+    # Observed tokens per request (last day) against the saved estimate.
+    tokensPerRequest: { lookbackHours: 24, factorOfEstimate: 1.5, minRequests: 20 }
+    # A provider / model used recently that was not used before, is not in the
+    # estimate and is not listed here ("provider/model").
+    unexpectedModel: { lookbackHours: 24, baselineDays: 30, allowed: [] }
+    # Agent tasks with more LLM calls than the design's step limit.
+    agentLoops: { lookbackHours: 24, criticalTasks: 5 }
+    # Retrieved-context tokens per request (last day) against the previous days.
+    ragContextGrowth: { lookbackHours: 24, baselineDays: 7, factor: 1.5, minRequests: 20 }
+    # Cost of the last day against the average day before it.
+    costIncrease: { baselineDays: 7, factor: 1.5, minCostUsd: 1 }

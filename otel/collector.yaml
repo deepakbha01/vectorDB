@@ -1,0 +1,58 @@
+# OpenTelemetry Collector for AI Factory Token Observability (spec §11).
+#
+# AI application / agent / RAG (OpenTelemetry SDK or GenAI instrumentation)
+#   -> this collector (OTLP gRPC :4317 or HTTP :4318)
+#   -> AI Factory backend  POST /api/observability/v1/traces  (OTLP/HTTP JSON)
+#
+# Needs two environment variables:
+#   AI_FACTORY_INGEST_KEY      a project ingest key (Token Observability page ->
+#                              Live telemetry -> Ingest keys). It decides the project.
+#   AI_FACTORY_OTLP_ENDPOINT   default http://backend:3000/api/observability/v1/traces
+#
+# Only GenAI spans are forwarded, and prompt / completion content is removed
+# here, before it leaves the application's network (spec §18).
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Drop everything that is not a GenAI call (HTTP, DB, framework spans).
+  filter/genai-only:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["gen_ai.operation.name"] == nil'
+  # Never forward message content, even if an SDK was configured to record it.
+  attributes/strip-content:
+    actions:
+      - { key: gen_ai.prompt, action: delete }
+      - { key: gen_ai.completion, action: delete }
+      - { key: gen_ai.input.messages, action: delete }
+      - { key: gen_ai.output.messages, action: delete }
+      - { key: gen_ai.system_instructions, action: delete }
+      - { key: gen_ai.tool.call.arguments, action: delete }
+      - { key: gen_ai.tool.call.result, action: delete }
+  batch:
+    send_batch_size: 500
+    send_batch_max_size: 1000
+    timeout: 5s
+
+exporters:
+  otlphttp/ai-factory:
+    traces_endpoint: ${env:AI_FACTORY_OTLP_ENDPOINT}
+    encoding: json
+    compression: gzip
+    headers:
+      Authorization: "Bearer ${env:AI_FACTORY_INGEST_KEY}"
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [filter/genai-only, attributes/strip-content, batch]
+      exporters: [otlphttp/ai-factory]

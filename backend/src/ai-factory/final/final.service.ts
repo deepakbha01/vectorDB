@@ -6,6 +6,8 @@ import { Project } from '../../projects/project.entity';
 import { User } from '../../users/user.entity';
 import { AuthenticatedUser } from '../../auth/auth.service';
 import { AiFactoryService } from '../ai-factory.service';
+import { ConfigService } from '@nestjs/config';
+import { FeaturesController } from '../../features/features.controller';
 import { AiFinalRecommendation, FinalProvenance } from './final.entity';
 import { buildFinalRecommendation } from './final.engine';
 import { FinalInputs, FinalResult } from './final.types';
@@ -22,13 +24,16 @@ export class FinalRecommendationService {
   constructor(
     private readonly projectsService: ProjectsService,
     private readonly aiFactory: AiFactoryService,
+    private readonly config: ConfigService,
     @InjectRepository(AiFinalRecommendation) private readonly finals: Repository<AiFinalRecommendation>,
   ) {}
 
   private async inputs(projectId: string, requester: AuthenticatedUser): Promise<FinalInputs> {
     const project = await this.projectsService.findOne(projectId, requester);
     const [overview, decisions] = await Promise.all([this.aiFactory.getOverview(projectId, requester), this.aiFactory.getDecisionRecords(projectId, requester)]);
-    return { projectName: project.name, state: overview.state, lineage: overview.phases, decisions };
+    // Token evidence joins the cost gate only where Token Observability is switched on.
+    const tokenObservability = new FeaturesController(this.config).flags().tokenObservability;
+    return { projectName: project.name, state: overview.state, lineage: overview.phases, decisions, tokenObservability };
   }
 
   async preview(projectId: string, requester: AuthenticatedUser): Promise<FinalResult> {

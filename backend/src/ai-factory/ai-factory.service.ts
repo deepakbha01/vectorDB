@@ -25,6 +25,10 @@ import { AiPerformanceAssessment } from './performance/performance.entity';
 import { AiFinopsAssessment } from './finops/finops.entity';
 import { AiOperationsModel } from './operations/operations.entity';
 import { AiFinalRecommendation } from './final/final.entity';
+import { AiTokenEstimate } from './token-observability/token-estimate.entity';
+import { TokenObservabilityState } from './token-observability/token-observability.types';
+import { UsageService } from './token-observability/usage.service';
+import { AlertService } from './token-observability/alert.service';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 import { ChunkingStrategy } from '../chunking/enums/chunking-strategy.enum';
 import { EmbeddingModelFacts } from './eligibility/eligibility.rules';
@@ -79,7 +83,10 @@ export class AiFactoryService {
     @InjectRepository(AiFinopsAssessment) private readonly finopsAssessments: Repository<AiFinopsAssessment>,
     @InjectRepository(AiOperationsModel) private readonly operationsModels: Repository<AiOperationsModel>,
     @InjectRepository(AiFinalRecommendation) private readonly finalRecommendations: Repository<AiFinalRecommendation>,
+    @InjectRepository(AiTokenEstimate) private readonly tokenEstimates: Repository<AiTokenEstimate>,
     private readonly platformConfig: PlatformConfigService,
+    private readonly usage: UsageService,
+    private readonly tokenAlerts: AlertService,
   ) {}
 
   // ---------------------------------------------------------------- loading
@@ -103,6 +110,7 @@ export class AiFactoryService {
       finops: this.finopsAssessments,
       operations_model: this.operationsModels,
       final_recommendation: this.finalRecommendations,
+      token_observability: this.tokenEstimates,
     }[phase];
   }
 
@@ -298,6 +306,13 @@ export class AiFactoryService {
     });
   }
 
+  /** The estimate drives status and version; observed usage (last 30 days) is added even before an estimate exists. */
+  private async tokenSection(base: StateSection, te: AiTokenEstimate | null, projectId: string): Promise<StateSection> {
+    const [observed, alerts] = await Promise.all([this.usage.observedState(projectId), this.tokenAlerts.openCounts(projectId)]);
+    if (!te && !observed.totals && !alerts.open) return base;
+    return { ...base, summary: { ...tokenState(te, observed, alerts) } };
+  }
+
   private async buildState(project: Project, lineage: PhaseLineage[]): Promise<AssessmentState> {
     const L = (k: PhaseKey) => lineage.find((l) => l.phase === k)!;
     const section = (k: PhaseKey, coverage: StateSection['coverage'], summary: Record<string, unknown>): StateSection => {
@@ -306,7 +321,7 @@ export class AiFactoryService {
     };
     const later = (wave: number): StateSection => ({ status: 'not_yet_available', coverage: 'none', source: null, summary: {}, plannedWave: wave });
 
-    const [d, p, i, adr, dep, opt, cap, inf, wp, ms, ia, infra, ra, sec, perf, fin, ops, fr] = await Promise.all([
+    const [d, p, i, adr, dep, opt, cap, inf, wp, ms, ia, infra, ra, sec, perf, fin, ops, fr, te] = await Promise.all([
       this.latest<DiscoveryAssessment>('discovery', project.id),
       this.latest<DataPipelineDesign>('data_embeddings', project.id),
       this.latest<IndexDesign>('index_design', project.id),
@@ -325,6 +340,7 @@ export class AiFactoryService {
       this.latest<AiFinopsAssessment>('finops', project.id),
       this.latest<AiOperationsModel>('operations_model', project.id),
       this.latest<AiFinalRecommendation>('final_recommendation', project.id),
+      this.latest<AiTokenEstimate>('token_observability', project.id),
     ]);
     const profileValue = (k: keyof AiWorkloadProfile['inputs']) => wp?.inputs[k]?.value ?? null;
     const wpResult = wp?.result;
@@ -380,6 +396,11 @@ export class AiFactoryService {
             architectureVersion: ia?.version ?? null,
           }
         : {}),
+      // Spec (Token Observability) §16. Observed figures stay null until usage events exist - never filled from the estimate.
+      // Absent from the graph when Token Observability is switched off - then the section says so and reads nothing.
+      tokenObservability: lineage.some((l) => l.phase === 'token_observability')
+        ? await this.tokenSection(section('token_observability', 'partial', {}), te, project.id)
+        : { status: 'not_yet_available', coverage: 'none', source: null, summary: {} },
       infrastructure: infra
         ? section('infrastructure_design', 'full', {
             deploymentModel: infra.result.deploymentModel.summary,
@@ -507,5 +528,30 @@ export function compareStates(from: number, a: AssessmentState, to: number, b: A
         changedFields: sourceChanged ? ['source version', ...changedFields] : changedFields,
       };
     }),
+  };
+}
+
+/** Spec (Token Observability) §16: expected figures from the latest estimate, observed ones from usage events - never one filled from the other. */
+export function tokenState(te: AiTokenEstimate | null, observed: Awaited<ReturnType<UsageService['observedState']>>, alerts: { open: number; critical: number } = { open: 0, critical: 0 }): TokenObservabilityState {
+  const r = te?.result;
+  const o = observed.totals;
+  return {
+    mode: observed.telemetry.status === 'receiving' || observed.telemetry.status === 'stale' ? 'live' : observed.telemetry.status === 'simulated_only' ? 'simulated' : 'estimated',
+    expectedTokensPerRequest: r?.perRequest.totalTokens ?? null,
+    expectedMonthlyTokens: r?.monthly.totalTokens ?? null,
+    observedInputTokens: o ? o.inputTokens : null,
+    observedOutputTokens: o ? o.outputTokens : null,
+    observedTotalTokens: o ? o.totalTokens : null,
+    embeddingTokens: o ? o.embeddingTokens : (r?.monthly.embeddingTokens ?? null),
+    contextTokens: r?.perRequest.contextTokens ?? null,
+    llmCallsPerRequest: r?.perRequest.llmCalls ?? null,
+    estimatedCost: r?.cost.monthlyUsd ?? null,
+    actualCost: o ? o.cost : null,
+    topConsumers: observed.topConsumers,
+    alerts: alerts.open,
+    telemetryStatus: observed.telemetry.status,
+    estimateVersion: te?.version ?? null,
+    estimatedShareOfBudget: r?.budget.shareOfBudget ?? null,
+    criticalAlerts: alerts.critical,
   };
 }

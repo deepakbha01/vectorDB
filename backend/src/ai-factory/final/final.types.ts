@@ -10,6 +10,8 @@ export interface FinalInputs {
   state: AssessmentState;
   lineage: PhaseLineage[];
   decisions: DecisionRecord[];
+  /** Token Observability enabled: the cost stage then also weighs token evidence. Off = unchanged behaviour. */
+  tokenObservability?: boolean;
 }
 
 export interface GateStage {

@@ -53,6 +53,13 @@ import { AiPerformanceAssessment } from './ai-factory/performance/performance.en
 import { AiFinopsAssessment } from './ai-factory/finops/finops.entity';
 import { AiOperationsModel } from './ai-factory/operations/operations.entity';
 import { AiFinalRecommendation } from './ai-factory/final/final.entity';
+import { AiTokenEstimate } from './ai-factory/token-observability/token-estimate.entity';
+import { AiModelPrice } from './ai-factory/token-observability/model-price.entity';
+import { AiUsageEvent } from './ai-factory/token-observability/usage-event.entity';
+import { AiUsageRollup } from './ai-factory/token-observability/usage-rollup.entity';
+import { AiSimulationRun } from './ai-factory/token-observability/simulation-run.entity';
+import { AiIngestKey } from './ai-factory/token-observability/ingest-key.entity';
+import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entity';
 
 @Module({
   imports: [
@@ -93,6 +100,13 @@ import { AiFinalRecommendation } from './ai-factory/final/final.entity';
           AiFinopsAssessment,
           AiOperationsModel,
           AiFinalRecommendation,
+          AiTokenEstimate,
+          AiModelPrice,
+          AiUsageEvent,
+          AiUsageRollup,
+          AiSimulationRun,
+          AiIngestKey,
+          AiTokenAlert,
         ],
         // Sprint 1 uses schema sync for velocity. Replace with TypeORM migrations
         // before any non-development deployment (see development rule #12).
