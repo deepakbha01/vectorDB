@@ -20,6 +20,7 @@ import { IngestKeyService } from '../src/ai-factory/token-observability/ingest-k
 import { AiIngestKey } from '../src/ai-factory/token-observability/ingest-key.entity';
 import { AlertService } from '../src/ai-factory/token-observability/alert.service';
 import { AiTokenAlert } from '../src/ai-factory/token-observability/token-alert.entity';
+import { TokenRetentionService } from '../src/ai-factory/token-observability/retention.service';
 import { AiModelPrice } from '../src/ai-factory/token-observability/model-price.entity';
 import { AiUsageEvent } from '../src/ai-factory/token-observability/usage-event.entity';
 import { AiTokenEstimate } from '../src/ai-factory/token-observability/token-estimate.entity';
@@ -360,5 +361,51 @@ describe('token alerts (spec §14) - evaluate, deduplicate, acknowledge, resolve
 
   it('lists projects to evaluate on the schedule', async () => {
     expect(await alerts.activeProjects(NOW)).toEqual(expect.arrayContaining([alertProject]));
+  });
+});
+
+describe('hardening (spec §18) - tenant visibility, trace fields, retention', () => {
+  const viewer = { id: 'v', email: 'viewer@local', role: UserRole.VIEWER } as any;
+  const T = new Date('2026-09-25T12:00:00Z');
+
+  beforeAll(async () => {
+    await usage.ingestForProject(projectId, batch([ev({ eventId: 'tenant-1', traceId: 'tenant-trace', tenantId: 'acme-corp', sessionId: 'sess-42', timestamp: '2026-09-25T09:00:00Z' })]), T);
+  });
+
+  it('keeps tenant ids from viewers: no tenant filter values, and a tenant filter is refused', async () => {
+    expect((await usage.dimensions(projectId, admin, range)).values.tenant).toEqual(['acme-corp']);
+    const v = await usage.dimensions(projectId, viewer, range);
+    expect(v.values.tenant).toEqual([]);
+    expect(v.tenantHidden).toBe(true);
+    await expect(usage.summary(projectId, viewer, { ...range, tenant: 'acme-corp' })).rejects.toThrow(/admin or architect/);
+    expect((await usage.summary(projectId, admin, { ...range, tenant: 'acme-corp' })).cards.totalTokens).toBe(1100);
+  });
+
+  it('returns only the trace fields the view needs - no tenant or session ids', async () => {
+    const t = await usage.trace(projectId, viewer, 'tenant-trace');
+    const json = JSON.stringify(t);
+    expect(json).not.toContain('acme-corp');
+    expect(json).not.toContain('sess-42');
+    expect(t.roots[0]).toEqual(expect.objectContaining({ eventId: 'tenant-1', inputTokens: 1000 }));
+  });
+
+  it('removes only what is past retention: old events, old totals and old resolved alerts', async () => {
+    const old = new Date('2025-01-10T10:00:00Z');
+    await usage.ingestForProject(projectId, batch([ev({ eventId: 'ancient-1', timestamp: old.toISOString() }), ev({ eventId: 'ancient-2', timestamp: old.toISOString() })]), T);
+    await ds.query(`INSERT INTO ai_token_alerts ("projectId", rule, "dedupeKey", severity, status, title, detail, metric, "firstSeenAt", "lastSeenAt", "resolvedAt") VALUES ($1, 'spike', 'old', 'warning', 'resolved', 'old', 'old', '{}', $2, $2, $2), ($1, 'spike', 'still-open', 'warning', 'open', 'open', 'open', '{}', $2, $2, NULL)`, [projectId, old]);
+    const count = async (sql: string) => Number((await ds.query(sql, [projectId]))[0].n);
+    const eventsBefore = await count(`SELECT COUNT(*) AS n FROM ai_usage_events WHERE "projectId" = $1`);
+
+    const retention = new TokenRetentionService({ get: (k: string) => ({ TOKEN_ROLLUP_RETENTION_DAYS: '400' } as Record<string, string>)[k] } as unknown as ConfigService, ds);
+    const removed = await retention.runOnce(T);
+
+    expect(removed).toEqual(expect.objectContaining({ events: 2, alerts: 1 }));
+    expect(removed!.rollups).toBeGreaterThanOrEqual(1);
+    expect(await count(`SELECT COUNT(*) AS n FROM ai_usage_events WHERE "projectId" = $1`)).toBe(eventsBefore - 2);
+    expect(await count(`SELECT COUNT(*) AS n FROM ai_usage_rollups WHERE "projectId" = $1 AND "bucketStart" < '2025-06-01'`)).toBe(0);
+    // Open alerts are never removed, however old.
+    expect(await count(`SELECT COUNT(*) AS n FROM ai_token_alerts WHERE "projectId" = $1 AND "dedupeKey" = 'still-open'`)).toBe(1);
+    // Recent usage is untouched.
+    expect((await usage.summary(projectId, admin, range)).cards.totalTokens).toBeGreaterThan(0);
   });
 });

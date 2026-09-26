@@ -78,6 +78,32 @@ any completed phase's deliverable (or everything done so far) as PDF or
 DOCX. **Audit Log** shows every action taken on the project - who, what,
 when - click a row for the full (redacted) request/response detail.
 
+## 10. Token Observability (AI Factory)
+
+When enabled, **Token Observability** appears in the sidebar after Inference
+Architecture (guided step 7). Three tabs, never mixed:
+
+- **Estimated** - tokens per request and per month, what makes up the prompt,
+  RAG and agent breakdowns, and cost from the versioned price table. *Save
+  estimate* to keep a version; it is marked out of date when an upstream
+  phase changes.
+- **Simulated** - *Upload / manage* a load-test or benchmark result (CSV or
+  JSON; download the template from the panel). Rejected rows are listed with
+  their row number and reason. Each upload is a run: *View* shows its time
+  span, *Delete* removes it.
+- **Live telemetry** - *Manage keys / how to connect*: create an ingest key
+  (shown once) for your application or OpenTelemetry Collector. Alerts for
+  live usage appear at the top; *Acknowledge* records that you are on it.
+
+On the Simulated and Live dashboards: filter by time, environment,
+application, service, workflow, provider, model (and tenant, for admins and
+architects). Click a trend bar to narrow the time range, a service or model
+bar to filter to it, and a request to open its trace. *Export CSV* saves the
+summary. Choose *Executive view* for the headline figures only. The Cost &
+FinOps page shows token cost estimated vs actual, and the Final
+Recommendation weighs token evidence in its cost check. Details:
+[TOKEN_OBSERVABILITY.md](TOKEN_OBSERVABILITY.md).
+
 ## Roles
 
 - **Viewer**: can see everything, change nothing.

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { ProjectsService } from '../../projects/projects.service';
@@ -13,6 +13,7 @@ import { UsageQueryDto, UsageRequestsQueryDto } from './dto/usage-query.dto';
 import { isRejection, normalizeEvent, NormalizedEvent, Rejection, ROLLUP_DIMENSIONS, ROLLUP_MEASURES, rollupDeltas } from './usage-ingest';
 import { buildTrace, growth, growthVsBaseline, previousWindow, resolveFilters, SpanRow, UsageFilters, whereClause, withShare } from './usage-query';
 import { TelemetryStatus } from './token-observability.types';
+import { canSeeTenants } from './privacy';
 
 const num = (v: unknown) => (v === null || v === undefined ? 0 : Number(v));
 const numOrNull = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -115,6 +116,7 @@ export class UsageService {
   // --------------------------------------------------------------- queries
   private async scope(projectId: string, requester: AuthenticatedUser, q: UsageQueryDto): Promise<UsageFilters> {
     await this.projectsService.findOne(projectId, requester);
+    if (q.tenant && !canSeeTenants(requester.role)) throw new ForbiddenException('Filtering by tenant needs the admin or architect role.');
     const f = resolveFilters(q, new Date());
     if ('error' in f) throw new BadRequestException(f.error);
     return f;
@@ -367,7 +369,14 @@ export class UsageService {
     const rows = await this.events.find({ where: { project: { id: projectId }, traceId }, order: { timestamp: 'ASC' }, take: 5000 });
     if (!rows.length) throw new NotFoundException(`No usage events for trace '${traceId}' in this project.`);
     const threshold = await this.loopThreshold(projectId);
-    return { traceId, telemetrySource: [...new Set(rows.map((r) => r.telemetrySource))], ...buildTrace(rows as unknown as SpanRow[], threshold) };
+    // Only what the trace view needs - no tenant, session or other identifiers leave through this endpoint.
+    const spans: SpanRow[] = rows.map((r) => ({
+      eventId: r.eventId, timestamp: r.timestamp, spanId: r.spanId, parentSpanId: r.parentSpanId, operationType: r.operationType, provider: r.provider, model: r.model,
+      agentId: r.agentId, toolName: r.toolName, ragStage: r.ragStage, inputTokens: r.inputTokens, outputTokens: r.outputTokens, totalTokens: r.totalTokens,
+      embeddingTokens: r.embeddingTokens, rerankingTokens: r.rerankingTokens, llmCallCount: r.llmCallCount, toolCallCount: r.toolCallCount, latencyMs: r.latencyMs,
+      ttftMs: r.ttftMs, requestStatus: r.requestStatus, errorType: r.errorType, estimatedTotalCost: r.estimatedTotalCost,
+    }));
+    return { traceId, telemetrySource: [...new Set(rows.map((r) => r.telemetrySource))], ...buildTrace(spans, threshold) };
   }
 
   /** The design's agent step limit when there is one, else the configured default. */
@@ -422,7 +431,10 @@ export class UsageService {
         out[name] = rows.map((r) => r.v);
       }),
     );
-    return { ...this.range(f), values: out };
+    // Tenant ids identify customers: only roles that may see them get the list (spec §18).
+    const tenantHidden = !canSeeTenants(requester.role);
+    if (tenantHidden) out.tenant = [];
+    return { ...this.range(f), values: out, tenantHidden };
   }
 
   /** Observed figures for the central state (spec §16): last 30 days, live if any, else simulated. */

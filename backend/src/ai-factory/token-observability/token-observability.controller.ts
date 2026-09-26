@@ -19,6 +19,7 @@ import { IngestKeyService } from './ingest-key.service';
 import { CreateIngestKeyDto } from './dto/create-ingest-key.dto';
 import { AlertService } from './alert.service';
 import { AlertsQueryDto } from './dto/alerts-query.dto';
+import { UsageReadAuditInterceptor } from './usage-read-audit.interceptor';
 import { UsageEventBatchDto } from './dto/usage-events.dto';
 import { UsageQueryDto, UsageRequestsQueryDto } from './dto/usage-query.dto';
 
@@ -28,6 +29,7 @@ const TRACE_ID = /^[A-Za-z0-9_.:@/+=#-]{1,200}$/;
 @ApiTags('token-observability')
 @ApiBearerAuth()
 @UseGuards(TokenObservabilityEnabledGuard, JwtAuthGuard, RolesGuard)
+@UseInterceptors(UsageReadAuditInterceptor)
 @Controller('projects/:projectId/token-observability')
 export class TokenObservabilityController {
   constructor(

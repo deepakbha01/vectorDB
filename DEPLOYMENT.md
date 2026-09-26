@@ -105,3 +105,29 @@ at each layer.
 `.github/workflows/ci.yml` builds and tests both backend and frontend on
 every push/PR. `npm audit` runs informationally (does not fail the build) -
 see `SECURITY.md` for the known, tracked findings it will report.
+
+## 9. Token Observability (optional)
+
+Enable with `AI_FACTORY_ENABLED=true` and `TOKEN_OBSERVABILITY_ENABLED=true`.
+Full reference: [TOKEN_OBSERVABILITY.md](TOKEN_OBSERVABILITY.md).
+
+- **Migrations**: five additive migrations (`*-AiTokenEstimates`,
+  `*-AiTokenUsageAndPrices`, `*-AiSimulationRuns`, `*-AiIngestKeys`,
+  `*-AiTokenAlerts`) - applied by `npm run migration:run` with the rest.
+- **Environment**: `TOKEN_INGEST_MAX_BODY` (usage-ingest routes only; every
+  other route keeps 100 KB), `TOKEN_INGEST_RATE_LIMIT_PER_MIN`,
+  `TOKEN_ALERTS_ENABLED`, `TOKEN_TENANT_VISIBILITY`,
+  `TOKEN_RETENTION_ENABLED` and the three `TOKEN_*_RETENTION_DAYS` - see
+  `backend/.env.example`.
+- **Live telemetry**: create a project ingest key in the Token Observability
+  page (Live telemetry → Manage keys). Applications send usage events to
+  `POST /api/observability/usage-events`, or OTLP through the optional
+  collector: `AI_FACTORY_INGEST_KEY=aftk_... docker compose --profile
+  telemetry up` (`otel/collector.yaml`). In production send collector →
+  API traffic over TLS (`AI_FACTORY_OTLP_ENDPOINT=https://.../api/observability/v1/traces`).
+- **Background jobs**: alert evaluation (every 15 min) and retention
+  clean-up (daily) run inside the API process, guarded by Postgres advisory
+  locks so several replicas never run them twice.
+- **Data at rest**: the usage tables hold token counts and identifiers, not
+  prompts or responses, but treat them as sensitive - keep the app database
+  on encrypted storage.
