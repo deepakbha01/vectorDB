@@ -14,6 +14,8 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
+import { ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
+import { milvusExpr, normaliseIndexType, normaliseMetric, trimMetadata, vectorPreview } from '../explorer-helpers';
 
 const MILVUS_DATA_TYPES: Record<string, DataType> = {
   VarChar: DataType.VarChar,
@@ -32,7 +34,7 @@ const MILVUS_DATA_TYPES: Record<string, DataType> = {
  * trick is needed here - the schema generated in Phase 2 is used directly.
  */
 @Injectable()
-export class MilvusVectorAdapter implements VectorDatabaseAdapter {
+export class MilvusVectorAdapter implements VectorDatabaseAdapter, VectorExplorer {
   readonly platformId = 'milvus' as const;
   private readonly logger = new Logger(MilvusVectorAdapter.name);
   private client: MilvusClient | null = null;
@@ -137,5 +139,102 @@ export class MilvusVectorAdapter implements VectorDatabaseAdapter {
     const collection = sanitizeSqlIdentifier(collectionOrTableName, 'collectionOrTableName');
     this.logger.warn(`Dropping Milvus collection '${collection}' (confirmed).`);
     await this.getClient().dropCollection({ collection_name: collection });
+  }
+
+  // ------------------------------------------------------ Data Explorer (read-only)
+
+  async listCollections(): Promise<string[]> {
+    const r = (await this.getClient().showCollections()) as any;
+    return ((r.data ?? []) as Array<{ name: string }>).map((c) => c.name).sort();
+  }
+
+  private async schemaOf(name: string): Promise<{ primary: string; vectorField: string | null; dimension: number | null; fields: Array<{ name: string; type: string }> }> {
+    const d = (await this.getClient().describeCollection({ collection_name: name })) as any;
+    const fields = (d.schema?.fields ?? []) as Array<{ name: string; data_type: string; is_primary_key?: boolean; type_params?: Array<{ key: string; value: string }> }>;
+    const vector = fields.find((f) => /vector/i.test(String(f.data_type)));
+    const dim = vector?.type_params?.find((p) => p.key === 'dim')?.value;
+    return {
+      primary: fields.find((f) => f.is_primary_key)?.name ?? 'id',
+      vectorField: vector?.name ?? null,
+      dimension: dim ? Number(dim) : null,
+      fields: fields.filter((f) => !f.is_primary_key && f !== vector).map((f) => ({ name: f.name, type: String(f.data_type) })),
+    };
+  }
+
+  /**
+   * Browsing and search need the collection loaded into memory; the explorer
+   * never loads it (that is an operational change), it says so instead.
+   */
+  private async requireLoaded(name: string): Promise<void> {
+    const s = (await this.getClient().getLoadState({ collection_name: name })) as any;
+    if (s?.state && !String(s.state).includes('Loaded')) {
+      throw new BadRequestException(`Milvus collection '${name}' is not loaded, so it cannot be browsed or searched. Load it in Milvus first; the Data Explorer never loads collections itself.`);
+    }
+  }
+
+  async describeCollection(name: string): Promise<ExplorerCollectionInfo> {
+    const s = await this.schemaOf(name);
+    const stats = (await this.getClient().getCollectionStatistics({ collection_name: name })) as any;
+    const rowCount = (stats.stats as Array<{ key: string; value: string }> | undefined)?.find((x) => x.key === 'row_count')?.value ?? stats.data?.row_count;
+    let indexes: ExplorerCollectionInfo['indexes'] = [];
+    let metric: string | null = null;
+    const notes: string[] = [];
+    try {
+      const idx = (await this.getClient().describeIndex({ collection_name: name })) as any;
+      for (const d of (idx.index_descriptions ?? []) as Array<{ field_name: string; params: Array<{ key: string; value: string }> }>) {
+        const p = Object.fromEntries(d.params.map((x) => [x.key, x.value]));
+        metric ??= normaliseMetric(p.metric_type);
+        indexes.push({ type: normaliseIndexType(p.index_type ?? ''), detail: `${p.index_type ?? 'index'} on ${d.field_name}${p.params ? ` ${p.params}` : ''}` });
+      }
+    } catch {
+      indexes = [];
+      notes.push('No index is built on this collection yet.');
+    }
+    notes.push('Milvus counts include rows not yet flushed; the figure can lag inserts slightly.');
+    return { name, recordCount: rowCount !== undefined ? Number(rowCount) : null, countIsEstimate: false, dimension: s.dimension, metric, indexes, fields: s.fields, notes };
+  }
+
+  /** Milvus pages by offset (up to 16,384 rows deep); the cursor is that offset. */
+  async browse(name: string, options: { limit: number; cursor: string | null; filter: ExplorerFilter }): Promise<ExplorerPage> {
+    const offset = options.cursor === null ? 0 : Number(options.cursor);
+    if (!Number.isInteger(offset) || offset < 0) throw new BadRequestException('Invalid page cursor.');
+    if (offset + options.limit > 16_384) throw new BadRequestException('Milvus can page at most 16,384 rows deep; narrow the list with a filter.');
+    await this.requireLoaded(name);
+    const s = await this.schemaOf(name);
+    const r = (await this.getClient().query({
+      collection_name: name,
+      filter: milvusExpr(options.filter),
+      output_fields: [s.primary, ...s.fields.map((f) => f.name), ...(s.vectorField ? [s.vectorField] : [])],
+      limit: options.limit + 1,
+      offset,
+    } as any)) as any;
+    const rows = ((r.data ?? []) as Array<Record<string, unknown>>).slice(0, options.limit);
+    return {
+      records: rows.map((row) => {
+        const { [s.primary]: id, ...rest } = row;
+        const vec = s.vectorField ? rest[s.vectorField] : undefined;
+        if (s.vectorField) delete rest[s.vectorField];
+        return { id: String(id), metadata: trimMetadata(rest), ...vectorPreview(vec) };
+      }),
+      nextCursor: (r.data ?? []).length > options.limit ? String(offset + options.limit) : null,
+    };
+  }
+
+  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+    await this.requireLoaded(name);
+    const s = await this.schemaOf(name);
+    const expr = milvusExpr(query.filter);
+    const r = (await this.getClient().search({
+      collection_name: name,
+      data: [query.vector],
+      limit: query.topK,
+      output_fields: s.fields.map((f) => f.name),
+      ...(expr ? { filter: expr } : {}),
+    } as any)) as any;
+    return ((r.results ?? []) as Array<Record<string, unknown>>).map((row) => {
+      const { id, score, ...metadata } = row;
+      if (s.vectorField) delete metadata[s.vectorField];
+      return { id: String(id ?? row[s.primary]), score: Number(score), metadata: trimMetadata(metadata) };
+    });
   }
 }

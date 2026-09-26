@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { AuditLogEntry } from './audit-log-entry.entity';
-import { summarizeForAudit } from './audit-summarize';
+import { auditSummaries } from './audit-summarize';
 import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
 
@@ -66,8 +66,7 @@ export class AuditLoggingInterceptor implements NestInterceptor {
           method: input.method,
           path: input.url,
           statusCode: input.statusCode,
-          requestSummary: summarizeForAudit(input.body),
-          responseSummary: summarizeForAudit(input.response),
+          ...auditSummaries(input.url, input.body, input.response),
           durationMs,
         }),
       );

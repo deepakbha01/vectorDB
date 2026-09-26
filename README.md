@@ -389,6 +389,11 @@ measures and alerts on token consumption - Estimated from the design,
 Simulated from load tests, Live from usage events or OpenTelemetry. See
 [TOKEN_OBSERVABILITY.md](TOKEN_OBSERVABILITY.md).
 
+The Data Explorer (behind `DATA_EXPLORER_ENABLED`) is a read-only view into
+the project's target vector database - collections, records and search -
+with a design-vs-deployed check against the project's own phases. Phase 1:
+PostgreSQL + pgvector, Qdrant, Milvus. See `USER_GUIDE.md` §12.
+
 ## Architecture
 
 ```

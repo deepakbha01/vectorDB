@@ -157,6 +157,13 @@ export function PhaseNav({ project }: { project: Project }) {
       <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
         <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 6 }}>Project tools</div>
         <ul className="phase-nav">
+          {features.dataExplorer && (
+            <li>
+              <NavLink to={`/projects/${project.id}/data-explorer`} className={({ isActive }) => (isActive ? 'active' : '')}>
+                Data Explorer
+              </NavLink>
+            </li>
+          )}
           <li>
             <NavLink to={`/projects/${project.id}/reports`} className={({ isActive }) => (isActive ? 'active' : '')}>
               Reports

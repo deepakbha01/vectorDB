@@ -5,9 +5,11 @@ export interface FeatureFlags {
   aiFactory: boolean;
   /** Token Observability (Wave 12) - on only together with aiFactory. */
   tokenObservability: boolean;
+  /** Data Explorer - read-only view into the target vector database; independent of the AI Factory. */
+  dataExplorer: boolean;
 }
 
-const OFF: FeatureFlags = { aiFactory: false, tokenObservability: false };
+const OFF: FeatureFlags = { aiFactory: false, tokenObservability: false, dataExplorer: false };
 let cached: Promise<FeatureFlags> | null = null;
 
 /** Fetched once per page load; any failure falls back to every flag off (the existing workflow). */

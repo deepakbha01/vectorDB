@@ -7,6 +7,8 @@ export interface FeatureFlags {
   aiFactory: boolean;
   /** Token Observability (Wave 12). Needs the AI Factory too - it is one of its phases. */
   tokenObservability: boolean;
+  /** Data Explorer: read-only view into the project's target vector database. Independent of the AI Factory. */
+  dataExplorer: boolean;
 }
 
 const TRUTHY = new Set(['1', 'true', 'yes', 'on']);
@@ -31,6 +33,7 @@ export class FeaturesController {
     return {
       aiFactory,
       tokenObservability: aiFactory && this.on('TOKEN_OBSERVABILITY_ENABLED'),
+      dataExplorer: this.on('DATA_EXPLORER_ENABLED'),
     };
   }
 }

@@ -42,6 +42,7 @@ import { AuditLogEntry } from './audit/audit-log-entry.entity';
 import { InferenceModule } from './inference/inference.module';
 import { InferenceAssessment } from './inference/inference-assessment.entity';
 import { AiFactoryModule } from './ai-factory/ai-factory.module';
+import { DataExplorerModule } from './data-explorer/data-explorer.module';
 import { AiFactoryStateSnapshot } from './ai-factory/ai-factory-state-snapshot.entity';
 import { AiWorkloadProfile } from './ai-factory/workload-profile/workload-profile.entity';
 import { AiModelSelection } from './ai-factory/model-selection/model-selection.entity';
@@ -149,6 +150,7 @@ import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entit
     AuditModule,
     InferenceModule,
     AiFactoryModule,
+    DataExplorerModule,
   ],
   controllers: [HealthController, FeaturesController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

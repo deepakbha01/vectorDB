@@ -14,6 +14,8 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
+import { ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
+import { normaliseMetric, qdrantFilter, trimMetadata, vectorPreview } from '../explorer-helpers';
 
 /**
  * Connects to the customer's target Qdrant instance (self-hosted on
@@ -21,7 +23,7 @@ import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
  * TARGET_QDRANT_* environment variables.
  */
 @Injectable()
-export class QdrantVectorAdapter implements VectorDatabaseAdapter {
+export class QdrantVectorAdapter implements VectorDatabaseAdapter, VectorExplorer {
   readonly platformId = 'qdrant' as const;
   private readonly logger = new Logger(QdrantVectorAdapter.name);
   private client: QdrantClient | null = null;
@@ -112,5 +114,68 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter {
     const collection = sanitizeSqlIdentifier(collectionOrTableName, 'collectionOrTableName');
     this.logger.warn(`Dropping Qdrant collection '${collection}' (confirmed).`);
     await this.getClient().deleteCollection(collection);
+  }
+
+  // ------------------------------------------------------ Data Explorer (read-only)
+
+  async listCollections(): Promise<string[]> {
+    const r = await this.getClient().getCollections();
+    return r.collections.map((c) => c.name).sort();
+  }
+
+  async describeCollection(name: string): Promise<ExplorerCollectionInfo> {
+    const info = (await this.getClient().getCollection(name)) as any;
+    const vectors = info.config?.params?.vectors ?? {};
+    // One unnamed vector ({ size, distance }) or named vectors ({ name: { size, distance } }): describe the first.
+    const named = typeof vectors.size === 'number' ? null : Object.keys(vectors)[0] ?? null;
+    const v = named ? vectors[named] : vectors;
+    const hnsw = info.config?.hnsw_config ?? {};
+    const notes: string[] = [];
+    if (named) notes.push(`Named vectors: showing '${named}' of ${Object.keys(vectors).join(', ')}.`);
+    const quant = info.config?.quantization_config;
+    const quantized = quant && (quant.product || quant.scalar || quant.binary);
+    return {
+      name,
+      recordCount: typeof info.points_count === 'number' ? info.points_count : null,
+      countIsEstimate: false,
+      dimension: typeof v?.size === 'number' ? v.size : null,
+      metric: normaliseMetric(v?.distance ?? null),
+      // Qdrant always builds HNSW; product quantization makes it the PQ design.
+      indexes: [{ type: quant?.product ? 'pq' : 'hnsw', detail: `HNSW m=${hnsw.m ?? '?'}, ef_construct=${hnsw.ef_construct ?? '?'}${quantized ? `, ${Object.keys(quant).join('/')} quantization` : ''}` }],
+      fields: Object.entries(info.payload_schema ?? {}).map(([field, s]: [string, any]) => ({ name: field, type: String(s?.data_type ?? 'unknown') })),
+      notes,
+    };
+  }
+
+  async browse(name: string, options: { limit: number; cursor: string | null; filter: ExplorerFilter }): Promise<ExplorerPage> {
+    let offset: unknown;
+    if (options.cursor !== null) {
+      try {
+        offset = JSON.parse(options.cursor);
+      } catch {
+        offset = undefined;
+      }
+      if (typeof offset !== 'number' && typeof offset !== 'string') throw new BadRequestException('Invalid page cursor.');
+    }
+    const r = (await this.getClient().scroll(name, {
+      limit: options.limit,
+      ...(offset !== undefined ? { offset } : {}),
+      filter: qdrantFilter(options.filter),
+      with_payload: true,
+      with_vector: true,
+    } as any)) as any;
+    return {
+      records: (r.points ?? []).map((p: any) => {
+        const vec = Array.isArray(p.vector) || p.vector === undefined ? p.vector : Object.values(p.vector)[0];
+        return { id: String(p.id), metadata: trimMetadata((p.payload as Record<string, unknown>) ?? {}), ...vectorPreview(vec) };
+      }),
+      // The next point id (number or UUID), kept as JSON so its type survives the round trip.
+      nextCursor: r.next_page_offset === null || r.next_page_offset === undefined ? null : JSON.stringify(r.next_page_offset),
+    };
+  }
+
+  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+    const r = (await this.getClient().query(name, { query: query.vector, limit: query.topK, filter: qdrantFilter(query.filter), with_payload: true } as any)) as any;
+    return (r.points ?? []).map((p: any) => ({ id: String(p.id), score: p.score, metadata: trimMetadata((p.payload as Record<string, unknown>) ?? {}) }));
   }
 }
