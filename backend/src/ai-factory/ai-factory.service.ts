@@ -397,7 +397,10 @@ export class AiFactoryService {
           }
         : {}),
       // Spec (Token Observability) §16. Observed figures stay null until usage events exist - never filled from the estimate.
-      tokenObservability: await this.tokenSection(section('token_observability', 'partial', {}), te, project.id),
+      // Absent from the graph when Token Observability is switched off - then the section says so and reads nothing.
+      tokenObservability: lineage.some((l) => l.phase === 'token_observability')
+        ? await this.tokenSection(section('token_observability', 'partial', {}), te, project.id)
+        : { status: 'not_yet_available', coverage: 'none', source: null, summary: {} },
       infrastructure: infra
         ? section('infrastructure_design', 'full', {
             deploymentModel: infra.result.deploymentModel.summary,

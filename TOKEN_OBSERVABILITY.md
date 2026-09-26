@@ -232,6 +232,7 @@ created by `synchronize`):
 1790359832028-AiSimulationRuns
 1790360876558-AiIngestKeys
 1790361955476-AiTokenAlerts
+1790384458955-TokenReviewFixes      # failed-upload status; one open alert per problem
 ```
 
 Apply with `cd backend && npm run migration:run`.

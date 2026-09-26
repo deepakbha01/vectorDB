@@ -47,3 +47,23 @@ describe('config/ai-factory.yaml', () => {
     for (const s of steps.filter((x) => x.coverage !== 'full')) expect(s.plannedWave).toBeGreaterThan(1);
   });
 });
+
+describe('with Token Observability switched off (review fix)', () => {
+  const off = new AiFactoryConfigService({} as ConfigService);
+  off.setConfig(yaml.load(fs.readFileSync(path.join(__dirname, '../../config/ai-factory.yaml'), 'utf8')) as Record<string, any>);
+  off.setTokenObservabilityEnabled(false);
+
+  it('leaves the phase, every edge to it and its step out, numbering the steps 1-13 as before', () => {
+    expect(off.getPhases().map((p) => p.key)).not.toContain('token_observability');
+    expect(off.getPhases().flatMap((p) => p.dependsOn.map((d) => d.phase))).not.toContain('token_observability');
+    const steps = off.getSteps();
+    expect(steps.map((s) => s.number)).toEqual(Array.from({ length: 13 }, (_, i) => i + 1));
+    expect(steps.map((s) => s.key)).not.toContain('token_observability');
+    expect(steps.find((s) => s.key === 'final')!.number).toBe(13);
+  });
+
+  it('does not ask for the phase to be re-run when a Discovery answer changes', () => {
+    expect(Object.values(off.getParameterImpact()).flat()).not.toContain('token_observability');
+    expect(off.getParameterImpact().monthlyBudgetUsd).toEqual(['vector_db_selection', 'inference', 'finops']);
+  });
+});

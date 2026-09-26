@@ -36,10 +36,10 @@ describe('whereClause', () => {
   it('always scopes to the project and mode, and binds every filter as a parameter', () => {
     const w = whereClause('proj', f, 'events', 'e');
     expect(w.sql).toBe('e."projectId" = $1 AND e."telemetrySource" = $2 AND e."timestamp" >= $3 AND e."timestamp" < $4 AND e."serviceId" = $5 AND e."tenantId" = $6');
-    expect(w.params).toEqual(['proj', 'live', new Date('2026-09-25T10:20:00Z'), new Date('2026-09-25T12:00:00Z'), 'claims', 't1']);
+    expect(w.params).toEqual(['proj', 'live', new Date('2026-09-25T10:00:00Z'), new Date('2026-09-25T12:00:00Z'), 'claims', 't1']);
   });
 
-  it('widens rollup ranges to whole hours', () => {
+  it('starts events and rollups on the same whole hour, so per-request ratios compare like with like', () => {
     const w = whereClause('proj', f, 'rollups', 'r');
     expect(w.sql).toContain('r."bucketStart" >= $3');
     expect(w.params[2]).toEqual(new Date('2026-09-25T10:00:00Z'));

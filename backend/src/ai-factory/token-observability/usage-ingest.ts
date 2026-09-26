@@ -176,5 +176,6 @@ export function rollupDeltas(events: NormalizedEvent[]): RollupDelta[] {
     d.costTotal += e.estimatedTotalCost ?? 0;
     byKey.set(key, d);
   }
-  return [...byKey.values()];
+  // A fixed order (hour, then attribution key) so concurrent batches lock rows in the same order and cannot deadlock.
+  return [...byKey.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, d]) => d);
 }

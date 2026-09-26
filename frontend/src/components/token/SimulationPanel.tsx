@@ -159,7 +159,10 @@ export function SimulationPanel({ projectId, onChanged, onView }: { projectId: s
                 rows={runs.map((r) => [
                   <span key="l">
                     <strong>{r.label}</strong>
+                    {r.status === 'failed' && <span style={{ color: '#d03b3b', fontSize: 12 }}> ▲ failed</span>}
+                    {r.status === 'in_progress' && <span style={{ color: VIZ.muted, fontSize: 12 }}> ○ uploading</span>}
                     <div style={{ fontSize: 12, color: VIZ.muted }}>{r.fileName}</div>
+                    {r.status === 'failed' && r.error && <div style={{ fontSize: 12, color: VIZ.ink2 }}>{r.error} - delete this run, then upload again.</div>}
                   </span>,
                   <span key="u">
                     {when(r.createdAt)}

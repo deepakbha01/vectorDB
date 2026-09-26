@@ -124,6 +124,8 @@ export class AlertService {
   async evaluateProject(projectId: string, now = new Date()): Promise<EvaluationResult> {
     const evaluation = evaluateRules(await this.snapshot(projectId, now), this.cfg.getTokenObservabilityCatalogue().alerts);
     const { opened, resolved } = await this.alerts.manager.transaction(async (m) => {
+      // One evaluation per project at a time - "Evaluate now" and the schedule can never both open the same alert.
+      await m.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`token-alerts:${projectId}`]);
       const open = await m.find(AiTokenAlert, { where: { project: { id: projectId }, status: 'open' }, select: { id: true, dedupeKey: true } });
       const plan = reconcile(open, evaluation.firing);
       for (const f of plan.create) {

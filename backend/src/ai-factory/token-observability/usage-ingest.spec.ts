@@ -73,3 +73,14 @@ describe('rollupDeltas', () => {
     expect(claims10.costTotal).toBeCloseTo(0.008);
   });
 });
+
+describe('rollupDeltas - write order (review fix)', () => {
+  it('returns the same order whatever order the events arrived in, so concurrent batches cannot deadlock', () => {
+    const a = norm(ev({ serviceId: 'b-svc', timestamp: '2026-09-25T11:10:00Z' }));
+    const b = norm(ev({ serviceId: 'a-svc', timestamp: '2026-09-25T10:10:00Z' }));
+    const c = norm(ev({ serviceId: 'a-svc', timestamp: '2026-09-25T11:20:00Z' }));
+    const keys = (xs: NormalizedEvent[]) => rollupDeltas(xs).map((d) => `${d.bucketStart.toISOString()} ${d.serviceId}`);
+    expect(keys([a, b, c])).toEqual(keys([c, b, a]));
+    expect(keys([a, b, c])).toEqual(['2026-09-25T10:00:00.000Z a-svc', '2026-09-25T11:00:00.000Z a-svc', '2026-09-25T11:00:00.000Z b-svc']);
+  });
+});

@@ -126,3 +126,20 @@ describe('reconcile - the alert lifecycle', () => {
     expect(r.resolve).toEqual(['a2']);
   });
 });
+
+describe('reconcile - duplicates (review fix)', () => {
+  const f = (dedupeKey: string): Firing => ({ rule: 'budget', dedupeKey, severity: 'warning', title: dedupeKey, detail: '', metric: { observed: 1, threshold: 1, unit: 'x' } });
+
+  it('keeps one open alert per problem and resolves the extra copies', () => {
+    const r = reconcile(
+      [
+        { id: 'a1', dedupeKey: 'budget' },
+        { id: 'a2', dedupeKey: 'budget' },
+      ],
+      [f('budget')],
+    );
+    expect(r.create).toEqual([]);
+    expect(r.refresh.map((x) => x.id)).toEqual(['a1']);
+    expect(r.resolve).toEqual(['a2']);
+  });
+});

@@ -111,9 +111,9 @@ see `SECURITY.md` for the known, tracked findings it will report.
 Enable with `AI_FACTORY_ENABLED=true` and `TOKEN_OBSERVABILITY_ENABLED=true`.
 Full reference: [TOKEN_OBSERVABILITY.md](TOKEN_OBSERVABILITY.md).
 
-- **Migrations**: five additive migrations (`*-AiTokenEstimates`,
+- **Migrations**: six migrations (`*-AiTokenEstimates`,
   `*-AiTokenUsageAndPrices`, `*-AiSimulationRuns`, `*-AiIngestKeys`,
-  `*-AiTokenAlerts`) - applied by `npm run migration:run` with the rest.
+  `*-AiTokenAlerts`, `*-TokenReviewFixes`) - applied by `npm run migration:run` with the rest.
 - **Environment**: `TOKEN_INGEST_MAX_BODY` (usage-ingest routes only; every
   other route keeps 100 KB), `TOKEN_INGEST_RATE_LIMIT_PER_MIN`,
   `TOKEN_ALERTS_ENABLED`, `TOKEN_TENANT_VISIBILITY`,

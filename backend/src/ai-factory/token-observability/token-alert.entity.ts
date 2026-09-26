@@ -12,6 +12,8 @@ export type AlertStatus = 'open' | 'resolved';
  */
 @Entity({ name: 'ai_token_alerts' })
 @Index(['project', 'status'])
+// At most one OPEN alert per problem; resolved ones are history and may repeat.
+@Index('UQ_ai_token_alerts_open_problem', ['project', 'dedupeKey'], { unique: true, where: `"status" = 'open'` })
 export class AiTokenAlert {
   @PrimaryGeneratedColumn('uuid')
   id: string;

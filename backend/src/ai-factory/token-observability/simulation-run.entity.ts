@@ -44,6 +44,13 @@ export class AiSimulationRun {
   @Column({ type: 'timestamptz', nullable: true }) firstEventAt: Date | null;
   @Column({ type: 'timestamptz', nullable: true }) lastEventAt: Date | null;
 
+  /** in_progress while batches are stored; failed if a batch could not be stored (see error). */
+  @Column({ type: 'varchar', length: 16, default: 'complete' })
+  status: 'in_progress' | 'complete' | 'failed';
+
+  @Column({ type: 'text', nullable: true })
+  error: string | null;
+
   /** The first rejections, with their row numbers, so the file can be fixed. */
   @Column({ type: 'jsonb' })
   rejections: UploadRejection[];

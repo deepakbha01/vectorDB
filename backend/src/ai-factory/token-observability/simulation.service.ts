@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ProjectsService } from '../../projects/projects.service';
@@ -60,6 +60,8 @@ export class SimulationService {
         firstEventAt: null,
         lastEventAt: null,
         rejections: [],
+        status: 'in_progress',
+        error: null,
       }),
     );
     // Row numbers for rejections found after parsing (future timestamps, an eventId repeated in the file).
@@ -69,25 +71,40 @@ export class SimulationService {
     let accepted = 0;
     let duplicates = 0;
     let unpriced = 0;
-    for (let i = 0; i < parsed.events.length; i += BATCH) {
-      const res = await this.usage.ingestForProject(projectId, { telemetrySource: 'simulated', events: parsed.events.slice(i, i + BATCH) }, now, run.id);
-      accepted += res.accepted;
-      duplicates += res.duplicates;
-      unpriced += res.unpriced;
-      rejections.push(...res.rejected.map((x) => ({ row: rowOf.get(x.eventId) ?? 0, eventId: x.eventId, reason: x.reason })));
+    const finish = async (status: 'complete' | 'failed', error: string | null) => {
+      const [span] = await this.events.manager.query(`SELECT MIN("timestamp") AS first, MAX("timestamp") AS last FROM "ai_usage_events" WHERE "simulationRunId" = $1`, [run.id]);
+      rejections.sort((a, b) => a.row - b.row);
+      Object.assign(run, {
+        accepted,
+        duplicates,
+        unpriced,
+        rejected: rejections.length,
+        firstEventAt: span.first ? new Date(span.first) : null,
+        lastEventAt: span.last ? new Date(span.last) : null,
+        rejections: rejections.slice(0, KEEP_REJECTIONS),
+        status,
+        error,
+      });
+      return this.runs.save(run);
+    };
+    try {
+      for (let i = 0; i < parsed.events.length; i += BATCH) {
+        const res = await this.usage.ingestForProject(projectId, { telemetrySource: 'simulated', events: parsed.events.slice(i, i + BATCH) }, now, run.id);
+        accepted += res.accepted;
+        duplicates += res.duplicates;
+        unpriced += res.unpriced;
+        rejections.push(...res.rejected.map((x) => ({ row: rowOf.get(x.eventId) ?? 0, eventId: x.eventId, reason: x.reason })));
+        // Progress is kept per batch, so the run always says what was stored.
+        await this.runs.update({ id: run.id }, { accepted, duplicates, unpriced });
+      }
+    } catch (e) {
+      // Batches already stored stay with this run; the run says it failed and how far it got. Delete it to remove them.
+      const message = (e as Error).message;
+      await finish('failed', `Stopped after ${accepted.toLocaleString()} of ${parsed.events.length.toLocaleString()} events: ${message}`).catch(() => undefined);
+      this.logger.warn(`action=upload_simulation_failed projectId=${projectId} run=${run.id} accepted=${accepted} error=${message}`);
+      throw new InternalServerErrorException(`The upload stopped after ${accepted.toLocaleString()} of ${parsed.events.length.toLocaleString()} events and run "${run.label}" is marked failed. Delete that run and upload the file again.`);
     }
-    const [span] = await this.events.manager.query(`SELECT MIN("timestamp") AS first, MAX("timestamp") AS last FROM "ai_usage_events" WHERE "simulationRunId" = $1`, [run.id]);
-    rejections.sort((a, b) => a.row - b.row);
-    Object.assign(run, {
-      accepted,
-      duplicates,
-      unpriced,
-      rejected: rejections.length,
-      firstEventAt: span.first ? new Date(span.first) : null,
-      lastEventAt: span.last ? new Date(span.last) : null,
-      rejections: rejections.slice(0, KEEP_REJECTIONS),
-    });
-    const saved = await this.runs.save(run);
+    const saved = await finish('complete', null);
     this.logger.log(`user=${requester.email} action=upload_simulation projectId=${projectId} run=${run.id} received=${parsed.received} accepted=${accepted} duplicates=${duplicates} rejected=${rejections.length}`);
     return { ...this.view(saved), ignoredFields: parsed.ignoredFields, rejectionsTruncated: rejections.length > KEEP_REJECTIONS };
   }
@@ -156,6 +173,8 @@ export class SimulationService {
       firstEventAt: r.firstEventAt,
       lastEventAt: r.lastEventAt,
       rejections: r.rejections,
+      status: r.status,
+      error: r.error,
       createdAt: r.createdAt,
     };
   }

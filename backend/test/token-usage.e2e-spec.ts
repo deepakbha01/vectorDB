@@ -409,3 +409,46 @@ describe('hardening (spec §18) - tenant visibility, trace fields, retention', (
     expect((await usage.summary(projectId, admin, range)).cards.totalTokens).toBeGreaterThan(0);
   });
 });
+
+describe('code-review fixes', () => {
+  const NOW = new Date('2026-09-25T12:00:00Z');
+
+  it('opens each alert once when "Evaluate now" and the schedule run at the same moment', async () => {
+    const cfg = new AiFactoryConfigService({ get: () => undefined } as unknown as ConfigService);
+    cfg.onModuleInit();
+    const alerts = new AlertService(projectsStub, cfg, ds.getRepository(AiTokenAlert), ds.getRepository(AiTokenEstimate));
+    const [u] = await ds.query(`SELECT id FROM users LIMIT 1`);
+    const [p] = await ds.query(`INSERT INTO projects (name, "ownerId") VALUES ('IT race', $1) RETURNING id`, [u.id]);
+    // A runaway agent task in the last hour - the loop rule fires.
+    await usage.ingestForProject(p.id, batch(Array.from({ length: 12 }, (_, i) => ev({ eventId: `race-${i}`, traceId: 'race', agentId: 'agent-r', timestamp: '2026-09-25T11:30:00Z' }))), NOW);
+    await Promise.all([alerts.evaluateProject(p.id, NOW), alerts.evaluateProject(p.id, NOW), alerts.evaluateProject(p.id, NOW)]);
+    const open = await ds.query(`SELECT "dedupeKey" FROM ai_token_alerts WHERE "projectId" = $1 AND status = 'open'`, [p.id]);
+    expect(open.map((o: { dedupeKey: string }) => o.dedupeKey)).toEqual(['agentLoops:agent-r']);
+  });
+
+  it('reports observed cost over every row, not just the top models in the per-model list', async () => {
+    const window = { from: '2026-09-01T00:00:00Z', to: '2026-09-26T00:00:00Z' };
+    const c = await usage.cost(projectId, admin, window);
+    const [db] = await ds.query(`SELECT SUM("costTotal") AS cost FROM ai_usage_rollups WHERE "projectId" = $1 AND "telemetrySource" = 'live' AND "bucketStart" >= $2 AND "bucketStart" < $3`, [projectId, window.from, window.to]);
+    expect(c.observedCost).toBeCloseTo(Number(db.cost), 2);
+  });
+
+  it('marks an upload that stops part-way as failed, with what was stored, and a retry after deleting it is accepted', async () => {
+    const rows = ['event_id,timestamp,provider,model,operation_type,input_tokens,output_tokens'];
+    for (let i = 0; i < 2500; i++) rows.push(`fail-${i},2026-09-24T07:${String(i % 60).padStart(2, '0')}:00Z,managed_api_tier,mid,chat,100,10`);
+    const content = rows.join('\n');
+    const file = { originalname: 'big.csv', size: Buffer.byteLength(content), buffer: Buffer.from(content) };
+    // Storage fails on the third batch of 1000.
+    let calls = 0;
+    const flaky = { ingestForProject: (...a: Parameters<UsageService['ingestForProject']>) => (++calls === 3 ? Promise.reject(new Error('connection lost')) : usage.ingestForProject(...a)) } as unknown as UsageService;
+    const sims = new SimulationService(projectsStub, flaky, ds.getRepository(AiSimulationRun), ds.getRepository(AiUsageEvent));
+    await expect(sims.upload(projectId, admin, file, 'Flaky run', NOW)).rejects.toThrow(/stopped after 2,000 of 2,500 events.*marked failed/);
+    const failed = (await sims.list(projectId, admin)).find((r) => r.label === 'Flaky run')!;
+    expect(failed).toEqual(expect.objectContaining({ status: 'failed', accepted: 2000 }));
+    expect(failed.error).toMatch(/Stopped after 2,000 of 2,500 events: connection lost/);
+    // Delete it, retry: every event is accepted again rather than counted as a duplicate.
+    await simulations.remove(projectId, admin, failed.id);
+    const retry = await simulations.upload(projectId, admin, file, 'Retry', NOW);
+    expect(retry).toEqual(expect.objectContaining({ status: 'complete', accepted: 2500, duplicates: 0 }));
+  });
+});

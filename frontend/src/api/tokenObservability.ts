@@ -274,6 +274,8 @@ export interface UsageDimensions extends Range {
 export interface SimulationRun {
   id: string;
   label: string;
+  status?: 'in_progress' | 'complete' | 'failed';
+  error?: string | null;
   fileName: string;
   format: 'csv' | 'json';
   received: number;

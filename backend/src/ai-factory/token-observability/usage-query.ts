@@ -29,7 +29,9 @@ export interface UsageFilters {
 
 export function resolveFilters(q: UsageQueryDto, now: Date): UsageFilters | { error: string } {
   const to = q.to ? new Date(q.to) : now;
-  const from = q.from ? new Date(q.from) : new Date(to.getTime() - DEFAULT_RANGE_DAYS * DAY_MS);
+  const requested = q.from ? new Date(q.from) : new Date(to.getTime() - DEFAULT_RANGE_DAYS * DAY_MS);
+  // Whole hours, as the hourly totals are kept, so totals (rollups) and request counts (events) cover the same window.
+  const from = new Date(Math.floor(requested.getTime() / 3_600_000) * 3_600_000);
   if (from >= to) return { error: '`from` must be before `to`.' };
   if (to.getTime() - from.getTime() > MAX_RANGE_DAYS * DAY_MS) return { error: `The time range may span at most ${MAX_RANGE_DAYS} days.` };
   const dims = Object.fromEntries((Object.keys(FILTER_COLUMNS) as FilterName[]).filter((k) => q[k]).map((k) => [k, q[k]!])) as UsageFilters['dims'];
@@ -43,8 +45,8 @@ export function resolveFilters(q: UsageQueryDto, now: Date): UsageFilters | { er
  */
 export function whereClause(projectId: string, f: UsageFilters, table: 'events' | 'rollups', alias = 't'): { sql: string; params: unknown[] } {
   const time = table === 'events' ? '"timestamp"' : '"bucketStart"';
-  const from = table === 'events' ? f.from : new Date(Math.floor(f.from.getTime() / 3_600_000) * 3_600_000);
-  const params: unknown[] = [projectId, f.mode, from, f.to];
+  // f.from is already a whole hour (resolveFilters), so events and rollups share the window.
+  const params: unknown[] = [projectId, f.mode, f.from, f.to];
   const parts = [`${alias}."projectId" = $1`, `${alias}."telemetrySource" = $2`, `${alias}.${time} >= $3`, `${alias}.${time} < $4`];
   for (const [name, value] of Object.entries(f.dims) as Array<[FilterName, string]>) {
     params.push(value);

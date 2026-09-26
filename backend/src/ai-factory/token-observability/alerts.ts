@@ -185,11 +185,17 @@ export function reconcile(
   open: Array<{ id: string; dedupeKey: string }>,
   firing: Firing[],
 ): { create: Firing[]; refresh: Array<{ id: string; firing: Firing }>; resolve: string[] } {
-  const byKey = new Map(open.map((a) => [a.dedupeKey, a.id]));
+  // Keep one open alert per problem; any duplicate (e.g. from before the unique index) is resolved.
+  const byKey = new Map<string, string>();
+  const duplicates: string[] = [];
+  for (const a of open) {
+    if (byKey.has(a.dedupeKey)) duplicates.push(a.id);
+    else byKey.set(a.dedupeKey, a.id);
+  }
   const firingKeys = new Set(firing.map((f) => f.dedupeKey));
   return {
     create: firing.filter((f) => !byKey.has(f.dedupeKey)),
     refresh: firing.filter((f) => byKey.has(f.dedupeKey)).map((f) => ({ id: byKey.get(f.dedupeKey)!, firing: f })),
-    resolve: open.filter((a) => !firingKeys.has(a.dedupeKey)).map((a) => a.id),
+    resolve: [...[...byKey].filter(([key]) => !firingKeys.has(key)).map(([, id]) => id), ...duplicates],
   };
 }

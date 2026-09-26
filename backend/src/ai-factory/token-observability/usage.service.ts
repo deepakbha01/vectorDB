@@ -340,22 +340,26 @@ export class UsageService {
   /** GET cost - observed cost against the estimate and the budget. */
   async cost(projectId: string, requester: AuthenticatedUser, q: UsageQueryDto) {
     const f = await this.scope(projectId, requester, q);
-    const [byModel, req, estimate] = await Promise.all([
+    const [totals, byModel, req, estimate] = await Promise.all([
+      this.totals(projectId, f),
       this.grouped(projectId, f, ['provider', 'model']),
       this.requests(projectId, f),
       this.estimates.findOne({ where: { project: { id: projectId } }, order: { version: 'DESC' } }),
     ]);
-    const observed = byModel.reduce((s, r) => s + r.cost, 0);
+    // The total comes from every row, not from the per-model list (capped at the top models).
+    const observed = totals.cost;
+    const hasUsage = totals.events > 0;
     const days = (f.to.getTime() - f.from.getTime()) / 86_400_000;
     // A month is only projected from at least a day of usage; a short load test would scale into nonsense.
-    const monthlyRunRate = byModel.length && days >= 1 ? Math.round((observed / days) * 30.4 * 100) / 100 : null;
+    const monthlyRunRate = hasUsage && days >= 1 ? Math.round((observed / days) * 30.4 * 100) / 100 : null;
     const estimated = estimate?.result.cost.monthlyUsd ?? null;
     return {
       ...this.range(f),
       currency: this.cfg.getTokenObservabilityCatalogue().pricing.currency,
-      observedCost: byModel.length ? Math.round(observed * 100) / 100 : null,
+      observedCost: hasUsage ? Math.round(observed * 100) / 100 : null,
       costIncomplete: req.unpricedEvents > 0,
       unpricedEvents: req.unpricedEvents,
+      // The top models by tokens; their costs need not add up to observedCost.
       byModel: byModel.map((r) => ({ provider: r.provider, model: r.model, cost: r.cost, totalTokens: r.totalTokens, embeddingTokens: r.embeddingTokens })),
       forecast: { monthlyRunRate, basis: days >= 1 ? `observed ${days.toFixed(1)} days scaled to 30.4` : 'range shorter than a day - not projected to a month' },
       estimate: estimate ? { version: estimate.version, monthlyUsd: estimated, deltaPercent: estimated && monthlyRunRate !== null ? growth(monthlyRunRate, estimated) : null } : null,
