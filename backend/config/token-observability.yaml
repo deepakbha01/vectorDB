@@ -95,3 +95,30 @@ otel:
     region: [cloud.region]
     tenantId: [ai_factory.tenant_id]
     workflowId: [ai_factory.workflow_id]
+
+# ---------------------------------------------------------------------------
+# Alerts (spec §14). Evaluated on LIVE usage only, per project, every
+# `evaluateEveryMinutes` (TOKEN_ALERTS_ENABLED=false switches the schedule
+# off; "Evaluate now" still works). An alert stays open while its rule keeps
+# firing, and resolves itself when it stops. Rules without the data they need
+# (no budget, no estimate, too little history) stay silent rather than guess.
+# ---------------------------------------------------------------------------
+alerts:
+  evaluateEveryMinutes: 15
+  rules:
+    # Month-to-date cost, and the month projected at the current rate, against
+    # the monthly budget recorded in Discovery / Inference.
+    budget: { warningShare: 0.8, criticalShare: 1.0 }
+    # Tokens in the last hour against the average hour of the previous days.
+    spike: { baselineDays: 7, factor: 3, minTokens: 50000 }
+    # Observed tokens per request (last day) against the saved estimate.
+    tokensPerRequest: { lookbackHours: 24, factorOfEstimate: 1.5, minRequests: 20 }
+    # A provider / model used recently that was not used before, is not in the
+    # estimate and is not listed here ("provider/model").
+    unexpectedModel: { lookbackHours: 24, baselineDays: 30, allowed: [] }
+    # Agent tasks with more LLM calls than the design's step limit.
+    agentLoops: { lookbackHours: 24, criticalTasks: 5 }
+    # Retrieved-context tokens per request (last day) against the previous days.
+    ragContextGrowth: { lookbackHours: 24, baselineDays: 7, factor: 1.5, minRequests: 20 }
+    # Cost of the last day against the average day before it.
+    costIncrease: { baselineDays: 7, factor: 1.5, minCostUsd: 1 }

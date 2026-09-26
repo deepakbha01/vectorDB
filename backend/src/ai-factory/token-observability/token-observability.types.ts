@@ -120,6 +120,7 @@ export interface TokenObservabilityCatalogue {
   estimation: { toolCallOutputTokens: number; agentStepsShareOfMax: number };
   observed: { loopLlmCallsPerTrace: number; liveStaleAfterHours: number };
   otel: { span: Record<string, string[]>; resource: Record<string, string[]> };
+  alerts: import('./alerts').AlertCatalogue;
 }
 
 /**

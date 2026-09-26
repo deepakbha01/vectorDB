@@ -3,11 +3,12 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { apiClient, extractErrorMessage, Project } from '../api/client';
 import { useFeatures } from '../api/features';
 import { EvidenceType } from '../api/aiFactory';
-import { FILTER_NAMES, ObservedMode, TokenEstimate, TokenEstimatePreview, TokenEstimateResult, UsageFilters } from '../api/tokenObservability';
+import { AlertsResponse, FILTER_NAMES, ObservedMode, TokenEstimate, TokenEstimatePreview, TokenEstimateResult, UsageFilters } from '../api/tokenObservability';
 import { DashboardView, ObservedDashboard, rangeFor } from '../components/token/ObservedDashboard';
 import { download, toCsv } from '../components/token/csv';
 import { SimulationPanel } from '../components/token/SimulationPanel';
 import { IngestKeysPanel } from '../components/token/IngestKeysPanel';
+import { AlertsPanel } from '../components/token/AlertsPanel';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
@@ -38,6 +39,7 @@ export function TokenObservabilityPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [openAlerts, setOpenAlerts] = useState(0);
 
   // Mode, view and filters live in the URL so any drill-down can be bookmarked or shared.
   const mode = (['estimated', 'simulated', 'live'].includes(params.get('mode') ?? '') ? params.get('mode') : 'estimated') as 'estimated' | ObservedMode;
@@ -74,6 +76,10 @@ export function TokenObservabilityPage() {
       .get<TokenEstimatePreview>(`/projects/${id}/token-observability/estimate/preview`)
       .then((r) => setPreview(r.data))
       .catch((e) => setPreviewError(extractErrorMessage(e, 'Could not build the token estimate.')));
+    apiClient
+      .get<AlertsResponse>(`/projects/${id}/token-observability/alerts`)
+      .then((r) => setOpenAlerts(r.data.alerts.length))
+      .catch(() => setOpenAlerts(0));
   }, [id]);
 
   const save = async () => {
@@ -129,6 +135,11 @@ export function TokenObservabilityPage() {
                 ))}
               </div>
               <span style={{ fontSize: 13, color: '#5a6472', flex: 1 }}>{MODES[mode].note}</span>
+              {openAlerts > 0 && (
+                <button type="button" onClick={() => update({ mode: 'live' })} style={{ background: 'none', border: '1px solid #fab219', borderRadius: 12, padding: '2px 10px', fontSize: 12, color: '#1b2028', cursor: 'pointer' }}>
+                  ▲ {openAlerts} open alert{openAlerts === 1 ? '' : 's'}
+                </button>
+              )}
               <select value={view} onChange={(e) => update({ view: e.target.value === 'executive' ? 'executive' : undefined })} aria-label="View" style={{ fontSize: 13 }}>
                 <option value="architect">Technical architect view</option>
                 <option value="executive">Executive view</option>
@@ -157,6 +168,7 @@ export function TokenObservabilityPage() {
                 {mode === 'simulated' && (
                   <SimulationPanel projectId={project.id} onChanged={() => setRefreshKey((k) => k + 1)} onView={(from, to) => onFilters({ ...filters, from, to, dims: {} }, 'custom')} />
                 )}
+                {mode === 'live' && <AlertsPanel projectId={project.id} onChanged={setOpenAlerts} />}
                 {mode === 'live' && <IngestKeysPanel projectId={project.id} />}
                 <ObservedDashboard projectId={project.id} filters={filters} rangeKey={rangeKey} view={view} onChange={onFilters} refreshKey={refreshKey} />
               </>

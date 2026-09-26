@@ -32,6 +32,7 @@ import { AiUsageEvent } from './ai-factory/token-observability/usage-event.entit
 import { AiUsageRollup } from './ai-factory/token-observability/usage-rollup.entity';
 import { AiSimulationRun } from './ai-factory/token-observability/simulation-run.entity';
 import { AiIngestKey } from './ai-factory/token-observability/ingest-key.entity';
+import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entity';
 
 config();
 
@@ -87,6 +88,7 @@ export const AppDataSource = new DataSource({
     AiUsageRollup,
     AiSimulationRun,
     AiIngestKey,
+    AiTokenAlert,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,

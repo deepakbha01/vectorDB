@@ -28,6 +28,7 @@ import { AiFinalRecommendation } from './final/final.entity';
 import { AiTokenEstimate } from './token-observability/token-estimate.entity';
 import { TokenObservabilityState } from './token-observability/token-observability.types';
 import { UsageService } from './token-observability/usage.service';
+import { AlertService } from './token-observability/alert.service';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 import { ChunkingStrategy } from '../chunking/enums/chunking-strategy.enum';
 import { EmbeddingModelFacts } from './eligibility/eligibility.rules';
@@ -85,6 +86,7 @@ export class AiFactoryService {
     @InjectRepository(AiTokenEstimate) private readonly tokenEstimates: Repository<AiTokenEstimate>,
     private readonly platformConfig: PlatformConfigService,
     private readonly usage: UsageService,
+    private readonly tokenAlerts: AlertService,
   ) {}
 
   // ---------------------------------------------------------------- loading
@@ -306,9 +308,9 @@ export class AiFactoryService {
 
   /** The estimate drives status and version; observed usage (last 30 days) is added even before an estimate exists. */
   private async tokenSection(base: StateSection, te: AiTokenEstimate | null, projectId: string): Promise<StateSection> {
-    const observed = await this.usage.observedState(projectId);
-    if (!te && !observed.totals) return base;
-    return { ...base, summary: { ...tokenState(te, observed) } };
+    const [observed, alerts] = await Promise.all([this.usage.observedState(projectId), this.tokenAlerts.openCount(projectId)]);
+    if (!te && !observed.totals && !alerts) return base;
+    return { ...base, summary: { ...tokenState(te, observed, alerts) } };
   }
 
   private async buildState(project: Project, lineage: PhaseLineage[]): Promise<AssessmentState> {
@@ -527,7 +529,7 @@ export function compareStates(from: number, a: AssessmentState, to: number, b: A
 }
 
 /** Spec (Token Observability) §16: expected figures from the latest estimate, observed ones from usage events - never one filled from the other. */
-export function tokenState(te: AiTokenEstimate | null, observed: Awaited<ReturnType<UsageService['observedState']>>): TokenObservabilityState {
+export function tokenState(te: AiTokenEstimate | null, observed: Awaited<ReturnType<UsageService['observedState']>>, openAlerts = 0): TokenObservabilityState {
   const r = te?.result;
   const o = observed.totals;
   return {
@@ -543,7 +545,7 @@ export function tokenState(te: AiTokenEstimate | null, observed: Awaited<ReturnT
     estimatedCost: r?.cost.monthlyUsd ?? null,
     actualCost: o ? o.cost : null,
     topConsumers: observed.topConsumers,
-    alerts: 0,
+    alerts: openAlerts,
     telemetryStatus: observed.telemetry.status,
   };
 }

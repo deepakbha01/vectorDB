@@ -17,6 +17,8 @@ import { MAX_UPLOAD_BYTES } from './usage-upload';
 import { SimulationUploadDto } from './dto/simulation-upload.dto';
 import { IngestKeyService } from './ingest-key.service';
 import { CreateIngestKeyDto } from './dto/create-ingest-key.dto';
+import { AlertService } from './alert.service';
+import { AlertsQueryDto } from './dto/alerts-query.dto';
 import { UsageEventBatchDto } from './dto/usage-events.dto';
 import { UsageQueryDto, UsageRequestsQueryDto } from './dto/usage-query.dto';
 
@@ -34,6 +36,7 @@ export class TokenObservabilityController {
     private readonly usage: UsageService,
     private readonly simulations: SimulationService,
     private readonly ingestKeys: IngestKeyService,
+    private readonly alerts: AlertService,
   ) {}
 
   /** The Estimated-mode projection as the upstream records stand now. Saves nothing. */
@@ -183,5 +186,29 @@ export class TokenObservabilityController {
   @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
   revokeIngestKey(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('keyId', ParseUUIDPipe) keyId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.ingestKeys.revoke(projectId, user, keyId);
+  }
+
+  // ------------------------------------------------------------ alerts (spec §14)
+
+  /** Open alerts (or all with ?status=all), and what the last evaluation could not check. */
+  @Get('alerts')
+  listAlerts(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Query() q: AlertsQueryDto) {
+    return this.alerts.list(projectId, user, q.status ?? 'open');
+  }
+
+  /** Runs the rules now instead of waiting for the schedule. */
+  @Post('alerts/evaluate')
+  @HttpCode(200)
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  evaluateAlerts(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.alerts.evaluate(projectId, user);
+  }
+
+  /** Records that someone is dealing with it; the alert still resolves itself when the rule stops firing. */
+  @Post('alerts/:alertId/acknowledge')
+  @HttpCode(200)
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  acknowledgeAlert(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('alertId', ParseUUIDPipe) alertId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.alerts.acknowledge(projectId, user, alertId);
   }
 }

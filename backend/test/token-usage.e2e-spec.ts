@@ -18,6 +18,8 @@ import { SimulationService } from '../src/ai-factory/token-observability/simulat
 import { AiSimulationRun } from '../src/ai-factory/token-observability/simulation-run.entity';
 import { IngestKeyService } from '../src/ai-factory/token-observability/ingest-key.service';
 import { AiIngestKey } from '../src/ai-factory/token-observability/ingest-key.entity';
+import { AlertService } from '../src/ai-factory/token-observability/alert.service';
+import { AiTokenAlert } from '../src/ai-factory/token-observability/token-alert.entity';
 import { AiModelPrice } from '../src/ai-factory/token-observability/model-price.entity';
 import { AiUsageEvent } from '../src/ai-factory/token-observability/usage-event.entity';
 import { AiTokenEstimate } from '../src/ai-factory/token-observability/token-estimate.entity';
@@ -285,5 +287,78 @@ describe('ingest keys (spec §11, §18)', () => {
     await keys.revoke(projectId, admin, created.id);
     expect(await keys.verify(created.key)).toBeNull();
     expect((await keys.list(projectId, admin)).find((k) => k.id === created.id)?.revokedAt).not.toBeNull();
+  });
+});
+
+describe('token alerts (spec §14) - evaluate, deduplicate, acknowledge, resolve', () => {
+  const NOW = new Date('2026-09-25T12:00:00Z');
+  let alerts: AlertService;
+  let alertProject: string;
+
+  beforeAll(async () => {
+    const [u] = await ds.query(`SELECT id FROM users LIMIT 1`);
+    const [p] = await ds.query(`INSERT INTO projects (name, "ownerId") VALUES ('IT alerts', $1) RETURNING id`, [u.id]);
+    alertProject = p.id;
+    const cfg = new AiFactoryConfigService({ get: () => undefined } as unknown as ConfigService);
+    cfg.onModuleInit();
+    alerts = new AlertService(projectsStub, cfg, ds.getRepository(AiTokenAlert), ds.getRepository(AiTokenEstimate));
+    // A saved estimate: 7,050 tokens per request, agents limited to 3 LLM calls, a $1 monthly budget.
+    await ds.getRepository(AiTokenEstimate).save({
+      project: { id: alertProject },
+      createdBy: { id: u.id },
+      version: 1,
+      submitted: {},
+      context: { embedding: { provider: 'openai', model: 'text-embedding-3-small' } },
+      sources: {},
+      rulesVersion: 'test',
+      result: { perRequest: { totalTokens: 7050 }, agent: { llmCallsPerTask: 3 }, budget: { monthlyBudgetUsd: 1, source: 'Discovery v1' } },
+    } as never);
+    const ev = (id: string, at: Date, o: Record<string, unknown> = {}) => ({ eventId: id, timestamp: at.toISOString(), traceId: id, provider: MANAGED_API_TIER, model: 'mid', operationType: 'chat', inputTokens: 2000, outputTokens: 0, ...o }) as UsageEventDto;
+    // A normal week: one 2,000-token request every hour.
+    const week = Array.from({ length: 7 * 24 }, (_, i) => ev(`base-${i}`, new Date(NOW.getTime() - (i + 2) * 3_600_000)));
+    // The last hour: a burst, a model never used before and an agent task with 5 LLM calls.
+    const burst = Array.from({ length: 50 }, (_, i) => ev(`burst-${i}`, new Date(NOW.getTime() - 30 * 60_000), { inputTokens: 4000 }));
+    const oddModel = [ev('odd-1', new Date(NOW.getTime() - 20 * 60_000), { provider: 'acme', model: 'x-large', inputTokens: 900 })];
+    const loop = Array.from({ length: 5 }, (_, i) => ev(`loop-${i}`, new Date(NOW.getTime() - 10 * 60_000), { traceId: 'loop-trace', agentId: 'agent-a', inputTokens: 500 }));
+    for (const events of [week, [...burst, ...oddModel, ...loop]]) await usage.ingestForProject(alertProject, batch(events), NOW);
+  });
+
+  it('opens one alert per problem, with the reasons it could not check others', async () => {
+    const r = await alerts.evaluateProject(alertProject, NOW);
+    const keys = r.firing.map((f) => `${f.dedupeKey}:${f.severity}`).sort();
+    expect(keys).toEqual(expect.arrayContaining(['agentLoops:agent-a:warning', 'budget:critical', 'spike:critical', 'unexpectedModel:acme/x-large:warning']));
+    // Without RAG traffic that rule says why it could not run.
+    expect(r.silent.map((s) => s.rule)).toContain('ragContextGrowth');
+    expect(r.opened).toBe(r.firing.length);
+    const list = await alerts.list(alertProject, admin, 'open');
+    expect(list.alerts).toHaveLength(r.firing.length);
+    expect(await alerts.openCount(alertProject)).toBe(r.firing.length);
+  });
+
+  it('refreshes rather than duplicates on the next evaluation, and records who acknowledged', async () => {
+    const before = await alerts.list(alertProject, admin, 'open');
+    const again = await alerts.evaluateProject(alertProject, new Date(NOW.getTime() + 60_000));
+    expect(again.opened).toBe(0);
+    expect((await alerts.list(alertProject, admin, 'open')).alerts).toHaveLength(before.alerts.length);
+    const spike = before.alerts.find((a) => a.rule === 'spike')!;
+    await alerts.acknowledge(alertProject, admin, spike.id);
+    const after = (await alerts.list(alertProject, admin, 'open')).alerts.find((a) => a.id === spike.id)!;
+    expect(after.acknowledgedAt).not.toBeNull();
+    expect(after.acknowledgedBy).toBe('it@local');
+  });
+
+  it('resolves alerts by itself once the rule stops firing', async () => {
+    // A day later the burst, the new model and the loop are out of their windows.
+    const later = new Date(NOW.getTime() + 26 * 3_600_000);
+    const r = await alerts.evaluateProject(alertProject, later);
+    expect(r.firing.map((f) => f.rule)).not.toEqual(expect.arrayContaining(['spike']));
+    expect(r.resolved).toBeGreaterThan(0);
+    const all = await alerts.list(alertProject, admin, 'all');
+    expect(all.alerts.find((a) => a.rule === 'spike')).toEqual(expect.objectContaining({ status: 'resolved' }));
+    expect(all.alerts.find((a) => a.rule === 'agentLoops')).toEqual(expect.objectContaining({ status: 'resolved' }));
+  });
+
+  it('lists projects to evaluate on the schedule', async () => {
+    expect(await alerts.activeProjects(NOW)).toEqual(expect.arrayContaining([alertProject]));
   });
 });

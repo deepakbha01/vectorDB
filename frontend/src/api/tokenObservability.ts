@@ -309,3 +309,28 @@ export interface CreatedIngestKey extends IngestKey {
   /** Shown once. */
   key: string;
 }
+
+// ------------------------------------------------------------ alerts (Phase 7)
+
+export interface TokenAlert {
+  id: string;
+  rule: string;
+  dedupeKey: string;
+  severity: 'warning' | 'critical';
+  status: 'open' | 'resolved';
+  title: string;
+  detail: string;
+  metric: { observed: number; threshold: number; baseline?: number | null; unit: string };
+  firstSeenAt: string;
+  lastSeenAt: string;
+  resolvedAt: string | null;
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
+}
+
+export interface AlertsResponse {
+  status: 'open' | 'all';
+  evaluateEveryMinutes: number;
+  lastEvaluation: { evaluatedAt: string; firing: number; silent: Array<{ rule: string; reason: string }> } | null;
+  alerts: TokenAlert[];
+}
