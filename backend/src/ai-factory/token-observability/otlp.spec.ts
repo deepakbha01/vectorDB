@@ -113,7 +113,8 @@ describe('ingest keys (spec §18)', () => {
     expect(a.key).not.toBe(b.key);
     expect(prefixOf(a.key)).toBe(a.prefix);
     expect(a.hash).toBe(hashIngestKey(a.key));
-    expect(a.hash).not.toContain(a.key.split('_')[2]);
+    // The secret is base64url and may itself contain '_', so take it by position, not split('_').
+    expect(a.hash).not.toContain(a.key.slice(`aftk_${a.prefix}_`.length));
     expect(matchesHash(a.key, a.hash)).toBe(true);
     expect(matchesHash(b.key, a.hash)).toBe(false);
   });
