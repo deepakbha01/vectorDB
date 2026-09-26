@@ -332,7 +332,7 @@ describe('token alerts (spec §14) - evaluate, deduplicate, acknowledge, resolve
     expect(r.opened).toBe(r.firing.length);
     const list = await alerts.list(alertProject, admin, 'open');
     expect(list.alerts).toHaveLength(r.firing.length);
-    expect(await alerts.openCount(alertProject)).toBe(r.firing.length);
+    expect((await alerts.openCounts(alertProject)).open).toBe(r.firing.length);
   });
 
   it('refreshes rather than duplicates on the next evaluation, and records who acknowledged', async () => {

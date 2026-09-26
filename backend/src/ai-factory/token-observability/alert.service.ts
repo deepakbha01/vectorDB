@@ -172,8 +172,12 @@ export class AlertService {
     };
   }
 
-  async openCount(projectId: string): Promise<number> {
-    return this.alerts.count({ where: { project: { id: projectId }, status: 'open' } });
+  async openCounts(projectId: string): Promise<{ open: number; critical: number }> {
+    const [open, critical] = await Promise.all([
+      this.alerts.count({ where: { project: { id: projectId }, status: 'open' } }),
+      this.alerts.count({ where: { project: { id: projectId }, status: 'open', severity: 'critical' } }),
+    ]);
+    return { open, critical };
   }
 
   async acknowledge(projectId: string, requester: AuthenticatedUser, alertId: string) {

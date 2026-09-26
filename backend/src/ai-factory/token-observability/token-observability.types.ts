@@ -111,6 +111,10 @@ export interface TokenObservabilityState {
   topConsumers: Array<{ dimension: string; key: string; totalTokens: number }>;
   alerts: number;
   telemetryStatus: TelemetryStatus;
+  // Beyond the spec §16 shape, for the readiness gate (Final Recommendation).
+  estimateVersion: number | null;
+  estimatedShareOfBudget: number | null;
+  criticalAlerts: number;
 }
 
 /** config/token-observability.yaml */

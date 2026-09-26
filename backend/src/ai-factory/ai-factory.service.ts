@@ -308,8 +308,8 @@ export class AiFactoryService {
 
   /** The estimate drives status and version; observed usage (last 30 days) is added even before an estimate exists. */
   private async tokenSection(base: StateSection, te: AiTokenEstimate | null, projectId: string): Promise<StateSection> {
-    const [observed, alerts] = await Promise.all([this.usage.observedState(projectId), this.tokenAlerts.openCount(projectId)]);
-    if (!te && !observed.totals && !alerts) return base;
+    const [observed, alerts] = await Promise.all([this.usage.observedState(projectId), this.tokenAlerts.openCounts(projectId)]);
+    if (!te && !observed.totals && !alerts.open) return base;
     return { ...base, summary: { ...tokenState(te, observed, alerts) } };
   }
 
@@ -529,7 +529,7 @@ export function compareStates(from: number, a: AssessmentState, to: number, b: A
 }
 
 /** Spec (Token Observability) §16: expected figures from the latest estimate, observed ones from usage events - never one filled from the other. */
-export function tokenState(te: AiTokenEstimate | null, observed: Awaited<ReturnType<UsageService['observedState']>>, openAlerts = 0): TokenObservabilityState {
+export function tokenState(te: AiTokenEstimate | null, observed: Awaited<ReturnType<UsageService['observedState']>>, alerts: { open: number; critical: number } = { open: 0, critical: 0 }): TokenObservabilityState {
   const r = te?.result;
   const o = observed.totals;
   return {
@@ -545,7 +545,10 @@ export function tokenState(te: AiTokenEstimate | null, observed: Awaited<ReturnT
     estimatedCost: r?.cost.monthlyUsd ?? null,
     actualCost: o ? o.cost : null,
     topConsumers: observed.topConsumers,
-    alerts: openAlerts,
+    alerts: alerts.open,
     telemetryStatus: observed.telemetry.status,
+    estimateVersion: te?.version ?? null,
+    estimatedShareOfBudget: r?.budget.shareOfBudget ?? null,
+    criticalAlerts: alerts.critical,
   };
 }

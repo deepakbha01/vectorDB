@@ -167,3 +167,53 @@ describe('buildFinalRecommendation', () => {
     expect(p.operate).toEqual(['Complete the Operations model.']);
   });
 });
+
+describe('token evidence in the cost stage (Token Observability, phase 8)', () => {
+  const passing = { security: { validation: 'pass' }, cost: { validation: 'pass' }, operations: { verdict: 'pass' } };
+  const tokenPhase = { phase: 'token_observability', label: 'Token observability', route: 'token-observability', status: 'current', latest: { version: 2, createdAt: new Date() }, versions: 2, upstream: [], reasons: [] } as unknown as PhaseLineage;
+  const token = (o: Record<string, unknown> = {}) => ({ expectedTokensPerRequest: 7050, expectedMonthlyTokens: 7_050_000_000, estimatedCost: 12_000, estimateVersion: 2, estimatedShareOfBudget: 0.5, telemetryStatus: 'simulated_only', actualCost: null, alerts: 0, criticalAlerts: 0, ...o });
+  const on = (t: Record<string, unknown> | null, withPhase = true) =>
+    inputs({ tokenObservability: true, lineage: withPhase ? [...lineage(), tokenPhase] : lineage(), state: state({ ...passing, ...(t ? { tokenObservability: t } : {}) }) });
+
+  it('changes nothing while Token Observability is off', () => {
+    const off = inputs({ state: state({ ...passing, tokenObservability: token({ estimatedShareOfBudget: 5 }) }) });
+    expect(stageOf(off, 'cost')).toMatchObject({ status: 'pass', phases: ['finops'], reasons: ['Cost & FinOps: pass.'] });
+    expect(readinessGate(off).status).toBe('production_ready');
+    expect(buildFinalRecommendation(off).adr.find((a) => a.number === 16)!.lines.join(' ')).not.toMatch(/Token consumption/);
+  });
+
+  it('passes on an estimate within budget that was measured in load tests', () => {
+    const c = stageOf(on(token()), 'cost');
+    expect(c).toMatchObject({ status: 'pass', phases: ['finops', 'token_observability'] });
+    expect(c.reasons).toEqual(['Cost & FinOps: pass.', 'Token estimate v2: ~7,050 tokens / request, ~$12,000 / month.']);
+  });
+
+  it('asks for the estimate when it has not been made', () => {
+    const c = stageOf(on(null, false), 'cost');
+    expect(c.status).toBe('further_assessment');
+    expect(c.reasons.join(' ')).toMatch(/Not done yet: token_observability/);
+  });
+
+  it('conditions an estimate that was never measured', () => {
+    const c = stageOf(on(token({ telemetryStatus: 'no_telemetry' })), 'cost');
+    expect(c.status).toBe('pass_with_conditions');
+    expect(c.reasons).toContain('Token usage is estimated only - validate it with a load test (Simulated) or live telemetry before go-live.');
+  });
+
+  it('fails when the token estimate alone exceeds the budget, and conditions it from 80%', () => {
+    expect(stageOf(on(token({ estimatedShareOfBudget: 1.3 })), 'cost').status).toBe('fail');
+    expect(readinessGate(on(token({ estimatedShareOfBudget: 1.3 }))).status).toBe('not_suitable');
+    expect(stageOf(on(token({ estimatedShareOfBudget: 0.85 })), 'cost').reasons.join(' ')).toMatch(/uses 85% of the monthly budget/);
+  });
+
+  it('conditions live cost well above the estimate and open token alerts', () => {
+    const c = stageOf(on(token({ telemetryStatus: 'receiving', actualCost: 24_000, alerts: 3, criticalAlerts: 1 })), 'cost');
+    expect(c.status).toBe('pass_with_conditions');
+    expect(c.reasons).toEqual(expect.arrayContaining([expect.stringMatching(/Live token cost .*2\.0× the estimate/), '3 open token alert(s), 1 critical - see Token Observability.']));
+  });
+
+  it('records token consumption in the ADR cost section', () => {
+    const adr = buildFinalRecommendation(on(token({ telemetryStatus: 'receiving' }))).adr.find((a) => a.number === 16)!;
+    expect(adr.lines).toContain('Token consumption: ~7,050 tokens / request, ~7.1B / month, ~$12,000 / month (estimate v2; live telemetry received)');
+  });
+});

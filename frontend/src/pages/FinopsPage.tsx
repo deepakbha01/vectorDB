@@ -5,6 +5,7 @@ import { useFeatures } from '../api/features';
 import { CostCategory, CostResource, FinopsAssessment, FinopsDefaults, FinopsResult } from '../api/finops';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
+import { TokenCostPanel } from '../components/token/TokenCostPanel';
 
 const CATEGORY: Record<CostCategory, string> = { inference: 'Inference', vector_db: 'Vector database', embedding: 'Embedding', infrastructure: 'Infrastructure', operations: 'Operations' };
 const RESOURCE: Record<CostResource, string> = { gpu: 'GPU', cpu: 'CPU', storage: 'Storage', network: 'Network', api: 'API spend', people: 'People / support', other: 'Other' };
@@ -91,6 +92,7 @@ export function FinopsPage() {
               </div>
             )}
             {latest && <FinopsResultView r={latest.result} version={latest.version} createdAt={latest.createdAt} />}
+            {features.tokenObservability && <TokenCostPanel projectId={project.id} />}
           </>
         )}
       </div>
