@@ -78,6 +78,8 @@ export class AuditLoggingInterceptor implements NestInterceptor {
   }
 
   private resolveProjectId(url: string, method: string, params: Record<string, string>, response: unknown): string | undefined {
+    // A deleted project cannot be linked; its id stays in the path and its name in the response summary.
+    if (method === 'DELETE' && url.match(/^\/api\/projects\/[^/]+$/)) return undefined;
     if (params.projectId) return params.projectId;
     if (params.id && url.match(/^\/api\/projects\/[^/]+$/)) return params.id;
     if (method === 'POST' && url === '/api/projects' && response && typeof response === 'object' && 'id' in response) {

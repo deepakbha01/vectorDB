@@ -10,7 +10,7 @@ import { PlatformConfigService } from '../common/config/platform-config.service'
 
 describe('ProjectsService', () => {
   let service: ProjectsService;
-  let repo: { create: jest.Mock; save: jest.Mock; find: jest.Mock; findOne: jest.Mock };
+  let repo: { create: jest.Mock; save: jest.Mock; find: jest.Mock; findOne: jest.Mock; delete: jest.Mock };
   let platformConfig: { getPatternCatalog: jest.Mock };
 
   const owner = { id: 'owner-1', email: 'owner@example.com', role: UserRole.ARCHITECT };
@@ -22,6 +22,7 @@ describe('ProjectsService', () => {
       save: jest.fn((data) => Promise.resolve({ id: 'project-1', ...data })),
       find: jest.fn(),
       findOne: jest.fn(),
+      delete: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     platformConfig = {
       getPatternCatalog: jest.fn().mockReturnValue([{ id: 'enterprise-document-rag', name: 'Enterprise Document RAG' }]),
@@ -85,5 +86,33 @@ describe('ProjectsService', () => {
   it('denies access to projects the requester does not own and is not an admin', async () => {
     repo.findOne.mockResolvedValue({ id: 'project-1', owner });
     await expect(service.findOne('project-1', stranger)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  describe('remove', () => {
+    const project = { id: 'p1', name: 'RAG Assistant', owner: { id: owner.id } };
+
+    it('lets the owner delete the project and returns what was deleted', async () => {
+      repo.findOne.mockResolvedValue(project);
+      await expect(service.remove('p1', owner)).resolves.toEqual({ id: 'p1', name: 'RAG Assistant', deleted: true });
+      expect(repo.delete).toHaveBeenCalledWith({ id: 'p1' });
+    });
+
+    it('lets an admin delete any project', async () => {
+      repo.findOne.mockResolvedValue(project);
+      await service.remove('p1', { id: 'admin-1', email: 'admin@example.com', role: UserRole.ADMIN });
+      expect(repo.delete).toHaveBeenCalledWith({ id: 'p1' });
+    });
+
+    it("refuses someone else's project and deletes nothing", async () => {
+      repo.findOne.mockResolvedValue(project);
+      await expect(service.remove('p1', { id: 'other-architect', email: 'x@example.com', role: UserRole.ARCHITECT })).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repo.delete).not.toHaveBeenCalled();
+    });
+
+    it('reports a missing project as not found', async () => {
+      repo.findOne.mockResolvedValue(null);
+      await expect(service.remove('nope', owner)).rejects.toThrow(/was not found/);
+      expect(repo.delete).not.toHaveBeenCalled();
+    });
   });
 });

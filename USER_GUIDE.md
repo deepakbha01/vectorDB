@@ -8,6 +8,12 @@ a pipeline, provisioning, ingesting data, and tuning/planning for scale.
 Register at `/register`, then **+ New Project** from the dashboard. A
 project starts with its target platform `undetermined` - Phase 1 decides it.
 
+To delete a project, click **Delete** next to it on the dashboard and type its
+name to confirm (architects for their own projects, admins for any). This
+removes every phase deliverable, AI Factory assessment and token usage of the
+project and cannot be undone; the audit log keeps its entries and your own
+vector databases are not touched.
+
 ## 2. Phase 1 - Discovery
 
 Fill in the assessment: expected scale (document count/growth, vector count,
