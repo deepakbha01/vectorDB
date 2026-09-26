@@ -11,7 +11,8 @@ export type PriceTokenType = 'input' | 'output' | 'cached_input' | 'reasoning' |
  * at ingest, so later price changes never rewrite history.
  *
  * project = null is the catalogue price; a project row is a contracted
- * override for that project only.
+ * override for that project only. region = null applies in every region; a
+ * regional row wins for usage in that region (validation spec §11).
  */
 @Entity({ name: 'ai_model_prices' })
 @Index(['provider', 'model', 'tokenType', 'effectiveFrom'])
@@ -28,6 +29,10 @@ export class AiModelPrice {
 
   @Column()
   model: string;
+
+  /** Cloud / provider region the price applies to; null = every region. */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  region: string | null;
 
   @Column({ type: 'varchar', length: 32 })
   tokenType: PriceTokenType;

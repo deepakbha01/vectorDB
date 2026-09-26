@@ -1,4 +1,4 @@
-import { UsageQueryDto } from './dto/usage-query.dto';
+import { TrendBucket, UsageQueryDto } from './dto/usage-query.dto';
 import { ObservedSource } from './usage-event.entity';
 
 /** Query helpers for observed usage - pure, no I/O. */
@@ -6,6 +6,8 @@ import { ObservedSource } from './usage-event.entity';
 const DAY_MS = 86_400_000;
 export const DEFAULT_RANGE_DAYS = 30;
 export const MAX_RANGE_DAYS = 400;
+/** Hourly points over a longer range would be thousands of bars - pick day, week or month instead. */
+export const MAX_HOURLY_RANGE_DAYS = 31;
 
 /** Filter name → column (same name in ai_usage_events and ai_usage_rollups). */
 export const FILTER_COLUMNS = {
@@ -23,7 +25,7 @@ export interface UsageFilters {
   from: Date;
   to: Date;
   mode: ObservedSource;
-  bucket: 'hour' | 'day';
+  bucket: TrendBucket;
   dims: Partial<Record<FilterName, string>>;
 }
 
@@ -35,7 +37,14 @@ export function resolveFilters(q: UsageQueryDto, now: Date): UsageFilters | { er
   if (from >= to) return { error: '`from` must be before `to`.' };
   if (to.getTime() - from.getTime() > MAX_RANGE_DAYS * DAY_MS) return { error: `The time range may span at most ${MAX_RANGE_DAYS} days.` };
   const dims = Object.fromEntries((Object.keys(FILTER_COLUMNS) as FilterName[]).filter((k) => q[k]).map((k) => [k, q[k]!])) as UsageFilters['dims'];
-  return { from, to, mode: q.mode ?? 'live', bucket: q.bucket ?? (to.getTime() - from.getTime() > 3 * DAY_MS ? 'day' : 'hour'), dims };
+  const span = to.getTime() - from.getTime();
+  if (q.bucket === 'hour' && span > MAX_HOURLY_RANGE_DAYS * DAY_MS) return { error: `Hourly trends cover at most ${MAX_HOURLY_RANGE_DAYS} days; use day, week or month for a longer range.` };
+  return { from, to, mode: q.mode ?? 'live', bucket: q.bucket ?? defaultBucket(span), dims };
+}
+
+/** Up to 3 days hourly, up to 90 days daily, longer ranges weekly. */
+export function defaultBucket(spanMs: number): TrendBucket {
+  return spanMs > 90 * DAY_MS ? 'week' : spanMs > 3 * DAY_MS ? 'day' : 'hour';
 }
 
 /**

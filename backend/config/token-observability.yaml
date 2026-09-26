@@ -56,6 +56,10 @@ observed:
   loopLlmCallsPerTrace: 10
   # Live telemetry older than this counts as stale rather than receiving.
   liveStaleAfterHours: 24
+  # Per-request hotspots (tokens, LLM calls, cost per request) only rank an
+  # application / service with at least this many requests in the range, so a
+  # handful of unusual requests cannot top the list.
+  hotspotMinRequests: 10
 
 # ---------------------------------------------------------------------------
 # Live telemetry (spec §11). OpenTelemetry spans (OTLP/HTTP JSON) are mapped

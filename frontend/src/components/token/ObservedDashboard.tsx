@@ -3,21 +3,24 @@ import { apiClient, extractErrorMessage } from '../../api/client';
 import {
   FILTER_NAMES,
   FilterName,
+  Hotspot,
   RequestRow,
   TelemetryStatus,
   toParams,
+  TrendBucket,
   UsageAgents,
   UsageCost,
   UsageDimensions,
   UsageFilters,
   UsageGroups,
+  UsageHotspots,
   UsageRag,
   UsageRequests,
   UsageSummary,
   UsageTokens,
   UsageTrends,
 } from '../../api/tokenObservability';
-import { ChartCard, compact, DataTable, full, LineTrendChart, linkBtn, RankedBars, TokenTrendChart, usd, VIZ } from './charts';
+import { bucketEnd, ChartCard, compact, DataTable, full, LineTrendChart, linkBtn, RankedBars, TokenTrendChart, usd, VIZ } from './charts';
 import { TraceView } from './TraceView';
 import { download, toCsv } from './csv';
 
@@ -33,7 +36,18 @@ interface Data {
   rag: UsageRag;
   agents: UsageAgents;
   dims: UsageDimensions;
+  hotspots: UsageHotspots;
 }
+
+const BUCKETS: Array<{ key: TrendBucket | 'auto'; label: string }> = [
+  { key: 'auto', label: 'Auto' },
+  { key: 'hour', label: 'Hourly' },
+  { key: 'day', label: 'Daily' },
+  { key: 'week', label: 'Weekly' },
+  { key: 'month', label: 'Monthly' },
+];
+/** Hourly trends are limited server-side to 31 days. */
+const MAX_HOURLY_MS = 31 * 86_400_000;
 
 const TELEMETRY: Record<TelemetryStatus, { icon: string; label: string; color: string }> = {
   receiving: { icon: '●', label: 'Receiving live telemetry', color: 'var(--success)' },
@@ -69,31 +83,35 @@ export function ObservedDashboard({ projectId, filters, rangeKey, view, onChange
   const [agent, setAgent] = useState<string | undefined>();
   const [offset, setOffset] = useState(0);
   const [trace, setTrace] = useState<string | null>(null);
+  const [bucket, setBucket] = useState<TrendBucket | 'auto'>('auto');
   const qs = toParams(filters);
+  const hourlyAllowed = new Date(filters.to).getTime() - new Date(filters.from).getTime() <= MAX_HOURLY_MS;
+  const trendBucket = bucket === 'hour' && !hourlyAllowed ? undefined : bucket === 'auto' ? undefined : bucket;
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
-    const get = <T,>(path: string) => apiClient.get<T>(`/projects/${projectId}/token-observability/${path}?${qs}`).then((r) => r.data);
+    const get = <T,>(path: string, extra = '') => apiClient.get<T>(`/projects/${projectId}/token-observability/${path}?${qs}${extra}`).then((r) => r.data);
     Promise.all([
       get<UsageSummary>('summary'),
       get<UsageTokens>('tokens'),
-      get<UsageTrends>('trends'),
+      get<UsageTrends>('trends', trendBucket ? `&bucket=${trendBucket}` : ''),
       get<UsageGroups>('services'),
       get<UsageGroups>('models'),
       get<UsageCost>('cost'),
       get<UsageRag>('rag'),
       get<UsageAgents>('agents'),
       get<UsageDimensions>('dimensions'),
+      get<UsageHotspots>('hotspots'),
     ])
-      .then(([summary, tokens, trends, services, models, cost, rag, agents, dims]) => active && setData({ summary, tokens, trends, services, models, cost, rag, agents, dims }))
+      .then(([summary, tokens, trends, services, models, cost, rag, agents, dims, hotspots]) => active && setData({ summary, tokens, trends, services, models, cost, rag, agents, dims, hotspots }))
       .catch((e) => active && setError(extractErrorMessage(e, 'Could not load usage.')))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [projectId, qs, refreshKey]);
+  }, [projectId, qs, refreshKey, trendBucket]);
 
   useEffect(() => setOffset(0), [qs, sort, agent]);
   useEffect(() => {
@@ -114,9 +132,13 @@ export function ObservedDashboard({ projectId, filters, rangeKey, view, onChange
     onChange({ ...filters, dims });
   };
   const drillToBucket = (iso: string) => {
-    const start = new Date(iso);
-    const span = data?.trends.bucket === 'hour' ? 3_600_000 : 86_400_000;
-    onChange({ ...filters, from: start.toISOString(), to: new Date(start.getTime() + span).toISOString() }, 'custom');
+    if (!data) return;
+    onChange({ ...filters, from: new Date(iso).toISOString(), to: bucketEnd(data.trends.bucket, iso).toISOString() }, 'custom');
+  };
+  const drillToHotspot = (h: Hotspot) => {
+    if (!h.drill) return;
+    if ('dims' in h.drill) setDim(h.drill.dims);
+    else onChange({ ...filters, from: h.drill.from, to: h.drill.to }, 'custom');
   };
 
   const s = data?.summary;
@@ -136,7 +158,13 @@ export function ObservedDashboard({ projectId, filters, rangeKey, view, onChange
       },
       { title: 'By service', headers: ['Application', 'Service', 'Workflow', 'Total tokens', 'Input', 'Output', 'Embedding', 'Cost', 'Share %'], rows: d.services.rows.map((r) => [r.applicationId, r.serviceId, r.workflowId, r.totalTokens, r.inputTokens, r.outputTokens, r.embeddingTokens, r.cost, r.share]) },
       { title: 'By model', headers: ['Provider', 'Model', 'Total tokens', 'Input', 'Output', 'Embedding', 'Cost', 'Share %'], rows: d.models.rows.map((r) => [r.provider, r.model, r.totalTokens, r.inputTokens, r.outputTokens, r.embeddingTokens, r.cost, r.share]) },
-      { title: 'Trend', headers: ['Bucket', 'Input', 'Output', 'Total', 'Cost'], rows: d.trends.points.map((p) => [p.bucket, p.inputTokens, p.outputTokens, p.totalTokens, p.cost]) },
+      { title: 'Hotspots', headers: ['Hotspot', 'Subject', 'Value', 'Unit', 'Detail'], rows: d.hotspots.hotspots.map((h) => [h.title, h.subject, h.value, h.unit, h.detail]) },
+      {
+        title: 'Task outcomes',
+        headers: ['Requests', 'Successful tasks', 'Success rate %', 'Tokens / successful task', 'Cost / request', 'Cost / successful task'],
+        rows: [[d.tokens.requests, d.tokens.successfulTasks, d.tokens.taskSuccessRatePercent, d.tokens.tokensPerSuccessfulTask, d.cost.costPerRequest, d.cost.costPerSuccessfulTask]],
+      },
+      { title: `Trend (per ${d.trends.bucket})`, headers: ['Bucket', 'Input', 'Output', 'Total', 'Cost'], rows: d.trends.points.map((p) => [p.bucket, p.inputTokens, p.outputTokens, p.totalTokens, p.cost]) },
       {
         title: 'Cost',
         headers: ['Observed cost', 'Monthly run rate', 'Estimate (monthly)', 'Delta vs estimate %', 'Budget (monthly)', 'Budget used %', 'Unpriced events'],
@@ -223,13 +251,25 @@ export function ObservedDashboard({ projectId, filters, rangeKey, view, onChange
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(460px, 1fr))', gap: 16 }}>
             <ChartCard
               title={`Token trend (per ${data.trends.bucket})`}
-              hint="Click a bar to narrow the range to it."
+              hint={data.trends.bucket === 'week' || data.trends.bucket === 'month' ? 'UTC; weeks start on Monday. The first and last bars can be partial. Click a bar to narrow the range to it.' : 'Click a bar to narrow the range to it.'}
+              action={
+                <select value={bucket} onChange={(e) => setBucket(e.target.value as TrendBucket | 'auto')} aria-label="Trend bucket" style={{ fontSize: 12 }}>
+                  {BUCKETS.map((b) => (
+                    <option key={b.key} value={b.key} disabled={b.key === 'hour' && !hourlyAllowed}>
+                      {b.label}
+                      {b.key === 'hour' && !hourlyAllowed ? ' (31 days max)' : ''}
+                    </option>
+                  ))}
+                </select>
+              }
               table={{ headers: ['Bucket', 'Input', 'Output', 'Total'], rows: data.trends.points.map((p) => [new Date(p.bucket).toLocaleString(), full(p.inputTokens), full(p.outputTokens), full(p.totalTokens)]) }}
             >
               <TokenTrendChart points={data.trends.points} bucket={data.trends.bucket} onSelect={drillToBucket} />
             </ChartCard>
             <CostCard cost={data.cost} trends={data.trends} onSelect={drillToBucket} />
           </div>
+
+          <HotspotsCard hotspots={data.hotspots} onSelect={drillToHotspot} />
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(460px, 1fr))', gap: 16 }}>
             <ChartCard
@@ -366,6 +406,15 @@ function CostCard({ cost, trends, onSelect }: { cost: UsageCost; trends: UsageTr
           )}
         </div>
         <div>
+          <div className="metric-label">Cost / request</div>
+          {usd(cost.costPerRequest, 6)}
+        </div>
+        <div>
+          <div className="metric-label">Cost / successful task</div>
+          {usd(cost.costPerSuccessfulTask, 6)}
+          <div style={{ fontSize: 11, color: VIZ.muted }}>failed attempts included</div>
+        </div>
+        <div>
           <div className="metric-label">Budget</div>
           {cost.budget ? `${usd(cost.budget.monthlyUsd, 0)} · ${cost.budget.shareUsed ?? '—'}% at run rate` : 'No budget recorded'}
         </div>
@@ -375,11 +424,40 @@ function CostCard({ cost, trends, onSelect }: { cost: UsageCost; trends: UsageTr
   );
 }
 
+/** Validation spec §7: factual measurements, never rankings of technology. Each row drills into what it names. */
+function HotspotsCard({ hotspots, onSelect }: { hotspots: UsageHotspots; onSelect: (h: Hotspot) => void }) {
+  const value = (h: Hotspot) => {
+    if (h.value === null) return <span style={{ color: VIZ.muted }}>—</span>;
+    if (h.unit === 'per request') return `${usd(h.value, 6)} / request`;
+    if (h.unit.startsWith('%')) return `+${h.value}% vs previous period`;
+    if (h.unit.startsWith('×')) return `${h.value}${h.unit}`;
+    return `${full(h.value)} ${h.unit}`;
+  };
+  const subject = (h: Hotspot) => (h.key === 'tokenSpike' && h.subject ? new Date(h.subject).toLocaleString() : h.subject);
+  return (
+    <div className="card">
+      <div className="metric-label">Token hotspots - measured in this range and filters; click one to drill in</div>
+      <DataTable
+        headers={['Hotspot', 'Where', 'Measured', 'How']}
+        rows={hotspots.hotspots.map((h) => [
+          h.title,
+          h.subject !== null ? <strong key="s">{subject(h)}</strong> : <span key="s" style={{ color: VIZ.muted }}>none</span>,
+          value(h),
+          <span key="d" style={{ fontSize: 12, color: VIZ.muted }}>{h.detail}</span>,
+        ])}
+        onRow={(i) => onSelect(hotspots.hotspots[i])}
+      />
+    </div>
+  );
+}
+
 function Efficiency({ t, rag, cost }: { t: UsageTokens; rag: UsageRag; cost: UsageCost }) {
   const x = t.totals;
   const failedTokens = x.totalTokens - t.successfulRequestTokens;
   const rows: Array<[string, string, string]> = [
     ['Tokens / request', t.tokensPerRequest !== null ? full(Math.round(t.tokensPerRequest)) : '—', 'LLM input + output'],
+    ['Tokens / successful task', t.tokensPerSuccessfulTask !== null ? full(t.tokensPerSuccessfulTask) : '—', 'all tokens, failed attempts included, per task that succeeded'],
+    ['Task success rate', t.taskSuccessRatePercent !== null ? `${t.taskSuccessRatePercent}%` : '—', `${full(t.successfulTasks)} of ${full(t.requests)} tasks had no failed step`],
     ['LLM calls / request', t.llmCallsPerRequest !== null ? String(t.llmCallsPerRequest) : '—', 'more than 1 means chaining or an agent'],
     ['Tool calls / request', t.toolCallsPerRequest !== null ? String(t.toolCallsPerRequest) : '—', ''],
     ['Output : input', x.inputTokens ? `1 : ${(x.inputTokens / Math.max(1, x.outputTokens)).toFixed(1)}` : '—', 'how much prompt each answer token needs'],

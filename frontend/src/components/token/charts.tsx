@@ -1,5 +1,6 @@
 import { ReactNode, useState } from 'react';
 import { Theme, useTheme } from '../../theme';
+import { TrendBucket } from '../../api/tokenObservability';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 /**
@@ -126,13 +127,23 @@ export function Legend({ items }: { items: Array<{ label: string; color: string 
   );
 }
 
-const bucketLabel = (bucket: 'hour' | 'day') => (iso: string) => {
+/** Buckets are UTC (weeks start on Monday); week and month labels are shown in UTC so they name the bucket, not a local shift of it. */
+export const bucketLabel = (bucket: TrendBucket) => (iso: string) => {
   const d = new Date(iso);
+  if (bucket === 'month') return d.toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' });
+  if (bucket === 'week') return `Wk of ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })}`;
   return bucket === 'hour' ? d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
 
+/** The end of the bucket that starts at `iso` - for drilling into it. */
+export function bucketEnd(bucket: TrendBucket, iso: string): Date {
+  const d = new Date(iso);
+  if (bucket === 'month') return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
+  return new Date(d.getTime() + { hour: 3_600_000, day: 86_400_000, week: 7 * 86_400_000 }[bucket]);
+}
+
 /** Input + output tokens per bucket, stacked (2 series, legend). Clicking a bucket narrows the range to it. */
-export function TokenTrendChart({ points, bucket, onSelect }: { points: Array<{ bucket: string; inputTokens: number; outputTokens: number }>; bucket: 'hour' | 'day'; onSelect: (bucketIso: string) => void }) {
+export function TokenTrendChart({ points, bucket, onSelect }: { points: Array<{ bucket: string; inputTokens: number; outputTokens: number }>; bucket: TrendBucket; onSelect: (bucketIso: string) => void }) {
   const fmt = bucketLabel(bucket);
   const c = useChart();
   return (
@@ -153,7 +164,7 @@ export function TokenTrendChart({ points, bucket, onSelect }: { points: Array<{ 
 }
 
 /** One series over time - a 2px line with a crosshair tooltip. */
-export function LineTrendChart({ points, dataKey, name, bucket, format, onSelect }: { points: Array<Record<string, number | string>>; dataKey: string; name: string; bucket: 'hour' | 'day'; format: (n: number) => string; onSelect: (bucketIso: string) => void }) {
+export function LineTrendChart({ points, dataKey, name, bucket, format, onSelect }: { points: Array<Record<string, number | string>>; dataKey: string; name: string; bucket: TrendBucket; format: (n: number) => string; onSelect: (bucketIso: string) => void }) {
   const fmt = bucketLabel(bucket);
   const c = useChart();
   return (

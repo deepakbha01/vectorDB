@@ -93,6 +93,41 @@ describe('resolvePrice', () => {
   });
 });
 
+describe('resolvePrice - regions (validation spec §11)', () => {
+  const at = d('2026-09-20');
+  const anyRegion = row({ pricePer1M: 3 });
+  const euCatalogue = row({ region: 'eu-west-1', pricePer1M: 3.3 });
+  const projAny = row({ projectId: 'proj', pricePer1M: 2 });
+  const projEu = row({ projectId: 'proj', region: 'eu-west-1', pricePer1M: 2.2 });
+  const rows = [anyRegion, euCatalogue, projAny, projEu];
+  const pick = (projectId: string | null, region: string | null, from = rows) => resolvePrice(from, MANAGED_API_TIER, 'mid', 'input', at, projectId, region)?.id;
+
+  it('takes the most specific price: project + region, project, catalogue + region, catalogue', () => {
+    expect(pick('proj', 'eu-west-1')).toBe(projEu.id);
+    expect(pick('proj', 'eu-west-1', [anyRegion, euCatalogue, projAny])).toBe(projAny.id);
+    expect(pick('other', 'eu-west-1')).toBe(euCatalogue.id);
+    expect(pick('other', 'us-east-1')).toBe(anyRegion.id);
+  });
+
+  it('never applies another region, and usage with no region takes region-less prices only', () => {
+    expect(pick(null, 'us-east-1', [euCatalogue])).toBeUndefined();
+    expect(pick('proj', null)).toBe(projAny.id);
+    expect(pick(null, null, [euCatalogue])).toBeUndefined();
+  });
+
+  it('prices a call at its regional rate and records the region used', () => {
+    const c = costOf(rows, MANAGED_API_TIER, 'mid', { input: 1_000_000, output: 0 }, at, 'other', treatment, 'eu-west-1');
+    expect(c.totalCost).toBeCloseTo(3.3);
+    expect(c.refs).toEqual([expect.objectContaining({ id: euCatalogue.id, region: 'eu-west-1' })]);
+  });
+
+  it('keeps a regional catalogue row apart from the region-less one when syncing', () => {
+    const plan = planPriceSync([anyRegion], [{ provider: MANAGED_API_TIER, model: 'mid', tokenType: 'input', region: 'eu-west-1', pricePer1M: 3.3, source: 'eu list' }], d('2026-09-25'), d('2026-06-01'));
+    expect(plan.close).toEqual([]);
+    expect(plan.insert).toEqual([expect.objectContaining({ region: 'eu-west-1', pricePer1M: 3.3 })]);
+  });
+});
+
 describe('costOf', () => {
   const at = d('2026-09-20');
   const rows = [row({ tokenType: 'input', pricePer1M: 3 }), row({ tokenType: 'output', pricePer1M: 15 })];

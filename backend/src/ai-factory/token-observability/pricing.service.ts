@@ -48,7 +48,7 @@ export class PricingService implements OnApplicationBootstrap {
       if (plan.insert.length) {
         await m.insert(
           AiModelPrice,
-          plan.insert.map((p) => ({ project: null, provider: p.provider, model: p.model, tokenType: p.tokenType, pricePer1M: p.pricePer1M, currency: p.currency, effectiveFrom: new Date(p.effectiveFrom), effectiveTo: null, source: p.source })),
+          plan.insert.map((p) => ({ project: null, provider: p.provider, model: p.model, region: p.region ?? null, tokenType: p.tokenType, pricePer1M: p.pricePer1M, currency: p.currency, effectiveFrom: new Date(p.effectiveFrom), effectiveTo: null, source: p.source })),
         );
       }
     });
@@ -66,31 +66,32 @@ export class PricingService implements OnApplicationBootstrap {
     return (await this.rowsFor(projectId)).sort((a, b) => a.provider.localeCompare(b.provider) || a.model.localeCompare(b.model) || a.tokenType.localeCompare(b.tokenType) || a.effectiveFrom.getTime() - b.effectiveFrom.getTime());
   }
 
-  /** A contracted price for this project. Closes the project's open row for the same key; the catalogue is untouched. */
+  /** A contracted price for this project (optionally for one region). Closes the project's open row for the same key and region; the catalogue is untouched. */
   async addProjectPrice(projectId: string, requester: AuthenticatedUser, dto: CreateModelPriceDto): Promise<PriceRow> {
     await this.projectsService.findOne(projectId, requester);
     const effectiveFrom = dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date();
+    const region = dto.region?.trim() || null;
     const key = { provider: dto.provider, model: dto.model, tokenType: dto.tokenType };
     const saved = await this.prices.manager.transaction(async (m) => {
-      const open = await m.findOne(AiModelPrice, { where: { ...key, project: { id: projectId }, effectiveTo: IsNull() } });
+      const open = await m.findOne(AiModelPrice, { where: { ...key, region: region ?? IsNull(), project: { id: projectId }, effectiveTo: IsNull() } });
       if (open) {
-        if (effectiveFrom <= open.effectiveFrom) throw new BadRequestException(`A price for this model starting ${open.effectiveFrom.toISOString()} already exists; a new price must start after it.`);
+        if (effectiveFrom <= open.effectiveFrom) throw new BadRequestException(`A price for this model${region ? ` in ${region}` : ''} starting ${open.effectiveFrom.toISOString()} already exists; a new price must start after it.`);
         await m.update(AiModelPrice, { id: open.id }, { effectiveTo: effectiveFrom });
       }
       return m.save(
-        m.create(AiModelPrice, { ...key, project: { id: projectId } as Project, pricePer1M: dto.pricePer1M, currency: dto.currency ?? this.cfg.getTokenObservabilityCatalogue().pricing.currency, effectiveFrom, effectiveTo: null, source: dto.source }),
+        m.create(AiModelPrice, { ...key, region, project: { id: projectId } as Project, pricePer1M: dto.pricePer1M, currency: dto.currency ?? this.cfg.getTokenObservabilityCatalogue().pricing.currency, effectiveFrom, effectiveTo: null, source: dto.source }),
       );
     });
-    this.logger.log(`user=${requester.email} action=add_token_price projectId=${projectId} provider=${dto.provider} model=${dto.model} tokenType=${dto.tokenType}`);
+    this.logger.log(`user=${requester.email} action=add_token_price projectId=${projectId} provider=${dto.provider} model=${dto.model} tokenType=${dto.tokenType} region=${region ?? 'any'}`);
     return toRow(saved, projectId);
   }
 
   /** Cost at the prices in force at `at` (project override first). */
-  cost(rows: PriceRow[], provider: string, model: string, tokens: TokenCounts, at: Date, projectId: string): CostBreakdown {
-    return costOf(rows, provider, model, tokens, at, projectId, this.cfg.getTokenObservabilityCatalogue().pricing);
+  cost(rows: PriceRow[], provider: string, model: string, tokens: TokenCounts, at: Date, projectId: string, region: string | null = null): CostBreakdown {
+    return costOf(rows, provider, model, tokens, at, projectId, this.cfg.getTokenObservabilityCatalogue().pricing, region);
   }
 }
 
 function toRow(r: AiModelPrice, projectId: string | null): PriceRow {
-  return { id: r.id, projectId, provider: r.provider, model: r.model, tokenType: r.tokenType, pricePer1M: r.pricePer1M, currency: r.currency, effectiveFrom: r.effectiveFrom, effectiveTo: r.effectiveTo, source: r.source };
+  return { id: r.id, projectId, provider: r.provider, model: r.model, region: r.region ?? null, tokenType: r.tokenType, pricePer1M: r.pricePer1M, currency: r.currency, effectiveFrom: r.effectiveFrom, effectiveTo: r.effectiveTo, source: r.source };
 }

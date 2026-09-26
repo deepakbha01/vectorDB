@@ -86,9 +86,10 @@ need a project ingest key instead.
 | `POST estimate/preview` | any member | What-if: body `{ overrides }`; saves nothing |
 | `POST estimate` | admin, architect | Save a new estimate version. Optional body `{ overrides }`; omitted = reuse the overrides saved with the latest estimate, `{}` = clear them |
 | `GET estimate/latest` | any member | Latest saved estimate |
-| `GET prices` / `POST prices` | member / admin, architect | Price table; add a contracted price for this project |
+| `GET prices` / `POST prices` | member / admin, architect | Price table; add a contracted price for this project, optionally for one `region` |
 | `POST usage-events` | admin, architect | A batch (≤ 1000) of normalized usage events |
 | `GET summary`, `tokens`, `trends`, `services`, `models`, `agents`, `rag`, `cost` | any member | Observed usage, with the shared filters below |
+| `GET hotspots` | any member | The nine factual token hotspots for the range and filters (see *Hotspots*) |
 | `GET requests` | any member | Drill-down: requests behind any aggregate (`sort=recent|tokens|cost`, paged) - audited |
 | `GET traces/:traceId` | any member | One request as an agent → LLM → tool tree, with the loop indicator - audited |
 | `GET dimensions` | any member | Values each filter can take |
@@ -99,7 +100,10 @@ need a project ingest key instead.
 
 Shared filters (query string): `from`, `to` (ISO 8601, default the last 30
 days), `mode` (`live` default, or `simulated`), `environment`, `application`,
-`service`, `workflow`, `provider`, `model`, `tenant`, `bucket` (`hour|day`).
+`service`, `workflow`, `provider`, `model`, `tenant`, `bucket` (`hour|day|week|month`;
+default hourly up to 3 days, daily up to 90, weekly beyond; hourly is limited
+to 31 days). Buckets are UTC and weeks start on Monday; the first and last
+bucket of a range can be partial.
 
 The spec lists these routes under `/api/observability/*`. Reads here are
 scoped to a project like every other AI Factory endpoint; only machine
@@ -142,6 +146,39 @@ figure closes the old row and opens a new one; usage already recorded keeps
 the cost it was given. Projects can add contracted prices (`POST prices`).
 A usage event with no price in force is stored with an empty cost and
 flagged "unpriced" - it is never guessed.
+
+**Regions.** A price row can name a `region` (null = every region). Usage is
+priced with the most specific row in force: this project in the event's
+region, this project in any region, the catalogue in the region, the
+catalogue in any region. A price for another region never applies, and an
+event with no region only takes region-less prices.
+
+## Successful tasks
+
+A task is a request - the events sharing a `requestId` (else a `traceId`).
+It succeeded when none of its events has `requestStatus = error`.
+*Tokens / successful task* and *Cost / successful task* divide **all** usage,
+failed attempts included, by the successful tasks, so retries and failures
+show up as a higher cost per useful result. The task success rate is shown
+next to them.
+
+## Hotspots
+
+`GET hotspots` (and the Hotspots panel) returns the validation spec's nine
+hotspots as measurements over the selected range and filters, never as
+technology rankings. Each has what it names, the figure, how it was measured
+and a drill-down (a filter or a time window):
+
+| Hotspot | Measured as |
+|---|---|
+| Highest token-consuming application / service / model | LLM input + output tokens |
+| Highest tokens / request, LLM calls / request | per application / service with at least `observed.hotspotMinRequests` (10) requests |
+| Highest cost / request | the same, and only where every event was priced |
+| Fastest token growth | tokens vs the equal period before, only where that period had comparable usage (≥ 10% of now) |
+| Largest RAG context expansion | generation-stage context tokens / query-embedding tokens |
+| Abnormal token spike | the spike alert's rule: an hour ≥ `factor` × the average hour of the previous `baselineDays` and ≥ `minTokens`, with a day of history |
+
+A hotspot nothing qualifies for says why instead of showing a number.
 
 ## Live telemetry with OpenTelemetry
 

@@ -10,6 +10,8 @@ export interface PriceRef {
   tokenType: string;
   pricePer1M: number;
   effectiveFrom: string;
+  /** Set when a regional price was used. */
+  region?: string;
 }
 
 /**

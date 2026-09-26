@@ -3,6 +3,8 @@ import { IsIn, IsInt, IsISO8601, IsOptional, IsString, Length, Matches, Max, Min
 
 const ID = /^[A-Za-z0-9_.:@/+=#-]+$/;
 
+export type TrendBucket = 'hour' | 'day' | 'week' | 'month';
+
 /** The global filters every Token Observability view shares (spec §4, §19). */
 export class UsageQueryDto {
   /** Defaults to 30 days before `to`. */
@@ -28,10 +30,10 @@ export class UsageQueryDto {
   @IsOptional() @IsString() @Length(1, 200) @Matches(ID) tenant?: string;
   @IsOptional() @IsString() @Length(1, 200) @Matches(ID) workflow?: string;
 
-  /** Trend bucket. */
+  /** Trend bucket (validation spec §6: hourly, daily, weekly, monthly). Defaults by range length. */
   @IsOptional()
-  @IsIn(['hour', 'day'])
-  bucket?: 'hour' | 'day';
+  @IsIn(['hour', 'day', 'week', 'month'])
+  bucket?: TrendBucket;
 }
 
 /** Drill-down to individual requests: newest first, or the heaviest (hotspots). */

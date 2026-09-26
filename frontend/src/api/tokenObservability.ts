@@ -153,6 +153,11 @@ export interface UsageTokens extends Range {
   successfulRequestTokens: number;
   errors: number;
   tokensPerRequest: number | null;
+  /** Tasks (requests) none of whose events failed. */
+  successfulTasks: number;
+  taskSuccessRatePercent: number | null;
+  /** All tokens, failed attempts included, per successful task. */
+  tokensPerSuccessfulTask: number | null;
   llmCallsPerRequest: number | null;
   toolCallsPerRequest: number | null;
   latencyMs: { avg: number | null; p95: number | null };
@@ -163,8 +168,10 @@ export interface TrendPoint extends TokenTotals {
   bucket: string;
 }
 
+export type TrendBucket = 'hour' | 'day' | 'week' | 'month';
+
 export interface UsageTrends extends Range {
-  bucket: 'hour' | 'day';
+  bucket: TrendBucket;
   points: TrendPoint[];
 }
 
@@ -212,12 +219,32 @@ export interface UsageRag extends Range {
 export interface UsageCost extends Range {
   currency: string;
   observedCost: number | null;
+  costPerRequest: number | null;
+  /** All cost, failed attempts included, per successful task. */
+  costPerSuccessfulTask: number | null;
+  successfulTasks: number;
   costIncomplete: boolean;
   unpricedEvents: number;
   byModel: Array<{ provider: string | null; model: string | null; cost: number; totalTokens: number; embeddingTokens: number }>;
   forecast: { monthlyRunRate: number | null; basis: string };
   estimate: { version: number; monthlyUsd: number | null; deltaPercent: number | null } | null;
   budget: { monthlyUsd: number; shareUsed: number | null; source: string | null } | null;
+}
+
+/** Validation spec §7 - factual hotspots; subject / value are null when nothing qualifies (detail says why). */
+export type HotspotDrill = { dims: Partial<Record<'application' | 'service' | 'provider' | 'model', string>> } | { from: string; to: string };
+export interface Hotspot {
+  key: string;
+  title: string;
+  subject: string | null;
+  value: number | null;
+  unit: string;
+  detail: string;
+  drill: HotspotDrill | null;
+}
+export interface UsageHotspots extends Range {
+  currency: string;
+  hotspots: Hotspot[];
 }
 
 export interface RequestRow {

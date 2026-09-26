@@ -14,6 +14,7 @@ import { isRejection, normalizeEvent, NormalizedEvent, Rejection, ROLLUP_DIMENSI
 import { buildTrace, growth, growthVsBaseline, previousWindow, resolveFilters, SpanRow, UsageFilters, whereClause, withShare } from './usage-query';
 import { TelemetryStatus } from './token-observability.types';
 import { canSeeTenants } from './privacy';
+import { buildHotspots, ServiceUsage } from './hotspots';
 
 const num = (v: unknown) => (v === null || v === undefined ? 0 : Number(v));
 const numOrNull = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -130,21 +131,34 @@ export class UsageService {
     return { mode: f.mode, from: f.from.toISOString(), to: f.to.toISOString(), filters: f.dims };
   }
 
+  /**
+   * Request-level figures. A task is a request (events sharing a request id,
+   * else a trace id); it succeeded when none of its events reported an error.
+   */
   private async requests(projectId: string, f: UsageFilters) {
     const w = whereClause(projectId, f, 'events', 'e');
-    const [r] = await this.sql(
-      `SELECT COUNT(DISTINCT COALESCE(e."requestId", e."traceId", e."eventId")) AS requests,
-              COALESCE(SUM(e."totalTokens") FILTER (WHERE e."requestStatus" = 'success'), 0) AS "successfulRequestTokens",
-              COUNT(*) FILTER (WHERE e."requestStatus" = 'error') AS errors,
-              AVG(e."latencyMs") FILTER (WHERE e."llmCallCount" > 0) AS "avgLatencyMs",
-              PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY e."latencyMs") FILTER (WHERE e."llmCallCount" > 0) AS "p95LatencyMs",
-              AVG(e."ttftMs") AS "avgTtftMs",
-              COUNT(*) FILTER (WHERE e."estimatedTotalCost" IS NULL AND (e."totalTokens" + e."embeddingTokens" + e."rerankingTokens") > 0) AS "unpricedEvents"
-         FROM "ai_usage_events" e WHERE ${w.sql}`,
-      w.params,
-    );
+    const [[tasks], [r]] = await Promise.all([
+      this.sql(
+        `SELECT COUNT(*) FILTER (WHERE NOT failed) AS successful
+           FROM (SELECT COALESCE(e."requestId", e."traceId", e."eventId") AS task, BOOL_OR(e."requestStatus" = 'error') AS failed
+                   FROM "ai_usage_events" e WHERE ${w.sql} GROUP BY 1) t`,
+        w.params,
+      ),
+      this.sql(
+        `SELECT COUNT(DISTINCT COALESCE(e."requestId", e."traceId", e."eventId")) AS requests,
+                COALESCE(SUM(e."totalTokens") FILTER (WHERE e."requestStatus" = 'success'), 0) AS "successfulRequestTokens",
+                COUNT(*) FILTER (WHERE e."requestStatus" = 'error') AS errors,
+                AVG(e."latencyMs") FILTER (WHERE e."llmCallCount" > 0) AS "avgLatencyMs",
+                PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY e."latencyMs") FILTER (WHERE e."llmCallCount" > 0) AS "p95LatencyMs",
+                AVG(e."ttftMs") AS "avgTtftMs",
+                COUNT(*) FILTER (WHERE e."estimatedTotalCost" IS NULL AND (e."totalTokens" + e."embeddingTokens" + e."rerankingTokens") > 0) AS "unpricedEvents"
+           FROM "ai_usage_events" e WHERE ${w.sql}`,
+        w.params,
+      ),
+    ]);
     return {
       requests: num(r.requests),
+      successfulTasks: num(tasks.successful),
       successfulRequestTokens: num(r.successfulRequestTokens),
       errors: num(r.errors),
       avgLatencyMs: numOrNull(r.avgLatencyMs),
@@ -221,6 +235,10 @@ export class UsageService {
       successfulRequestTokens: req.successfulRequestTokens,
       errors: req.errors,
       tokensPerRequest: per(t.totalTokens),
+      successfulTasks: req.successfulTasks,
+      taskSuccessRatePercent: req.requests ? Math.round((req.successfulTasks / req.requests) * 1000) / 10 : null,
+      // All tokens, failed attempts included, per task that succeeded - what one useful result costs in tokens.
+      tokensPerSuccessfulTask: req.successfulTasks ? Math.round(t.totalTokens / req.successfulTasks) : null,
       llmCallsPerRequest: per(t.llmCalls),
       toolCallsPerRequest: per(t.toolCalls),
       latencyMs: { avg: req.avgLatencyMs, p95: req.p95LatencyMs },
@@ -228,7 +246,11 @@ export class UsageService {
     };
   }
 
-  /** GET trends - tokens and cost per hour or day. */
+  /**
+   * GET trends - tokens and cost per hour, day, week (ISO, from Monday) or
+   * calendar month, in UTC. The first and last buckets can be partial when the
+   * range starts or ends inside them.
+   */
   async trends(projectId: string, requester: AuthenticatedUser, q: UsageQueryDto) {
     const f = await this.scope(projectId, requester, q);
     const w = whereClause(projectId, f, 'rollups', 'r');
@@ -357,6 +379,10 @@ export class UsageService {
       ...this.range(f),
       currency: this.cfg.getTokenObservabilityCatalogue().pricing.currency,
       observedCost: hasUsage ? Math.round(observed * 100) / 100 : null,
+      costPerRequest: hasUsage && req.requests ? observed / req.requests : null,
+      // All cost, failed attempts included, per task that succeeded.
+      costPerSuccessfulTask: hasUsage && req.successfulTasks ? observed / req.successfulTasks : null,
+      successfulTasks: req.successfulTasks,
       costIncomplete: req.unpricedEvents > 0,
       unpricedEvents: req.unpricedEvents,
       // The top models by tokens; their costs need not add up to observedCost.
@@ -365,6 +391,59 @@ export class UsageService {
       estimate: estimate ? { version: estimate.version, monthlyUsd: estimated, deltaPercent: estimated && monthlyRunRate !== null ? growth(monthlyRunRate, estimated) : null } : null,
       budget: estimate?.result.budget.monthlyBudgetUsd ? { monthlyUsd: estimate.result.budget.monthlyBudgetUsd, shareUsed: monthlyRunRate !== null ? Math.round((monthlyRunRate / estimate.result.budget.monthlyBudgetUsd) * 1000) / 10 : null, source: estimate.result.budget.source } : null,
     };
+  }
+
+  /** GET hotspots - validation spec §7: the nine factual hotspots for the range and filters. */
+  async hotspots(projectId: string, requester: AuthenticatedUser, q: UsageQueryDto) {
+    const f = await this.scope(projectId, requester, q);
+    const cat = this.cfg.getTokenObservabilityCatalogue();
+    const spikeRule = cat.alerts.rules.spike;
+    const w = whereClause(projectId, f, 'events', 'e');
+    // Hourly totals reach back one spike baseline before the range, so its first hours have history too.
+    const hourlyWindow = whereClause(projectId, { ...f, from: new Date(f.from.getTime() - spikeRule.baselineDays * 86_400_000) }, 'rollups', 'r');
+    const [applications, services, models, perService, current, previous, hourly] = await Promise.all([
+      this.grouped(projectId, f, ['applicationId']),
+      this.grouped(projectId, f, ['applicationId', 'serviceId']),
+      this.grouped(projectId, f, ['provider', 'model']),
+      this.sql(
+        `SELECT e."applicationId", e."serviceId", COUNT(DISTINCT COALESCE(e."requestId", e."traceId", e."eventId")) AS requests,
+                SUM(e."totalTokens") AS "totalTokens", SUM(e."llmCallCount") AS "llmCalls", SUM(e."estimatedTotalCost") AS cost,
+                COUNT(*) FILTER (WHERE e."estimatedTotalCost" IS NULL AND (e."totalTokens" + e."embeddingTokens" + e."rerankingTokens") > 0) AS "unpricedEvents",
+                COALESCE(SUM(e."contextTokens") FILTER (WHERE e."ragStage" = 'generation'), 0) AS "contextTokens",
+                COALESCE(SUM(e."embeddingTokens") FILTER (WHERE e."ragStage" = 'query_embedding'), 0) AS "queryTokens"
+           FROM "ai_usage_events" e WHERE ${w.sql} GROUP BY 1, 2`,
+        w.params,
+      ),
+      this.grouped(projectId, f, ['applicationId', 'serviceId'], 500),
+      this.grouped(projectId, previousWindow(f), ['applicationId', 'serviceId'], 500),
+      this.sql(`SELECT r."bucketStart" AS bucket, SUM(r."totalTokens") AS tokens FROM "ai_usage_rollups" r WHERE ${hourlyWindow.sql} GROUP BY 1 ORDER BY 1`, hourlyWindow.params),
+    ]);
+    const key = (r: Record<string, unknown>) => `${r.applicationId ?? ''}\u0000${r.serviceId ?? ''}`;
+    const before = new Map(previous.map((p) => [key(p), p.totalTokens]));
+    const hotspots = buildHotspots({
+      applications: applications.map((r) => ({ applicationId: r.applicationId ?? null, totalTokens: r.totalTokens })),
+      services: services.map((r) => ({ applicationId: r.applicationId ?? null, serviceId: r.serviceId ?? null, totalTokens: r.totalTokens })),
+      models: models.map((r) => ({ provider: r.provider ?? null, model: r.model ?? null, totalTokens: r.totalTokens })),
+      perService: perService.map(
+        (r): ServiceUsage => ({
+          applicationId: (r.applicationId as string) ?? null,
+          serviceId: (r.serviceId as string) ?? null,
+          requests: num(r.requests),
+          totalTokens: num(r.totalTokens),
+          llmCalls: num(r.llmCalls),
+          cost: numOrNull(r.cost),
+          unpricedEvents: num(r.unpricedEvents),
+          contextTokens: num(r.contextTokens),
+          queryTokens: num(r.queryTokens),
+        }),
+      ),
+      growth: current.map((c) => ({ applicationId: c.applicationId ?? null, serviceId: c.serviceId ?? null, current: c.totalTokens, baseline: before.get(key(c)) ?? 0 })),
+      hourly: hourly.map((h) => ({ bucket: new Date(h.bucket as string), tokens: num(h.tokens) })),
+      range: { from: f.from, to: f.to },
+      minRequests: cat.observed.hotspotMinRequests ?? 10,
+      spikeRule,
+    });
+    return { ...this.range(f), currency: cat.pricing.currency, hotspots };
   }
 
   /** GET traces/:traceId - the request → agent → LLM → tool tree. */
