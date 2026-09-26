@@ -27,7 +27,7 @@ An empty mode says so; it never shows estimated figures as observed ones.
 
 ## Using it
 
-See `USER_GUIDE.md` §10. In short:
+See `USER_GUIDE.md` §11 (and [AI_FACTORY.md](AI_FACTORY.md) for the rest of the AI Factory). In short:
 
 1. **Estimated** tab - review the projection, *Save estimate* (creates a
    version; later upstream changes mark it out of date).

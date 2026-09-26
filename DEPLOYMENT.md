@@ -106,7 +106,19 @@ at each layer.
 every push/PR. `npm audit` runs informationally (does not fail the build) -
 see `SECURITY.md` for the known, tracked findings it will report.
 
-## 9. Token Observability (optional)
+## 9. AI Factory (optional)
+
+Enable with `AI_FACTORY_ENABLED=true`. Full reference: [AI_FACTORY.md](AI_FACTORY.md).
+
+- **Configuration**: the `AI_FACTORY_*_CONFIG_PATH` variables in
+  `backend/.env.example` point at `backend/config/*.yaml` (catalogues, rules,
+  rate card). Their figures are directional - review them for your
+  environment before relying on them.
+- **Migrations**: eleven additive migrations (`*-AiFactorySnapshots` to
+  `*-AiFinalRecommendations`), applied by `npm run migration:run` with the rest.
+- **No new services**: everything runs in the existing API and database.
+
+## 10. Token Observability (optional)
 
 Enable with `AI_FACTORY_ENABLED=true` and `TOKEN_OBSERVABILITY_ENABLED=true`.
 Full reference: [TOKEN_OBSERVABILITY.md](TOKEN_OBSERVABILITY.md).

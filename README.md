@@ -374,15 +374,20 @@ See [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) for what "complete"
 does and doesn't mean - it documents real, specific gaps rather than
 claiming a demonstration project is production-ready without qualification.
 
-## AI Factory: Token Observability
+## AI Factory
 
-Behind `AI_FACTORY_ENABLED` and `TOKEN_OBSERVABILITY_ENABLED`, a Token
-Observability phase (guided step 7, after Inference) estimates, measures and
-alerts on token consumption across GenAI, RAG and agent workloads -
-Estimated from the design, Simulated from load tests, Live from usage events
-or OpenTelemetry - and feeds Cost & FinOps and the final readiness gate. See
-[TOKEN_OBSERVABILITY.md](TOKEN_OBSERVABILITY.md) for the API, configuration,
-security and retention.
+Behind `AI_FACTORY_ENABLED`, a guided end-to-end AI architecture assessment
+built on top of the VectorDB workflow without changing it: AI Workload
+Profile, Model Selection, Inference Architecture, Infrastructure Design, RAG /
+Agent Architecture, Security & Governance, Performance & Benchmark, Cost &
+FinOps, Operations Model and a Final Recommendation with a production-readiness
+gate and ADR - every choice eligibility-first, every figure labelled. See
+[AI_FACTORY.md](AI_FACTORY.md).
+
+Token Observability (also behind `TOKEN_OBSERVABILITY_ENABLED`) estimates,
+measures and alerts on token consumption - Estimated from the design,
+Simulated from load tests, Live from usage events or OpenTelemetry. See
+[TOKEN_OBSERVABILITY.md](TOKEN_OBSERVABILITY.md).
 
 ## Architecture
 
