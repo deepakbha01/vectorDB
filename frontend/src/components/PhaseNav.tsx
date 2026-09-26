@@ -77,7 +77,7 @@ export function PhaseNav({ project }: { project: Project }) {
           )}
           <li>
             <NavLink to={`/projects/${project.id}/inference`} className={({ isActive }) => (isActive ? 'active' : '')}>
-              Inference-as-a-Service
+              Inference Assessment
             </NavLink>
           </li>
           {features.aiFactory && (

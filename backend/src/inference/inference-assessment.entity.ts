@@ -5,7 +5,7 @@ import { InferenceAssessmentResult, InferenceDecision, InferenceEngineInput } fr
 import { CreateInferenceAssessmentDto } from './dto/create-inference-assessment.dto';
 
 /**
- * Inference-as-a-Service assessment. Versioned per project like the vector
+ * Inference Assessment. Versioned per project like the vector
  * track's deliverables (a changed input produces a new row, never an edit),
  * but stored in its own table and never touches the vector phase statuses.
  */

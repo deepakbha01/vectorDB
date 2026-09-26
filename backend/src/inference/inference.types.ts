@@ -1,5 +1,5 @@
 /**
- * Inference-as-a-Service assessment - shared types. Deliberately independent
+ * Inference Assessment - shared types. Deliberately independent
  * of the vector-database phase types: this track sizes model serving, not
  * retrieval, and only reads (never writes) vector-track data for defaults.
  */

@@ -130,7 +130,7 @@ describe('alternatives (spec §17)', () => {
 describe('buildFinalRecommendation', () => {
   it('produces the spec §15 architecture chain and the 22-section ADR', () => {
     const r = buildFinalRecommendation(inputs());
-    expect(r.architecture.map((c) => c.step)).toEqual(['Use case', 'Data sources', 'Ingestion', 'Chunking', 'Embedding', 'VectorDB', 'Index', 'Reranker', 'LLM / SLM', 'Inference as a Service', 'AI application', 'Security', 'Monitoring', 'FinOps']);
+    expect(r.architecture.map((c) => c.step)).toEqual(['Use case', 'Data sources', 'Ingestion', 'Chunking', 'Embedding', 'VectorDB', 'Index', 'Reranker', 'LLM / SLM', 'Inference serving', 'AI application', 'Security', 'Monitoring', 'FinOps']);
     expect(r.architecture.find((c) => c.step === 'VectorDB')!.component).toBe('postgres_pgvector');
     expect(r.architecture.find((c) => c.step === 'FinOps')!.component).toBe('~$21,885 / month (estimate)');
     expect(r.adr.map((s) => s.number)).toEqual(Array.from({ length: 22 }, (_, i) => i + 1));

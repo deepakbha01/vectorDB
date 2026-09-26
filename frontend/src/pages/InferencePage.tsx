@@ -130,7 +130,7 @@ export function InferencePage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="Inference-as-a-Service Assessment" />
+        <TopBar title="Inference Assessment" />
         <p style={{ fontSize: 13, color: 'var(--muted)', maxWidth: 900, marginTop: -8 }}>
           Sizes model serving for this workload: GPU memory and throughput, latency against your targets, cost per token, and
           when self-hosting an open-weight model beats a managed API. Separate from the vector-database phases - it only reads

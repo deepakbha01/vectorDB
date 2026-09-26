@@ -5,7 +5,7 @@ import * as yaml from 'js-yaml';
 import { GpuSpec, ManagedApiTier, ModelSpec, PrecisionSpec } from './inference.types';
 
 /**
- * Loads the Inference-as-a-Service catalogue (config/inference.yaml).
+ * Loads the Inference Assessment catalogue (config/inference.yaml).
  *
  * Kept separate from PlatformConfigService on purpose so the inference track
  * cannot change what the vector-database engines load or score - the same

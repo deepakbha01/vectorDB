@@ -1,6 +1,6 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`Golden master - existing VectorDB workflow (must not change unintentionally) Inference-as-a-Service track 8B chat, API not allowed, reserved GPUs 1`] = `
+exports[`Golden master - existing VectorDB workflow (must not change unintentionally) Inference Assessment track 8B chat, API not allowed, reserved GPUs 1`] = `
 {
   "assumptions": [
     "Directional planning estimates (rules inference-2026.09-1): GPU list prices, API tier prices and model architectures come from config/inference.yaml - validate against contracts and model cards before quoting.",
@@ -865,7 +865,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
 }
 `;
 
-exports[`Golden master - existing VectorDB workflow (must not change unintentionally) Inference-as-a-Service track 70B RAG, compare self-hosted and API 1`] = `
+exports[`Golden master - existing VectorDB workflow (must not change unintentionally) Inference Assessment track 70B RAG, compare self-hosted and API 1`] = `
 {
   "assumptions": [
     "Directional planning estimates (rules inference-2026.09-1): GPU list prices, API tier prices and model architectures come from config/inference.yaml - validate against contracts and model cards before quoting.",

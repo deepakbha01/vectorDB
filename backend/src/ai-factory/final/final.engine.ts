@@ -188,7 +188,7 @@ export function buildFinalRecommendation(x: FinalInputs): FinalResult {
     { step: 'Index', component: str(S('index').index), source: 'index_design', status: status('index_design') },
     { step: 'Reranker', component: rag?.Reranking ?? 'not designed', source: 'rag_agent_architecture', status: status('rag_agent_architecture') },
     { step: 'LLM / SLM', component: S('model').primary ? `${S('model').primary}${S('model').fallback ? ` (fallback ${S('model').fallback})` : ''}` : 'not selected', source: 'model_selection', status: status('model_selection') },
-    { step: 'Inference as a Service', component: str(S('inference').servingRuntime ?? S('inference').recommended), source: 'inference_architecture', status: status('inference_architecture') },
+    { step: 'Inference serving', component: str(S('inference').servingRuntime ?? S('inference').recommended), source: 'inference_architecture', status: status('inference_architecture') },
     { step: 'AI application', component: str(S('rag').scope, 'not designed'), source: 'rag_agent_architecture', status: status('rag_agent_architecture') },
     { step: 'Security', component: S('security').overall ? `${S('security').overall} (${S('security').validation})` : 'not assessed', source: 'security_governance', status: status('security_governance') },
     { step: 'Monitoring', component: S('operations').verdict ? `Operations model: ${S('operations').verdict}` : 'not modelled', source: 'operations_model', status: status('operations_model') },
