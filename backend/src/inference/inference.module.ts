@@ -14,7 +14,7 @@ import { AiWorkloadProfile } from '../ai-factory/workload-profile/workload-profi
 import { AiModelSelection } from '../ai-factory/model-selection/model-selection.entity';
 
 /**
- * Inference-as-a-Service assessment track. Self-contained: own config file,
+ * Inference Assessment track. Self-contained: own config file,
  * own table, own routes. Reads the vector track (Discovery, Data Pipeline)
  * and the AI Workload Profile only to suggest defaults, and reuses the
  * stateless report renderers.

@@ -1,4 +1,4 @@
-# Inference-as-a-Service assessment catalogue.
+# Inference Assessment catalogue.
 #
 # Loaded only by the inference module (InferenceConfigService) - the vector
 # database engines never read this file. Every figure below is a DIRECTIONAL

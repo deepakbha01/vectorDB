@@ -26,7 +26,7 @@ const usd2 = (n: number) => '$' + n.toFixed(n < 1 ? 4 : 2);
 const fx = (n: number, d = 1) => Number(n.toFixed(d)).toLocaleString('en-US');
 
 /**
- * Inference-as-a-Service engine: GPU sizing, cost per token, managed-API vs
+ * Inference Assessment engine: GPU sizing, cost per token, managed-API vs
  * self-hosted break-even, and growth forecast. Pure/stateless - everything it
  * knows comes from InferenceConfigService, so it is unit-testable without a DB.
  *

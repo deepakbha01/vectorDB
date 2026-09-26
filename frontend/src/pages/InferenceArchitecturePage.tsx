@@ -99,7 +99,7 @@ export function InferenceArchitecturePage() {
         ) : (
           <>
             <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: -8, maxWidth: 1000 }}>
-              Designs the Inference-as-a-Service layer around the <Link to={`/projects/${project.id}/inference`}>Inference assessment</Link>'s sizing: which serving
+              Designs the inference serving layer around the <Link to={`/projects/${project.id}/inference`}>Inference assessment</Link>'s sizing: which serving
               technology (eligibility first, then score), which inference patterns, and the gateway, policy engine, model router, runtime and compute - with routing from{' '}
               <Link to={`/projects/${project.id}/model-selection`}>Model Selection</Link>. Latency percentiles are estimates until load-tested.
             </p>

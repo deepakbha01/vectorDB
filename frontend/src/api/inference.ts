@@ -1,5 +1,5 @@
 /**
- * Inference-as-a-Service assessment - API types. Mirrors
+ * Inference Assessment - API types. Mirrors
  * backend/src/inference/inference.types.ts and the create DTO.
  */
 

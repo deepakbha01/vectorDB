@@ -18,7 +18,7 @@ import { GpuPricingModel, InferenceOpsCapability, InferenceWorkloadType, ModelSo
 export const CUSTOM_MODEL_ID = 'custom';
 
 /**
- * Inference-as-a-Service discovery intake. Model, GPU, precision and API tier
+ * Inference Assessment discovery intake. Model, GPU, precision and API tier
  * ids refer to config/inference.yaml (GET /projects/:id/inference/catalogue).
  */
 export class CreateInferenceAssessmentDto {

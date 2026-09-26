@@ -290,7 +290,7 @@ describe('Golden master - existing VectorDB workflow (must not change unintentio
     }
   });
 
-  describe('Inference-as-a-Service track', () => {
+  describe('Inference Assessment track', () => {
     const input = (overrides: Partial<InferenceEngineInput> = {}): InferenceEngineInput => ({
       workloadType: InferenceWorkloadType.RAG,
       modelSourcing: ModelSourcing.EVALUATE_BOTH,

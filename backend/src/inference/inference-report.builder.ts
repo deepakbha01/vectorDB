@@ -22,7 +22,7 @@ export function buildInferenceReport(projectName: string, a: InferenceAssessment
   const i = a.inputsUsed;
   const rec = r.recommendedGpuOption;
   return {
-    title: 'Inference-as-a-Service Assessment',
+    title: 'Inference Assessment',
     subtitle: `${projectName} · version ${a.version} · rules ${a.rulesVersion}`,
     generatedAt: new Date().toISOString(),
     sections: [
