@@ -78,7 +78,37 @@ any completed phase's deliverable (or everything done so far) as PDF or
 DOCX. **Audit Log** shows every action taken on the project - who, what,
 when - click a row for the full (redacted) request/response detail.
 
-## 10. Token Observability (AI Factory)
+## 10. AI Factory (guided AI architecture assessment)
+
+When the AI Factory is enabled, the sidebar gains an **Inference track**:
+**AI Factory (guided)** plus one page per phase - AI Workload Profile, Model
+Selection, Inference Architecture, Infrastructure Design, RAG / Agent
+Architecture, Security & Governance, Performance & Benchmark, Cost & FinOps,
+Operations Model and Final Recommendation.
+
+- Start at **AI Factory (guided)**: it lists the steps (01 Use Case to the
+  Final Recommendation) with their status, the phases behind each, and every
+  decision record - chosen option, why, alternatives, trade-offs, risks and
+  labelled evidence.
+- Work through the phase pages in order. Each form is pre-filled from earlier
+  phases and shows where every value came from; change anything you need,
+  then submit (architects and admins). Each submit saves a new version.
+- A phase marked **out of date** was built before something it depends on
+  changed - re-run it. **Review** means only a suggestion source changed.
+- After changing Discovery answers, the **Impact** panel shows which phases to
+  re-run, which to review and which are unaffected.
+- **Snapshots** save the whole assessment state; compare any two to see what
+  changed.
+- The **Final Recommendation** combines everything into a readiness verdict
+  (production ready, with conditions, requires further assessment, not
+  suitable), the architecture, up to two alternatives, a 22-section ADR and
+  an implementation plan. Missing or out-of-date phases are shown, never
+  filled in.
+
+Costs are directional estimates, not quotes; performance only passes on
+measured evidence. Details: [AI_FACTORY.md](AI_FACTORY.md).
+
+## 11. Token Observability (AI Factory)
 
 When enabled, **Token Observability** appears in the sidebar after Inference
 Architecture (guided step 7). Three tabs, never mixed:
