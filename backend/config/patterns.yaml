@@ -9,6 +9,13 @@
 # Field names in `defaultAssessment` match `DiscoveryAssessmentInput`
 # (frontend/src/api/client.ts) / `CreateDiscoveryAssessmentDto` (backend).
 
+# `tokenObservabilityProfile` (validation spec S1-S2) is optional token metadata:
+# only what the pattern can honestly say. null means Not configured - the
+# estimate shows a gap rather than inventing a number. Every value can be
+# overridden on the Token Observability page, and a later pattern never
+# replaces a saved user override. Token counts, utilization, retry and cache
+# rates are deliberately absent: they depend on the design, not the pattern.
+
 patterns:
   - id: enterprise-document-rag
     name: "Enterprise Document RAG"
@@ -26,6 +33,16 @@ patterns:
     recommendedDesignConsiderations: ["Preserve document hierarchy/headings in chunking", "Metadata filtering by department/source"]
     candidateTechnologyCategories: ["Embedded/SQL-based (small corpus)", "Dedicated vector DB (larger corpus)"]
     validationRequirements: ["Recall@K against a labeled internal QA set"]
+    tokenObservabilityProfile:
+      workloadType: rag
+      llmUsage: required
+      llmRequestSharePercent: 100
+      llmCallsPerRequest: 1
+      agentStepsPerRequest: null
+      guidance:
+        - "Retrieved context usually dominates the prompt: size it as top-K × chunk tokens from the RAG design, not a guess."
+        - "Multi-turn copilots resend conversation history on every call - cap or summarize it."
+        - "A stable system prompt is a good candidate for provider prompt caching."
     defaultAssessment:
       documentCount: 250000
       estimatedVectorCount: 1000000
@@ -54,6 +71,16 @@ patterns:
     recommendedDesignConsiderations: ["De-identify PHI before embedding where possible", "Strict access-control metadata per chunk"]
     candidateTechnologyCategories: ["Dedicated vector DB with strong IAM/encryption", "Existing DB with vector capability (if already HIPAA-attested)"]
     validationRequirements: ["Compliance review of encryption/audit configuration", "Access-control penetration test"]
+    tokenObservabilityProfile:
+      workloadType: rag
+      llmUsage: required
+      llmRequestSharePercent: 100
+      llmCallsPerRequest: 1
+      agentStepsPerRequest: null
+      guidance:
+        - "Keep prompt/response capture off (metadata only) - prompts can carry PHI."
+        - "Strict metadata filtering narrows retrieval; measure the real top-K after filtering rather than assuming the maximum."
+        - "Clinical answers with citations run longer than chat answers - set output tokens from observed responses."
     defaultAssessment:
       qps: 8
       peakQps: 20
@@ -84,6 +111,16 @@ patterns:
     recommendedDesignConsiderations: ["Version/lineage tracking for restated filings", "Long retention (multi-year) with secure deletion policy"]
     candidateTechnologyCategories: ["Dedicated vector DB", "Search platform with vector support (for full-text + vector)"]
     validationRequirements: ["Audit trail completeness review", "Retention/deletion policy sign-off"]
+    tokenObservabilityProfile:
+      workloadType: rag
+      llmUsage: required
+      llmRequestSharePercent: 100
+      llmCallsPerRequest: 1
+      agentStepsPerRequest: null
+      guidance:
+        - "Filings and tables chunk into token-dense passages - check tokens per chunk from the pipeline, not characters."
+        - "Summarization requests produce long outputs; output tokens usually cost more than input tokens."
+        - "Split Q&A and summarization traffic if their shapes differ - they need different token profiles."
     defaultAssessment:
       qps: 10
       peakQps: 30
@@ -111,6 +148,16 @@ patterns:
     recommendedDesignConsiderations: ["Freshness: re-embed on article update", "Boost recent/high-confidence articles"]
     candidateTechnologyCategories: ["Dedicated vector DB", "Search platform with vector support"]
     validationRequirements: ["Deflection-rate / answer-quality benchmark"]
+    tokenObservabilityProfile:
+      workloadType: rag
+      llmUsage: required
+      llmRequestSharePercent: 100
+      llmCallsPerRequest: 1
+      agentStepsPerRequest: null
+      guidance:
+        - "High concurrency makes small per-request savings material - track tokens per resolved ticket."
+        - "Conversation history grows with each turn; it is the usual source of token creep."
+        - "Shared instructions and policy text are good candidates for prompt caching."
     defaultAssessment:
       qps: 40
       peakQps: 120
@@ -136,6 +183,16 @@ patterns:
     recommendedDesignConsiderations: ["High ingestion throughput and update-friendly indexing", "Time-based partitioning/retention"]
     candidateTechnologyCategories: ["Dedicated vector DB (K8s-self-hostable, scales with ingestion)"]
     validationRequirements: ["Sustained ingestion-throughput benchmark"]
+    tokenObservabilityProfile:
+      workloadType: search
+      llmUsage: optional
+      llmRequestSharePercent: null
+      llmCallsPerRequest: null
+      agentStepsPerRequest: null
+      guidance:
+        - "Most queries are search-only: set the share of requests that are summarized or explained by an LLM."
+        - "Search QPS is not LLM QPS - estimating LLM tokens at the full search rate overstates cost."
+        - "Telemetry embeddings are generated at ingestion; query-side tokens are small."
     defaultAssessment:
       documentCount: 5000000
       estimatedVectorCount: 20000000
@@ -160,6 +217,16 @@ patterns:
     recommendedDesignConsiderations: ["Structure-aware chunking (functions/classes, not fixed-size)", "Preserve file path and symbol metadata"]
     candidateTechnologyCategories: ["Dedicated vector DB with strong hybrid/full-text support"]
     validationRequirements: ["Precision@K on a held-out code-search benchmark"]
+    tokenObservabilityProfile:
+      workloadType: rag
+      llmUsage: required
+      llmRequestSharePercent: 100
+      llmCallsPerRequest: 1
+      agentStepsPerRequest: null
+      guidance:
+        - "Code chunks are token-dense (symbols, whitespace) - measure tokens per chunk with the target model tokenizer."
+        - "Inline IDE use means many short calls; completions and chat answers need separate profiles."
+        - "Repository context from neighbouring files adds to the prompt beyond retrieved chunks."
     defaultAssessment:
       chunksPerDocument: 8
       qps: 20
@@ -186,6 +253,16 @@ patterns:
     recommendedDesignConsiderations: ["Short retention with automatic expiry", "High ingestion throughput over perfect recall"]
     candidateTechnologyCategories: ["Search platform with vector support (e.g. OpenSearch/Elasticsearch-class)"]
     validationRequirements: ["Ingestion-throughput and retention-expiry validation"]
+    tokenObservabilityProfile:
+      workloadType: search
+      llmUsage: optional
+      llmRequestSharePercent: null
+      llmCallsPerRequest: null
+      agentStepsPerRequest: null
+      guidance:
+        - "LLM use is bursty and incident-driven (summaries, root-cause hints): set the LLM share from incident volume, not from search QPS."
+        - "Log lines are verbose - cap retrieved lines in the prompt."
+        - "Consider alerts on a daily token budget during incidents."
     defaultAssessment:
       documentCount: 10000000
       estimatedVectorCount: 50000000
@@ -212,6 +289,16 @@ patterns:
     recommendedDesignConsiderations: ["GPU capacity for multimodal embedding generation", "Per-modality embedding-dimension tracking"]
     candidateTechnologyCategories: ["Dedicated vector DB with high-dimension support"]
     validationRequirements: ["Cross-modal retrieval quality benchmark"]
+    tokenObservabilityProfile:
+      workloadType: multimodal_search
+      llmUsage: optional
+      llmRequestSharePercent: null
+      llmCallsPerRequest: null
+      agentStepsPerRequest: null
+      guidance:
+        - "Image and audio embeddings are not text tokens - their cost is per item and is not modelled by the text token estimate."
+        - "Only captioning, description or answer generation calls an LLM: set that share explicitly."
+        - "Vision model inputs are billed as image tokens by most providers; configure prices before relying on the cost."
     defaultAssessment:
       embeddingDimension: 1024
       hasGpu: true
@@ -234,6 +321,16 @@ patterns:
     recommendedDesignConsiderations: ["Optimize for QPS/latency over exhaustive recall", "Frequent incremental index updates"]
     candidateTechnologyCategories: ["Dedicated at-scale vector DB", "Fully managed SaaS (for elastic QPS scaling)"]
     validationRequirements: ["Sustained-QPS latency benchmark at target P95/P99"]
+    tokenObservabilityProfile:
+      workloadType: recommendation
+      llmUsage: none
+      llmRequestSharePercent: 0
+      llmCallsPerRequest: 0
+      agentStepsPerRequest: null
+      guidance:
+        - "No LLM on the request path (vector-only): token cost comes from item embeddings at ingestion, not per request."
+        - "If an LLM explains or re-ranks recommendations offline, model it as a separate workload."
+        - "Watch embedding tokens when the catalogue is re-embedded after a model change."
     defaultAssessment:
       estimatedVectorCount: 50000000
       qps: 200
@@ -259,6 +356,16 @@ patterns:
     recommendedDesignConsiderations: ["Update-friendly index (frequent small writes)", "TTL/decay strategy for stale memories"]
     candidateTechnologyCategories: ["Embedded vector library (per-agent/local)", "Dedicated vector DB (shared platform)"]
     validationRequirements: ["Write-then-read latency validation under continuous ingestion"]
+    tokenObservabilityProfile:
+      workloadType: agent
+      llmUsage: required
+      llmRequestSharePercent: 100
+      llmCallsPerRequest: null
+      agentStepsPerRequest: null
+      guidance:
+        - "Measure tokens per task, not per request: each agent step is a full LLM call that resends the growing context."
+        - "Set agent steps from the RAG / agent design or observed traces - the pattern cannot know them."
+        - "Memory recall adds retrieved context to every step; keep top-K small and bound the steps (loop guard)."
     defaultAssessment:
       qps: 25
       peakQps: 75
@@ -283,6 +390,16 @@ patterns:
     recommendedDesignConsiderations: ["Tune fusion/reranking between vector and keyword scores"]
     candidateTechnologyCategories: ["Dedicated vector DB with native hybrid support", "Search platform with vector support"]
     validationRequirements: ["Precision/recall comparison: hybrid vs. vector-only"]
+    tokenObservabilityProfile:
+      workloadType: search
+      llmUsage: optional
+      llmRequestSharePercent: null
+      llmCallsPerRequest: null
+      agentStepsPerRequest: null
+      guidance:
+        - "Hybrid retrieval itself uses no LLM tokens; only an answer or rerank step does - set that share."
+        - "A cross-encoder reranker adds reranking tokens per query (candidates × (query + chunk))."
+        - "Keep keyword-only traffic out of the LLM share."
     defaultAssessment:
       recallTarget: 0.9
       requiresHybridSearch: true
@@ -306,6 +423,16 @@ patterns:
     recommendedDesignConsiderations: ["Active-active multi-region replication", "Regional failover and traffic distribution planning"]
     candidateTechnologyCategories: ["Dedicated at-scale vector DB with multi-region support", "Fully managed SaaS with multi-region SLA"]
     validationRequirements: ["Multi-region failover drill", "Sustained high-QPS benchmark across regions"]
+    tokenObservabilityProfile:
+      workloadType: search
+      llmUsage: optional
+      llmRequestSharePercent: null
+      llmCallsPerRequest: null
+      agentStepsPerRequest: null
+      guidance:
+        - "At this QPS even a 1% LLM share is a large token volume - set the share and utilization explicitly."
+        - "Average QPS rarely runs all day: set utilization instead of assuming 100%."
+        - "Prefer caching answers for popular queries before adding LLM calls to the hot path."
     defaultAssessment:
       estimatedVectorCount: 100000000
       qps: 300

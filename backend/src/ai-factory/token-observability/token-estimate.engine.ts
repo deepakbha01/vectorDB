@@ -1,5 +1,7 @@
 import { costOf, PriceRow, PricingTreatment } from './pricing';
-import { CostLine, EstimateContext, TokenEstimateResult, TokenLine, TokenObservabilityCatalogue } from './token-observability.types';
+import { CostLine, EstimateContext, EstimateKnobs, TokenEstimateResult, TokenLine, TokenObservabilityCatalogue } from './token-observability.types';
+
+export const DEFAULT_KNOBS: EstimateKnobs = { llmUsage: 'required', llmRequestSharePercent: 100, llmCallsPerRequest: 1, retryRatePercent: 0, cacheHitRatePercent: 0, operatingDaysPerMonth: 30.4 };
 
 /**
  * Estimated-mode token and cost projection (spec §8, §9, §12, §13). Pure: the
@@ -20,49 +22,60 @@ export function estimateTokens(
   const agent = ctx.scope.agent && d?.agent ? d.agent : null;
   const assumptions: string[] = [];
   const gaps = [...ctx.gaps];
+  const k: EstimateKnobs = { ...DEFAULT_KNOBS, ...ctx.knobs };
+  // Vector-only workloads (e.g. a recommendation engine) search without calling an LLM.
+  const llmOn = k.llmUsage !== 'none';
+  const share = llmOn ? Math.min(100, Math.max(0, k.llmRequestSharePercent)) / 100 : 0;
+  const retry = 1 + Math.max(0, k.retryRatePercent) / 100;
+  const cacheShare = Math.min(100, Math.max(0, k.cacheHitRatePercent)) / 100;
 
   // ------------------------------------------------ final LLM call make-up
-  const retrieved = rag ? d!.topK * d!.chunkTokens : 0;
+  const retrieved = rag ? (d!.retrievedContextTokens ?? d!.topK * d!.chunkTokens) : 0;
   const steps = agent ? Math.max(1, Math.round(agent.maxSteps * cat.estimation.agentStepsShareOfMax)) : 1;
   const input: TokenLine[] = [];
-  if (d) {
+  if (llmOn && d) {
     input.push({ label: 'System prompt and instructions', tokens: d.systemPromptTokens, evidenceType: 'assumption', source: d.source });
     input.push({ label: 'User query', tokens: q, evidenceType: 'assumption', source: 'finops.yaml embedding.avgQueryTokens' });
-    if (rag) input.push({ label: `Retrieved context: top ${d.topK} × ~${d.chunkTokens.toLocaleString()} tokens`, tokens: retrieved, evidenceType: d.chunkAssumed ? 'assumption' : 'estimated', source: d.source });
+    if (rag) input.push({ label: d.retrievedContextTokens !== undefined ? 'Retrieved context (override)' : `Retrieved context: top ${d.topK} × ~${d.chunkTokens.toLocaleString()} tokens`, tokens: retrieved, evidenceType: d.chunkAssumed ? 'assumption' : 'estimated', source: d.source });
     if (d.historyTokens) input.push({ label: 'Conversation history', tokens: d.historyTokens, evidenceType: 'assumption', source: d.source });
     if (agent) {
       input.push({ label: 'Tool schemas', tokens: agent.toolSchemaTokens, evidenceType: 'assumption', source: d.source });
       if (steps > 1) input.push({ label: `Tool results from ${steps - 1} earlier step(s)`, tokens: (steps - 1) * agent.toolResultPerStep, evidenceType: 'assumption', source: d.source });
     }
-  } else if (ctx.llm) {
-    input.push({ label: 'Prompt (whole, as sized in the Inference assessment)', tokens: ctx.llm.avgInputTokens, evidenceType: 'estimated', source: ctx.llm.source });
+  } else if (llmOn && ctx.llm) {
+    input.push({ label: ctx.llm.assessedPrices ? 'Prompt (whole, as sized in the Inference assessment)' : 'Prompt (whole)', tokens: ctx.llm.avgInputTokens, evidenceType: 'estimated', source: ctx.llm.source });
   }
   const finalInput = sum(input.map((l) => l.tokens));
 
   // --------------------------------------------------- every LLM call
   // Each agent step re-sends the prompt plus the tool results gathered so far.
   const base = finalInput - (agent && steps > 1 ? (steps - 1) * agent.toolResultPerStep : 0);
-  const calls = Array.from({ length: ctx.llm || d ? steps : 0 }, (_, i) => ({
-    step: agent ? (i < steps - 1 ? `Step ${i + 1}: choose and call a tool` : `Step ${steps}: answer`) : 'Answer',
+  // Agents: one call per step. Other workflows: llmCallsPerRequest calls (1 unless a chain is configured).
+  const nCalls = !llmOn || !(ctx.llm || d) ? 0 : agent ? steps : Math.max(1, Math.round(k.llmCallsPerRequest));
+  const calls = Array.from({ length: nCalls }, (_, i) => ({
+    step: agent ? (i < steps - 1 ? `Step ${i + 1}: choose and call a tool` : `Step ${steps}: answer`) : nCalls > 1 ? `Call ${i + 1}` : 'Answer',
     inputTokens: base + (agent ? i * agent.toolResultPerStep : 0),
-    outputTokens: i < steps - 1 ? cat.estimation.toolCallOutputTokens : answer,
+    outputTokens: agent && i < steps - 1 ? cat.estimation.toolCallOutputTokens : answer,
   }));
-  const inputTokens = sum(calls.map((c) => c.inputTokens));
-  const outputTokens = sum(calls.map((c) => c.outputTokens));
+  // Retries re-send whole calls, so they add to both sides.
+  const inputTokens = Math.round(sum(calls.map((c) => c.inputTokens)) * retry);
+  const outputTokens = Math.round(sum(calls.map((c) => c.outputTokens)) * retry);
 
   // ----------------------------------------------- retrieval and reranking
   const rerank = rag ? d!.rerank : null;
-  const rerankingTokens = rerank ? rerank.candidates * (q + d!.chunkTokens) : 0;
-  const queryEmbeddingTokens = rag ? q : 0;
+  const rerankingTokens = k.rerankingTokensPerRequest ?? (rerank ? rerank.candidates * (q + d!.chunkTokens) : 0);
+  const queryEmbeddingTokens = k.embeddingTokensPerRequest ?? (rag ? q : 0);
 
   // --------------------------------------------------------------- monthly
   const n = ctx.requestsPerMonth;
   const monthlyEmbedding = n * queryEmbeddingTokens + (ctx.embedding?.monthlyNewDocumentTokens ?? 0);
+  // Search / retrieval happens for every request; only a share of them may call the LLM.
+  const llmRequests = Math.round(n * share);
   const monthly = {
     requests: n,
-    inputTokens: n * inputTokens,
-    outputTokens: n * outputTokens,
-    totalTokens: n * (inputTokens + outputTokens),
+    inputTokens: llmRequests * inputTokens,
+    outputTokens: llmRequests * outputTokens,
+    totalTokens: llmRequests * (inputTokens + outputTokens),
     embeddingTokens: monthlyEmbedding,
     rerankingTokens: n * rerankingTokens,
     basis: ctx.requestsSource
@@ -73,12 +86,12 @@ export function estimateTokens(
   // ------------------------------------------------------------------ cost
   const lines: CostLine[] = [];
   let llmMonthlyUsd: number | null = null;
-  if (ctx.llm?.selfHosted) {
+  if (llmOn && ctx.llm?.selfHosted) {
     const perM = monthly.totalTokens ? ctx.llm.selfHosted.monthlyUsd / (monthly.totalTokens / 1e6) : null;
     llmMonthlyUsd = ctx.llm.selfHosted.monthlyUsd;
     lines.push({ item: `LLM serving (self-hosted, ${ctx.llm.selfHosted.label})`, tokens: monthly.totalTokens, pricePer1M: perM === null ? null : round(perM, 4), usd: round(llmMonthlyUsd, 2), price: `GPU capacity cost from ${ctx.llm.source} - not a token price`, evidenceType: 'estimated' });
-  } else if (ctx.llm) {
-    const c = costOf(prices, ctx.llm.provider, ctx.llm.model, { input: monthly.inputTokens, output: monthly.outputTokens }, at, projectId, cat.pricing);
+  } else if (llmOn && ctx.llm) {
+    const c = costOf(prices, ctx.llm.provider, ctx.llm.model, { input: monthly.inputTokens, output: monthly.outputTokens, cachedInput: Math.round(monthly.inputTokens * cacheShare) }, at, projectId, cat.pricing);
     for (const type of ['input', 'output'] as const) {
       const ref = c.refs.find((r) => r.tokenType === type);
       const usd = type === 'input' ? c.inputCost : c.outputCost;
@@ -126,8 +139,8 @@ export function estimateTokens(
   const shareOfBudget = ctx.budget && monthlyUsd !== null && ctx.budget.monthlyUsd > 0 ? round(monthlyUsd / ctx.budget.monthlyUsd, 4) : null;
 
   // ---------------------------------------------------------- assumptions
-  if (!d && ctx.llm) assumptions.push('No RAG / agent design yet: the prompt is taken whole from the Inference assessment, so context make-up is not broken down.');
-  if (d && ctx.llm && ctx.llm.avgInputTokens > 0 && Math.abs(finalInput - ctx.llm.avgInputTokens) / ctx.llm.avgInputTokens > 0.2) {
+  if (!d && ctx.llm?.assessedPrices) assumptions.push('No RAG / agent design yet: the prompt is taken whole from the Inference assessment, so context make-up is not broken down.');
+  if (d && ctx.llm?.assessedPrices && ctx.llm.avgInputTokens > 0 && Math.abs(finalInput - ctx.llm.avgInputTokens) / ctx.llm.avgInputTokens > 0.2) {
     assumptions.push(
       `The RAG / agent design puts the final prompt at ~${finalInput.toLocaleString()} tokens, but the Inference assessment was sized for ${ctx.llm.avgInputTokens.toLocaleString()}. Re-run Inference with the design figure so GPU sizing and cost match.`,
     );
@@ -136,7 +149,12 @@ export function estimateTokens(
   if (rerank) assumptions.push(`${rerank.label} scores ${rerank.candidates} candidates per query, each ~${(q + d!.chunkTokens).toLocaleString()} tokens (query + chunk).`);
   if (rag) assumptions.push(`User queries average ${q} tokens and are embedded once per request.`);
 
-  const llmPerRequestUsd = llmMonthlyUsd !== null && n > 0 ? llmMonthlyUsd / n : null;
+  if (!llmOn) assumptions.push('No LLM (vector-only): requests search and embed only - no LLM tokens are projected.');
+  else if (share < 1) assumptions.push(`${Math.round(share * 100)}% of requests call the LLM (${llmRequests.toLocaleString()} of ${n.toLocaleString()} a month); search and embedding still run for every request. Per-request figures are per LLM request.`);
+  if (llmOn && !agent && nCalls > 1) assumptions.push(`${nCalls} LLM calls per request, each sending the full prompt.`);
+  if (retry > 1) assumptions.push(`Retries add ${k.retryRatePercent}% to LLM input and output tokens.`);
+  if (cacheShare > 0) assumptions.push(`${k.cacheHitRatePercent}% of input tokens are served from the provider cache - cheaper where a cached-input price is set, but still counted as input tokens.`);
+  const llmPerRequestUsd = llmMonthlyUsd !== null && llmRequests > 0 ? llmMonthlyUsd / llmRequests : null;
   const scopeLabel = [rag && 'RAG', agent && 'agent'].filter(Boolean).join(' + ') || (ctx.llm ? 'single LLM call' : 'not yet known');
 
   return {
@@ -164,8 +182,8 @@ export function estimateTokens(
           rerankingTokens,
           historyTokens: d!.historyTokens,
           systemPromptTokens: d!.systemPromptTokens,
-          finalInputTokens: finalInput,
-          outputTokens: answer,
+          finalInputTokens: llmOn ? finalInput : 0,
+          outputTokens: llmOn ? answer : 0,
           contextExpansionRatio: q > 0 ? round(retrieved / q, 1) : 0,
         }
       : null,
@@ -183,6 +201,8 @@ export function estimateTokens(
     monthly,
     cost: { currency: 'USD', lines, monthlyUsd, perRequestUsd, note },
     budget: { monthlyBudgetUsd: ctx.budget?.monthlyUsd ?? null, shareOfBudget, source: ctx.budget?.source ?? null },
+    daily: { requests: Math.round(n / k.operatingDaysPerMonth), totalTokens: Math.round(monthly.totalTokens / k.operatingDaysPerMonth), operatingDaysPerMonth: k.operatingDaysPerMonth },
+    llm: { usage: k.llmUsage, requestSharePercent: Math.round(share * 100), llmRequestsPerMonth: llmRequests, retryRatePercent: k.retryRatePercent, cacheHitRatePercent: k.cacheHitRatePercent },
     assumptions,
     gaps,
     wouldChangeIf: [

@@ -22,6 +22,7 @@ import { AlertsQueryDto } from './dto/alerts-query.dto';
 import { UsageReadAuditInterceptor } from './usage-read-audit.interceptor';
 import { UsageEventBatchDto } from './dto/usage-events.dto';
 import { UsageQueryDto, UsageRequestsQueryDto } from './dto/usage-query.dto';
+import { TokenEstimateInputsDto } from './dto/token-estimate-inputs.dto';
 
 const TRACE_ID = /^[A-Za-z0-9_.:@/+=#-]{1,200}$/;
 
@@ -47,11 +48,18 @@ export class TokenObservabilityController {
     return this.service.preview(projectId, user);
   }
 
-  /** No body: the estimate is built entirely from the upstream phases and the price table. */
+  /** A what-if with the given overrides. Saves nothing. */
+  @Post('estimate/preview')
+  @HttpCode(200)
+  previewWith(@Param('projectId', ParseUUIDPipe) projectId: string, @Body() body: TokenEstimateInputsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.preview(projectId, user, body?.overrides);
+  }
+
+  /** Built from the upstream phases, the project's pattern and the price table; `overrides` (optional) are saved with it and reused next time. */
   @Post('estimate')
   @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
-  submit(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.service.submit(projectId, user);
+  submit(@Param('projectId', ParseUUIDPipe) projectId: string, @Body() body: TokenEstimateInputsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.submit(projectId, user, body?.overrides);
   }
 
   @Get('estimate/latest')

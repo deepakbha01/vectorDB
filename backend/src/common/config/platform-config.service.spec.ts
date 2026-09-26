@@ -40,4 +40,18 @@ describe('PlatformConfigService', () => {
       expect(pattern.defaultAssessment.platform).toBeUndefined();
     }
   });
+
+  it('gives every pattern an honest token profile - no invented token counts or utilization (validation spec S1-S2)', () => {
+    for (const pattern of service.getPatternCatalog()) {
+      const p = pattern.tokenObservabilityProfile;
+      expect(['rag', 'agent', 'search', 'recommendation', 'multimodal_search']).toContain(p.workloadType);
+      expect(['required', 'optional', 'none']).toContain(p.llmUsage);
+      expect(p.guidance.length).toBeGreaterThan(0);
+      for (const k of Object.keys(p)) expect(['workloadType', 'llmUsage', 'llmRequestSharePercent', 'llmCallsPerRequest', 'agentStepsPerRequest', 'guidance']).toContain(k);
+      // Search QPS is not LLM QPS: an optional LLM never gets a made-up share.
+      if (p.llmUsage === 'optional') expect(p.llmRequestSharePercent).toBeNull();
+      if (p.llmUsage === 'none') expect([p.llmRequestSharePercent, p.llmCallsPerRequest]).toEqual([0, 0]);
+    }
+    expect(service.getPatternCatalog().find((x) => x.id === 'recommendation-engine')!.tokenObservabilityProfile.llmUsage).toBe('none');
+  });
 });

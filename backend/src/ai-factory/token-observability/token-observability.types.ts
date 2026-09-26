@@ -93,6 +93,12 @@ export interface TokenEstimateResult {
   assumptions: string[];
   gaps: string[];
   wouldChangeIf: string[];
+  /** Every estimation input with its provenance (absent on estimates saved before inputs existed). */
+  inputs?: ResolvedInput[];
+  /** Daily view of the monthly projection. */
+  daily?: { requests: number; totalTokens: number; operatingDaysPerMonth: number };
+  /** LLM usage mode and the share of requests that call the LLM. */
+  llm?: { usage: LlmUsage; requestSharePercent: number; llmRequestsPerMonth: number; retryRatePercent: number; cacheHitRatePercent: number };
 }
 
 /** Spec §16: the tokenObservability section of the central assessment state. */
@@ -121,7 +127,7 @@ export interface TokenObservabilityState {
 export interface TokenObservabilityCatalogue {
   rulesVersion: string;
   pricing: import('./pricing').PricingTreatment;
-  estimation: { toolCallOutputTokens: number; agentStepsShareOfMax: number };
+  estimation: { toolCallOutputTokens: number; agentStepsShareOfMax: number; operatingDaysPerMonth?: number };
   observed: { loopLlmCallsPerTrace: number; liveStaleAfterHours: number };
   otel: { span: Record<string, string[]>; resource: Record<string, string[]> };
   alerts: import('./alerts').AlertCatalogue;
@@ -158,9 +164,47 @@ export interface EstimateContext {
     chunkAssumed: boolean;
     rerank: { id: string; label: string; candidates: number } | null;
     agent: { id: string; label: string; maxSteps: number; toolSchemaTokens: number; toolResultPerStep: number } | null;
+    /** A user override of the retrieved-context size, replacing top-K × chunk size. */
+    retrievedContextTokens?: number;
     source: string;
   } | null;
   embedding: { provider: string; model: string; monthlyNewDocumentTokens: number; source: string } | null;
   budget: { monthlyUsd: number; source: string } | null;
   gaps: string[];
+  /** Estimation settings (validation spec §3). Absent = the defaults below. */
+  knobs?: EstimateKnobs;
+}
+
+/** How requests turn into LLM usage. Defaults keep the original behaviour. */
+export interface EstimateKnobs {
+  /** required (default) / optional (only a share of requests call the LLM) / none (vector-only). */
+  llmUsage: LlmUsage;
+  /** Share of requests that call the LLM, 0-100 (default 100). */
+  llmRequestSharePercent: number;
+  /** LLM calls in a non-agent request, e.g. a chain (default 1). */
+  llmCallsPerRequest: number;
+  /** Extra LLM traffic from retries, percent (default 0). */
+  retryRatePercent: number;
+  /** Share of input tokens served from the provider cache, percent (default 0) - changes cost, not tokens. */
+  cacheHitRatePercent: number;
+  /** Days a month the workload runs (default 30.4). */
+  operatingDaysPerMonth: number;
+  /** Overrides of the per-request embedding and reranking tokens. */
+  embeddingTokensPerRequest?: number;
+  rerankingTokensPerRequest?: number;
+}
+
+export type LlmUsage = 'required' | 'optional' | 'none';
+
+/** Where an estimation input came from (validation spec §1, §17). */
+export type InputProvenance = 'user_override' | 'calculated' | 'pattern_default' | 'not_configured';
+
+export interface ResolvedInput {
+  key: string;
+  label: string;
+  unit: string;
+  value: number | string | null;
+  provenance: InputProvenance;
+  /** Which phase, pattern or setting supplied it. */
+  source: string;
 }

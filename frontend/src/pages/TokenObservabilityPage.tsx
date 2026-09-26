@@ -3,7 +3,8 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { apiClient, extractErrorMessage, Project } from '../api/client';
 import { useFeatures } from '../api/features';
 import { EvidenceType } from '../api/aiFactory';
-import { AlertsResponse, FILTER_NAMES, ObservedMode, TokenEstimate, TokenEstimatePreview, TokenEstimateResult, UsageFilters } from '../api/tokenObservability';
+import { AlertsResponse, EstimateOverrides, FILTER_NAMES, ObservedMode, TokenEstimate, TokenEstimatePreview, TokenEstimateResult, UsageFilters } from '../api/tokenObservability';
+import { EstimateInputsPanel } from '../components/token/EstimateInputsPanel';
 import { DashboardView, ObservedDashboard, rangeFor } from '../components/token/ObservedDashboard';
 import { download, toCsv } from '../components/token/csv';
 import { SimulationPanel } from '../components/token/SimulationPanel';
@@ -38,6 +39,9 @@ export function TokenObservabilityPage() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Overrides saved with the latest estimate, and whether the preview shows unsaved what-if inputs.
+  const [savedOverrides, setSavedOverrides] = useState<EstimateOverrides>({});
+  const [whatIf, setWhatIf] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [openAlerts, setOpenAlerts] = useState(0);
 
@@ -74,7 +78,10 @@ export function TokenObservabilityPage() {
       .catch(() => setLatest(null));
     apiClient
       .get<TokenEstimatePreview>(`/projects/${id}/token-observability/estimate/preview`)
-      .then((r) => setPreview(r.data))
+      .then((r) => {
+        setPreview(r.data);
+        setSavedOverrides(r.data.overrides ?? {});
+      })
       .catch((e) => setPreviewError(extractErrorMessage(e, 'Could not build the token estimate.')));
     apiClient
       .get<AlertsResponse>(`/projects/${id}/token-observability/alerts`)
@@ -82,13 +89,16 @@ export function TokenObservabilityPage() {
       .catch(() => setOpenAlerts(0));
   }, [id]);
 
-  const save = async () => {
+  /** No overrides: the backend reuses the ones saved with the latest estimate. */
+  const save = async (overrides?: EstimateOverrides) => {
     if (!id) return;
     setSaving(true);
     setError(null);
     try {
-      const { data } = await apiClient.post<TokenEstimate>(`/projects/${id}/token-observability/estimate`);
+      const { data } = await apiClient.post<TokenEstimate>(`/projects/${id}/token-observability/estimate`, overrides ? { overrides } : {});
       setLatest(data);
+      setSavedOverrides((data.submitted.overrides as EstimateOverrides | undefined) ?? {});
+      setWhatIf(false);
     } catch (err) {
       setError(extractErrorMessage(err, 'Could not save the token estimate.'));
     } finally {
@@ -96,8 +106,23 @@ export function TokenObservabilityPage() {
     }
   };
 
+  const previewWith = async (overrides: EstimateOverrides) => {
+    if (!id) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const { data } = await apiClient.post<TokenEstimatePreview>(`/projects/${id}/token-observability/estimate/preview`, { overrides });
+      setPreview(data);
+      setWhatIf(true);
+    } catch (err) {
+      setError(extractErrorMessage(err, 'Could not preview the estimate.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!project) return <div className="main-content">Loading...</div>;
-  const shown = latest ? { r: latest.result, title: `Saved estimate v${latest.version} · ${new Date(latest.createdAt).toLocaleString()}`, sources: latest.sources } : preview ? { r: preview.result, title: 'Preview - not saved yet', sources: preview.sources } : null;
+  const shown = whatIf && preview ? { r: preview.result, title: 'What-if preview - not saved', sources: preview.sources } : latest ? { r: latest.result, title: `Saved estimate v${latest.version} · ${new Date(latest.createdAt).toLocaleString()}`, sources: latest.sources } : preview ? { r: preview.result, title: 'Preview - not saved yet', sources: preview.sources } : null;
 
   return (
     <div className="app-shell">
@@ -150,7 +175,7 @@ export function TokenObservabilityPage() {
                 {previewError && <div className="card" style={{ maxWidth: 900, color: 'var(--warning)', marginTop: 12 }}>{previewError}</div>}
                 {preview && (
                   <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center' }}>
-                    <button className="primary-btn" type="button" onClick={save} disabled={saving}>
+                    <button className="primary-btn" type="button" onClick={() => save()} disabled={saving}>
                       {saving ? 'Saving...' : latest ? 'Re-estimate (new version)' : 'Save estimate'}
                     </button>
                     {shown && (
@@ -159,6 +184,11 @@ export function TokenObservabilityPage() {
                       </button>
                     )}
                     {error && <div className="error-text">{error}</div>}
+                  </div>
+                )}
+                {view === 'architect' && (shown?.r.inputs ?? preview?.result.inputs) && (
+                  <div style={{ marginTop: 16, maxWidth: 1150 }}>
+                    <EstimateInputsPanel inputs={(shown?.r.inputs ?? preview?.result.inputs)!} saved={savedOverrides} busy={saving} canSave onPreview={previewWith} onSave={(o) => save(o)} />
                   </div>
                 )}
                 {shown && <EstimateView r={shown.r} title={shown.title} sources={shown.sources} view={view} />}
@@ -194,6 +224,8 @@ function exportEstimate(r: TokenEstimateResult, projectName: string) {
       headers: ['Input tokens', 'Output tokens', 'Total tokens', 'Context tokens', 'Embedding tokens', 'Reranking tokens', 'LLM calls', 'Tool calls'],
       rows: [[r.perRequest.inputTokens, r.perRequest.outputTokens, r.perRequest.totalTokens, r.perRequest.contextTokens, r.perRequest.embeddingTokens, r.perRequest.rerankingTokens, r.perRequest.llmCalls, r.perRequest.toolCalls]],
     },
+    ...(r.inputs ? [{ title: 'Estimation inputs', headers: ['Input', 'Value', 'Unit', 'Provenance', 'Source'], rows: r.inputs.map((i) => [i.label, i.value, i.unit, i.provenance, i.source]) }] : []),
+    ...(r.daily ? [{ title: 'Daily', headers: ['Requests / day', 'Tokens / day', 'Operating days / month'], rows: [[r.daily.requests, r.daily.totalTokens, r.daily.operatingDaysPerMonth]] }] : []),
     { title: 'Final LLM call make-up', headers: ['Part', 'Tokens', 'Evidence', 'Source'], rows: r.perRequest.input.map((l) => [l.label, l.tokens, l.evidenceType, l.source]) },
     { title: 'Monthly', headers: ['Requests', 'Input', 'Output', 'Total', 'Embedding', 'Reranking', 'Basis'], rows: [[r.monthly.requests, r.monthly.inputTokens, r.monthly.outputTokens, r.monthly.totalTokens, r.monthly.embeddingTokens, r.monthly.rerankingTokens, r.monthly.basis]] },
     { title: 'Cost (monthly)', headers: ['Item', 'Tokens', 'Price per 1M', 'USD', 'Price used'], rows: [...r.cost.lines.map((l) => [l.item, l.tokens, l.pricePer1M, l.usd, l.price]), ['Total (priced lines)', null, null, r.cost.monthlyUsd, r.cost.note]] },
@@ -209,6 +241,8 @@ function EstimateView({ r, title, sources, view }: { r: TokenEstimateResult; tit
     ['Input tokens / month', compact(r.monthly.inputTokens), 'estimated'],
     ['Output tokens / month', compact(r.monthly.outputTokens), 'estimated'],
     ['Requests / month', compact(r.monthly.requests), 'estimated'],
+    ...(r.daily ? [['Tokens / day', compact(r.daily.totalTokens), `${compact(r.daily.requests)} requests / day · ${r.daily.operatingDaysPerMonth} days / month`] as [string, string, string]] : []),
+    ...(r.llm ? [['LLM requests / month', r.llm.usage === 'none' ? 'None' : compact(r.llm.llmRequestsPerMonth), r.llm.usage === 'none' ? 'No LLM / vector-only' : `${r.llm.requestSharePercent}% of requests call the LLM`] as [string, string, string]] : []),
     ['Tokens / request', tokens(r.perRequest.totalTokens), `${r.perRequest.llmCalls} LLM call(s)`],
     ['Estimated cost / month', money(r.cost.monthlyUsd), r.cost.perRequestUsd !== null ? `${money(r.cost.perRequestUsd)} / request` : undefined],
     ['Largest part of the prompt', top ? top.label.split(':')[0] : '—', top ? `${tokens(top.tokens)} tokens / request (per-service consumers need observed usage)` : undefined],

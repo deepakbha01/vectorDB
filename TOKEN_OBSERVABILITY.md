@@ -25,6 +25,40 @@ existing phases behave exactly as before.
 
 An empty mode says so; it never shows estimated figures as observed ones.
 
+## Estimation inputs and provenance
+
+Every input to the estimate is listed in the **Estimation inputs** table
+(architect view) with where its value came from:
+
+| Label | Meaning |
+|---|---|
+| **User Override** | Set on this page; saved with the estimate and reused by the next one. A later pattern never replaces it. |
+| **Calculated** | From another phase (Inference, RAG / Agent design, Discovery) or a documented platform default |
+| **Pattern Default** | From the project's AI Factory pattern (`tokenObservabilityProfile` in `config/patterns.yaml`) |
+| **Not configured** | Nothing supplies it - shown as a gap, never guessed |
+
+Precedence is override > calculated > pattern default > not configured.
+
+- **Volume.** Requests per day come from an override, the Inference
+  assessment, or QPS × 86,400 × **utilization**. Utilization is never assumed
+  to be 100%, so a QPS on its own gives no volume. Month = day ×
+  operating days per month (default 30.4, `estimation.operatingDaysPerMonth`).
+- **LLM usage.** *Required* (every request), *Optional* (only a share of
+  requests call the LLM) or *No LLM / vector-only* (for example the
+  Recommendation Engine). Search QPS is not LLM QPS, so an optional-LLM pattern
+  projects no LLM tokens until you set the share.
+- **Other settings.** LLM calls per request (chains), agent steps, retry
+  rate (adds to input and output), provider cache hit rate (changes cost, not
+  token counts), and overrides for prompt parts, retrieved context, embedding
+  and reranking tokens.
+- The result adds **tokens per day** and **LLM requests per month**, and the
+  CSV export includes the inputs table.
+
+The 12 patterns carry only what they can honestly say: workload type, LLM
+usage, the LLM share and calls per request where the pattern implies them,
+and token guidance. Token sizes, utilization, retry and cache rates are
+deliberately not set by any pattern.
+
 ## Using it
 
 See `USER_GUIDE.md` §11 (and [AI_FACTORY.md](AI_FACTORY.md) for the rest of the AI Factory). In short:
@@ -49,7 +83,8 @@ need a project ingest key instead.
 | Method & path | Who | What |
 |---|---|---|
 | `GET estimate/preview` | any member | The estimate as the upstream records stand now (saves nothing) |
-| `POST estimate` | admin, architect | Save a new estimate version |
+| `POST estimate/preview` | any member | What-if: body `{ overrides }`; saves nothing |
+| `POST estimate` | admin, architect | Save a new estimate version. Optional body `{ overrides }`; omitted = reuse the overrides saved with the latest estimate, `{}` = clear them |
 | `GET estimate/latest` | any member | Latest saved estimate |
 | `GET prices` / `POST prices` | member / admin, architect | Price table; add a contracted price for this project |
 | `POST usage-events` | admin, architect | A batch (≤ 1000) of normalized usage events |
