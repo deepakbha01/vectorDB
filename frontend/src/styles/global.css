@@ -339,6 +339,8 @@ hr {
   font-weight: 600;
   color: var(--text);
   letter-spacing: -0.01em;
+  /* Monospace is wide: let long values (e.g. postgres_pgvector) wrap instead of clipping. */
+  overflow-wrap: anywhere;
 }
 
 .metric-value.placeholder {
