@@ -62,7 +62,7 @@ export function ReportsPage() {
       </div>
       <div className="main-content">
         <TopBar title="Reports" />
-        <p style={{ fontSize: 13, color: '#5a6472', marginBottom: 16 }}>
+        <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16 }}>
           Export any completed phase's deliverable, or the Complete Assessment Report combining every phase finished
           so far. A report can only be generated once its phase has produced at least one deliverable.
         </p>

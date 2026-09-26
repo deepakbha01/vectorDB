@@ -8,7 +8,7 @@ function CodeBlock({ title, code }: { title: string; code: string }) {
   return (
     <div style={{ marginBottom: 14 }}>
       <p style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>{title}</p>
-      <pre style={{ background: '#f5f6f8', padding: 10, borderRadius: 6, fontSize: 12, overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
+      <pre style={{ background: 'var(--surface-2)', padding: 10, borderRadius: 6, fontSize: 12, overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
         {code}
       </pre>
     </div>
@@ -83,7 +83,7 @@ export function DeploymentPage() {
 
         {!plan && (
           <div className="card" style={{ maxWidth: 560 }}>
-            <p style={{ fontSize: 13, color: '#5a6472' }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)' }}>
               Generates SQL/schema scripts, Terraform (and Kubernetes/Helm for Milvus), a deployment checklist, health
               check, and rollback procedure from your Phase 2 (Data & Embeddings) and Phase 3 (Index Design) outputs.
               This step only generates the plan - nothing is provisioned yet.
@@ -164,7 +164,7 @@ export function DeploymentPage() {
               <div className="metric-label" style={{ marginBottom: 8 }}>
                 Execute deployment
               </div>
-              <p style={{ fontSize: 13, color: '#5a6472' }}>
+              <p style={{ fontSize: 13, color: 'var(--muted)' }}>
                 Connects to the target database using this server's TARGET_* environment variables, runs a health
                 check, then creates the schema and vector index above. This never drops or deletes anything.
               </p>

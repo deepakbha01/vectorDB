@@ -6,12 +6,12 @@ import { FinalRecommendation, FinalResult, Readiness, StageStatus } from '../api
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
-const READINESS: Record<Readiness, string> = { production_ready: '#1e8449', ready_with_conditions: '#9a6700', further_assessment: '#7d3cbd', not_suitable: '#b03a2e' };
+const READINESS: Record<Readiness, string> = { production_ready: 'var(--success)', ready_with_conditions: 'var(--warning)', further_assessment: 'var(--violet)', not_suitable: 'var(--danger)' };
 const STAGE: Record<StageStatus, { label: string; color: string }> = {
-  pass: { label: 'Pass', color: '#1e8449' },
-  pass_with_conditions: { label: 'Pass with conditions', color: '#9a6700' },
-  further_assessment: { label: 'Further assessment', color: '#7d3cbd' },
-  fail: { label: 'Fail', color: '#b03a2e' },
+  pass: { label: 'Pass', color: 'var(--success)' },
+  pass_with_conditions: { label: 'Pass with conditions', color: 'var(--warning)' },
+  further_assessment: { label: 'Further assessment', color: 'var(--violet)' },
+  fail: { label: 'Fail', color: 'var(--danger)' },
 };
 const PRESENCE = { current: '', stale: 'out of date', missing: 'missing' } as const;
 const PLAN_ORDER: Array<[keyof FinalResult['implementationPlan'], string]> = [
@@ -78,16 +78,16 @@ export function FinalRecommendationPage() {
           </div>
         ) : (
           <>
-            <p style={{ fontSize: 13, color: '#5a6472', marginTop: -8, maxWidth: 1000 }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: -8, maxWidth: 1000 }}>
               Combines every phase into the final AI architecture and applies the production-readiness gate. Nothing here is decided afresh - each line comes from a
               phase's own decision record (see <Link to={`/projects/${project.id}/ai-factory`}>AI Factory</Link>); out-of-date or missing phases are shown, never filled in.
             </p>
-            {previewError && <div className="card" style={{ maxWidth: 900, color: '#9a6700' }}>{previewError}</div>}
+            {previewError && <div className="card" style={{ maxWidth: 900, color: 'var(--warning)' }}>{previewError}</div>}
             <div style={{ marginBottom: 12 }}>
               <button className="primary-btn" type="button" onClick={save} disabled={saving}>
                 {saving ? 'Saving...' : latest ? 'Save a new version' : 'Save final recommendation'}
               </button>
-              <span style={{ fontSize: 12, color: '#5a6472', marginLeft: 10 }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 10 }}>
                 {latest ? `Showing saved v${latest.version} · ${new Date(latest.createdAt).toLocaleString()}` : 'Showing a live preview - not saved yet'}
               </span>
               {error && <div className="error-text">{error}</div>}
@@ -142,12 +142,12 @@ function FinalView({ r }: { r: FinalResult }) {
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'stretch', gap: 6 }}>
           {r.architecture.map((c, i) => (
             <div key={c.step} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{ border: `1px solid ${c.status === 'current' ? '#c9d3e0' : c.status === 'stale' ? '#e0b44c' : '#e0a0a0'}`, borderRadius: 8, padding: '8px 10px', background: '#f7f9fc', minWidth: 120, maxWidth: 190 }}>
-                <div style={{ fontSize: 11, color: '#5a6472', textTransform: 'uppercase' }}>{c.step}</div>
+              <div style={{ border: `1px solid ${c.status === 'current' ? 'var(--border)' : c.status === 'stale' ? 'var(--warning)' : 'var(--danger-soft)'}`, borderRadius: 8, padding: '8px 10px', background: 'var(--surface-2)', minWidth: 120, maxWidth: 190 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase' }}>{c.step}</div>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{c.component}</div>
-                {c.status !== 'current' && <div style={{ fontSize: 11, color: c.status === 'stale' ? '#9a6700' : '#b03a2e' }}>{PRESENCE[c.status]}</div>}
+                {c.status !== 'current' && <div style={{ fontSize: 11, color: c.status === 'stale' ? 'var(--warning)' : 'var(--danger)' }}>{PRESENCE[c.status]}</div>}
               </div>
-              {i < r.architecture.length - 1 && <span style={{ color: '#7a7f8c' }}>→</span>}
+              {i < r.architecture.length - 1 && <span style={{ color: 'var(--muted)' }}>→</span>}
             </div>
           ))}
         </div>
@@ -164,7 +164,7 @@ function FinalView({ r }: { r: FinalResult }) {
             rows={r.alternatives.options.map((o) => [
               <span key="l">
                 <strong>{o.label}</strong>
-                <div style={{ fontSize: 11, color: '#7a7f8c' }}>instead of {o.replaces}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>instead of {o.replaces}</div>
               </span>,
               o.eligibility,
               o.strengths.join('; '),
@@ -176,16 +176,16 @@ function FinalView({ r }: { r: FinalResult }) {
             ])}
           />
         )}
-        {r.alternatives.note && <p style={{ fontSize: 12, color: '#9a6700' }}>{r.alternatives.note}</p>}
+        {r.alternatives.note && <p style={{ fontSize: 12, color: 'var(--warning)' }}>{r.alternatives.note}</p>}
       </div>
 
       <div className="card">
         <div className="metric-label">Level 2 - Technical recommendation (explainability, spec §16 / §24)</div>
         {r.technical.map((t) => (
-          <details key={t.phase} style={{ borderTop: '1px solid #eceff3', padding: '8px 0' }}>
+          <details key={t.phase} style={{ borderTop: '1px solid var(--border)', padding: '8px 0' }}>
             <summary style={{ cursor: 'pointer', fontSize: 14 }}>
               <strong>{t.title}</strong>: {t.recommendation ?? 'no recommendation'} · {t.status.replace('_', ' ')} · confidence {t.confidence}
-              {t.outOfDate && <span style={{ color: '#9a6700' }}> · out of date</span>}
+              {t.outOfDate && <span style={{ color: 'var(--warning)' }}> · out of date</span>}
             </summary>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 10, marginTop: 8 }}>
               <Small title="Why was this selected?" items={t.why} />
@@ -205,10 +205,10 @@ function FinalView({ r }: { r: FinalResult }) {
       <div className="card">
         <div className="metric-label">Architecture Decision Record (spec §18)</div>
         {r.adr.map((s) => (
-          <details key={s.number} style={{ borderTop: '1px solid #eceff3', padding: '6px 0' }}>
+          <details key={s.number} style={{ borderTop: '1px solid var(--border)', padding: '6px 0' }}>
             <summary style={{ cursor: 'pointer', fontSize: 13 }}>
               {s.number}. {s.title}
-              {s.status !== 'current' && s.source && <span style={{ color: s.status === 'stale' ? '#9a6700' : '#b03a2e' }}> · {PRESENCE[s.status]}</span>}
+              {s.status !== 'current' && s.source && <span style={{ color: s.status === 'stale' ? 'var(--warning)' : 'var(--danger)' }}> · {PRESENCE[s.status]}</span>}
             </summary>
             <Bullets items={s.lines.length ? s.lines : ['—']} />
           </details>
@@ -225,7 +225,7 @@ function FinalView({ r }: { r: FinalResult }) {
       </div>
 
       {r.gaps.length > 0 && (
-        <div className="card" style={{ borderLeft: '4px solid #9a6700' }}>
+        <div className="card" style={{ borderLeft: '4px solid var(--warning)' }}>
           <div className="metric-label">Open gaps across the assessment</div>
           <Bullets items={r.gaps} />
         </div>
@@ -237,7 +237,7 @@ function FinalView({ r }: { r: FinalResult }) {
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div style={{ fontSize: 11, color: '#5a6472', textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase' }}>{label}</div>
       <div style={{ fontWeight: 600 }}>{value}</div>
     </div>
   );
@@ -246,8 +246,8 @@ function Fact({ label, value }: { label: string; value: string }) {
 function Small({ title, items }: { title: string; items: string[] }) {
   return (
     <div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#1e3a5f' }}>{title}</div>
-      {items.length ? <Bullets items={items} /> : <div style={{ fontSize: 13, color: '#7a7f8c' }}>—</div>}
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{title}</div>
+      {items.length ? <Bullets items={items} /> : <div style={{ fontSize: 13, color: 'var(--muted)' }}>—</div>}
     </div>
   );
 }
@@ -267,7 +267,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
       <thead>
-        <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+        <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
           {headers.map((h, i) => (
             <th key={i} style={{ padding: '6px 8px' }}>
               {h}
@@ -277,7 +277,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} style={{ borderBottom: '1px solid #eceff3' }}>
+          <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
             {row.map((cell, j) => (
               <td key={j} style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                 {cell}

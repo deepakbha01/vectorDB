@@ -131,7 +131,7 @@ export function InferencePage() {
       </div>
       <div className="main-content">
         <TopBar title="Inference-as-a-Service Assessment" />
-        <p style={{ fontSize: 13, color: '#5a6472', maxWidth: 900, marginTop: -8 }}>
+        <p style={{ fontSize: 13, color: 'var(--muted)', maxWidth: 900, marginTop: -8 }}>
           Sizes model serving for this workload: GPU memory and throughput, latency against your targets, cost per token, and
           when self-hosting an open-weight model beats a managed API. Separate from the vector-database phases - it only reads
           them to suggest defaults.
@@ -148,7 +148,7 @@ export function InferencePage() {
             </button>
           </div>
         )}
-        {notice && <div className="card" style={{ marginBottom: 16, fontSize: 13, maxWidth: 1100, borderColor: '#b7dfc4', background: '#f1faf4' }}>{notice}</div>}
+        {notice && <div className="card" style={{ marginBottom: 16, fontSize: 13, maxWidth: 1100, borderColor: 'var(--success)', background: 'var(--success-soft)' }}>{notice}</div>}
 
         <form className="discovery-form" style={{ maxWidth: 1100 }} onSubmit={onSubmit}>
           <Section index={1} title="Workload & demand" sub="What the model is used for and how much traffic it serves.">
@@ -181,7 +181,7 @@ export function InferencePage() {
             <Select label="MLOps capability" value={form.opsCapability} onChange={(v) => set('opsCapability', v as any)}
               options={[['none', 'None'], ['part_time', 'Part-time'], ['dedicated_team', 'Dedicated team'], ['platform_team', 'Platform team (24x7)']]} />
             {selectedModel && (
-              <p style={{ gridColumn: '1 / -1', fontSize: 12, color: '#5a6472', margin: 0 }}>
+              <p style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--muted)', margin: 0 }}>
                 {selectedModel.layers} layers · {selectedModel.kvHeads} KV heads · {selectedModel.maxContextTokens.toLocaleString()}-token context
                 {selectedModel.activeParamsB !== selectedModel.paramsB ? ` · ${selectedModel.activeParamsB}B active (MoE)` : ''} · {selectedModel.licence}
               </p>
@@ -239,7 +239,7 @@ export function InferencePage() {
 
         {assessment && r && (
           <div style={{ marginTop: 28, maxWidth: 1100 }}>
-            <div className="card" style={{ marginBottom: 16, borderLeft: `4px solid ${r.decision === 'none_feasible' ? '#c0392b' : '#2f6fde'}` }}>
+            <div className="card" style={{ marginBottom: 16, borderLeft: `4px solid ${r.decision === 'none_feasible' ? 'var(--danger)' : 'var(--primary-text)'}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                 <div>
                   <div className="metric-label">Recommendation · version {assessment.version} · {new Date(assessment.createdAt).toLocaleString()}</div>
@@ -252,7 +252,7 @@ export function InferencePage() {
               </div>
               <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 13 }}>{r.decisionRationale.map((x) => <li key={x}>{x}</li>)}</ul>
               <button type="button" onClick={() => setShowWorkings((s) => !s)}
-                style={{ marginTop: 10, background: 'none', border: 'none', padding: 0, color: '#2f6fde', textDecoration: 'underline', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                style={{ marginTop: 10, background: 'none', border: 'none', padding: 0, color: 'var(--primary-text)', textDecoration: 'underline', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
                 {showWorkings ? 'Hide calculation' : 'Show calculation →'}
               </button>
               {showWorkings && (
@@ -281,17 +281,17 @@ export function InferencePage() {
                     o.precision.toUpperCase(),
                     o.tensorParallel,
                     o.batchSize,
-                    <span key="t" style={{ color: o.meetsTtft ? undefined : '#c0392b' }}>{fmt(o.ttftMs, 0)} ms</span>,
-                    <span key="p" style={{ color: o.meetsTpot ? undefined : '#c0392b' }}>{fmt(o.tpotMs)} ms</span>,
+                    <span key="t" style={{ color: o.meetsTtft ? undefined : 'var(--danger)' }}>{fmt(o.ttftMs, 0)} ms</span>,
+                    <span key="p" style={{ color: o.meetsTpot ? undefined : 'var(--danger)' }}>{fmt(o.tpotMs)} ms</span>,
                     `${o.replicasAtPeak} / ${o.replicasAtAverage}`,
                     o.totalGpusAtPeak.toLocaleString(),
                     usd(o.monthlyTotalUsd),
                     usdFine(o.costPerMillionTokensUsd),
-                    <span key="ok" style={{ color: ok ? '#1e8449' : '#c0392b', fontWeight: 600 }}>{ok ? '✓ Met' : '✗ Missed'}</span>,
+                    <span key="ok" style={{ color: ok ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>{ok ? '✓ Met' : '✗ Missed'}</span>,
                   ];
                 })}
               />
-              <p style={{ fontSize: 12, color: '#5a6472', margin: '8px 0 0' }}>★ recommended · hover ⓘ for notes (quality, interconnect, memory limits). Monthly = GPUs + infrastructure overhead + platform team.</p>
+              <p style={{ fontSize: 12, color: 'var(--muted)', margin: '8px 0 0' }}>★ recommended · hover ⓘ for notes (quality, interconnect, memory limits). Monthly = GPUs + infrastructure overhead + platform team.</p>
             </div>
 
             <div className="card-grid" style={{ marginBottom: 16 }}>
@@ -319,7 +319,7 @@ export function InferencePage() {
               </div>
               <div className="card">
                 <div className="metric-label">Assumptions</div>
-                <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, color: '#5a6472' }}>{r.assumptions.map((x) => <li key={x}>{x}</li>)}</ul>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, color: 'var(--muted)' }}>{r.assumptions.map((x) => <li key={x}>{x}</li>)}</ul>
               </div>
             </div>
           </div>
@@ -349,7 +349,7 @@ function Num({ label, value, onChange, step, hint }: { label: string; value: num
     <div className="field">
       <label>{label}</label>
       <input type="number" step={step ?? 1} value={value ?? ''} onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))} />
-      {hint && <div style={{ fontSize: 11, color: '#5a6472', marginTop: 3 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{hint}</div>}
     </div>
   );
 }
@@ -388,7 +388,7 @@ function Metric({ label, value, sub }: { label: string; value: string; sub?: str
     <div className="card">
       <div className="metric-label">{label}</div>
       <div className="metric-value">{value}</div>
-      {sub && <div style={{ fontSize: 12, color: '#5a6472', marginTop: 4 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }
@@ -397,11 +397,11 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
       <thead>
-        <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>{headers.map((h) => <th key={h} style={cell}>{h}</th>)}</tr>
+        <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{headers.map((h) => <th key={h} style={cell}>{h}</th>)}</tr>
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} style={{ borderBottom: '1px solid #eceff3' }}>{row.map((c, j) => <td key={j} style={cell}>{c}</td>)}</tr>
+          <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>{row.map((c, j) => <td key={j} style={cell}>{c}</td>)}</tr>
         ))}
       </tbody>
     </table>

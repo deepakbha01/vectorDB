@@ -48,7 +48,7 @@ export function ExecutiveSummaryCard({
             </span>
             <div>
               <strong>{row.label}</strong>
-              <div style={{ color: '#5a6472' }}>{row.explanation}</div>
+              <div style={{ color: 'var(--muted)' }}>{row.explanation}</div>
             </div>
           </div>
         ))}

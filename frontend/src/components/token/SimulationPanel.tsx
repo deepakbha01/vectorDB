@@ -138,7 +138,7 @@ export function SimulationPanel({ projectId, onChanged, onView }: { projectId: s
           )}
           {error && <div className="error-text" style={{ marginTop: 6 }}>{error}</div>}
           {result && (
-            <div style={{ marginTop: 10, fontSize: 13, borderLeft: `4px solid ${result.rejected ? '#fab219' : '#0ca30c'}`, paddingLeft: 10 }}>
+            <div style={{ marginTop: 10, fontSize: 13, borderLeft: `4px solid ${result.rejected ? 'var(--warning)' : 'var(--success)'}`, paddingLeft: 10 }}>
               <strong>{result.label}</strong>: {full(result.accepted)} of {full(result.received)} events stored
               {result.duplicates ? `, ${full(result.duplicates)} already present (ignored)` : ''}
               {result.rejected ? `, ${full(result.rejected)} rejected` : ''}
@@ -159,7 +159,7 @@ export function SimulationPanel({ projectId, onChanged, onView }: { projectId: s
                 rows={runs.map((r) => [
                   <span key="l">
                     <strong>{r.label}</strong>
-                    {r.status === 'failed' && <span style={{ color: '#d03b3b', fontSize: 12 }}> ▲ failed</span>}
+                    {r.status === 'failed' && <span style={{ color: 'var(--danger)', fontSize: 12 }}> ▲ failed</span>}
                     {r.status === 'in_progress' && <span style={{ color: VIZ.muted, fontSize: 12 }}> ○ uploading</span>}
                     <div style={{ fontSize: 12, color: VIZ.muted }}>{r.fileName}</div>
                     {r.status === 'failed' && r.error && <div style={{ fontSize: 12, color: VIZ.ink2 }}>{r.error} - delete this run, then upload again.</div>}
@@ -182,7 +182,7 @@ export function SimulationPanel({ projectId, onChanged, onView }: { projectId: s
                     {canWrite &&
                       (confirm === r.id ? (
                         <>
-                          <button type="button" style={{ ...linkBtn, color: '#d03b3b' }} disabled={busy} onClick={() => remove(r.id)}>
+                          <button type="button" style={{ ...linkBtn, color: 'var(--danger)' }} disabled={busy} onClick={() => remove(r.id)}>
                             Confirm delete
                           </button>
                           <button type="button" style={linkBtn} onClick={() => setConfirm(null)}>

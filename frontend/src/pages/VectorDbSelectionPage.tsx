@@ -101,7 +101,7 @@ function DecisionStatusCard({ adr }: { adr: ArchitectureDecisionRecord }) {
           <div className="metric-label">Decision status</div>
           <div className="metric-value" style={{ fontSize: 18 }}>{DECISION_STATUS_LABEL[adr.decisionStatus]}</div>
           {adr.decisionStatus === 'tied' && (
-            <p style={{ fontSize: 12, color: '#5a6472' }}>
+            <p style={{ fontSize: 12, color: 'var(--muted)' }}>
               Tied with: {adr.tiedPlatformIds.join(', ')}
               {adr.tieBreakStage ? ` — ${adr.tieBreakStage}` : ''}
             </p>
@@ -137,7 +137,7 @@ function BudgetAndComplianceCard({ adr }: { adr: ArchitectureDecisionRecord }) {
           <div className="metric-label">Budget feasibility</div>
           <div className="metric-value" style={{ fontSize: 16 }}>${adr.budgetFeasibility.monthlyBudgetUsd}/mo stated</div>
           <span className="status-pill">{adr.budgetFeasibility.status.replace(/_/g, ' ')}</span>
-          <p style={{ fontSize: 12, color: '#5a6472' }}>{adr.budgetFeasibility.note}</p>
+          <p style={{ fontSize: 12, color: 'var(--muted)' }}>{adr.budgetFeasibility.note}</p>
         </div>
       )}
       {adr.complianceGate && adr.complianceGate.applicable && (
@@ -146,7 +146,7 @@ function BudgetAndComplianceCard({ adr }: { adr: ArchitectureDecisionRecord }) {
           <span className="status-pill">{adr.complianceGate.status}</span>
           <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12 }}>
             {adr.complianceGate.checks.map((c) => (
-              <li key={c.control} style={{ color: c.satisfied ? 'inherit' : '#b3261e' }}>
+              <li key={c.control} style={{ color: c.satisfied ? 'inherit' : 'var(--danger)' }}>
                 {c.control}: {c.satisfied ? 'captured' : 'not captured'}
               </li>
             ))}
@@ -178,7 +178,7 @@ function WhatIfAnalysisCard({ projectId }: { projectId: string }) {
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="metric-label" style={{ marginBottom: 6 }}>What-if analysis</div>
-      <p style={{ fontSize: 12, color: '#5a6472', margin: '0 0 10px' }}>
+      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 10px' }}>
         Re-runs the current assessment under a few common what-if scenarios (QPS x2, vector count x2, budget halved, multi-region
         toggled, a stricter recall target) without submitting a new version, so you can see whether the decision is sensitive to
         these inputs before committing to it.
@@ -186,11 +186,11 @@ function WhatIfAnalysisCard({ projectId }: { projectId: string }) {
       <button type="button" className="primary-btn" onClick={run} disabled={loading}>
         {loading ? 'Running...' : 'Run what-if analysis'}
       </button>
-      {error && <p style={{ color: '#b3261e', fontSize: 13 }}>{error}</p>}
+      {error && <p style={{ color: 'var(--danger)', fontSize: 13 }}>{error}</p>}
       {analysis && (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 12 }}>
           <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+            <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
               <th style={{ padding: '6px 8px' }}>Scenario</th>
               <th style={{ padding: '6px 8px' }}>Decision</th>
               <th style={{ padding: '6px 8px' }}>Changed?</th>
@@ -198,14 +198,14 @@ function WhatIfAnalysisCard({ projectId }: { projectId: string }) {
             </tr>
           </thead>
           <tbody>
-            <tr style={{ borderBottom: '1px solid #eceff3', color: '#5a6472' }}>
+            <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--muted)' }}>
               <td style={{ padding: '6px 8px' }}>Baseline (current assessment)</td>
               <td style={{ padding: '6px 8px' }}>{analysis.baselineDecision}</td>
               <td style={{ padding: '6px 8px' }}>-</td>
               <td style={{ padding: '6px 8px' }}>{analysis.baselineDecisionStatus}</td>
             </tr>
             {analysis.scenarios.map((s) => (
-              <tr key={s.scenario} style={{ borderBottom: '1px solid #eceff3', fontWeight: s.decisionChanged ? 600 : 400 }}>
+              <tr key={s.scenario} style={{ borderBottom: '1px solid var(--border)', fontWeight: s.decisionChanged ? 600 : 400 }}>
                 <td style={{ padding: '6px 8px' }}>{s.scenario}</td>
                 <td style={{ padding: '6px 8px' }}>{s.decision}</td>
                 <td style={{ padding: '6px 8px' }}>{s.decisionChanged ? 'Yes' : 'No'}</td>
@@ -227,7 +227,7 @@ function AdrView({ adr, projectId }: { adr: ArchitectureDecisionRecord; projectI
         <PlainLanguageCard summary={adr.plainLanguageSummary} />
       ) : (
         <div className="card" style={{ marginBottom: 16 }}>
-          <p style={{ fontSize: 13, color: '#5a6472', margin: 0 }}>
+          <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>
             This assessment was run before the plain-English summary existed. Re-run the assessment to get one.
           </p>
         </div>
@@ -252,7 +252,7 @@ function AdrView({ adr, projectId }: { adr: ArchitectureDecisionRecord; projectI
         <div className="metric-value" style={{ fontSize: 22, textTransform: 'uppercase' }}>
           {adr.decision}
         </div>
-        <p style={{ fontSize: 13, color: '#5a6472' }}>{adr.rationale}</p>
+        <p style={{ fontSize: 13, color: 'var(--muted)' }}>{adr.rationale}</p>
         <span className="status-pill">Operational complexity: {adr.operationalComplexity}</span>
       </div>
       )}
@@ -262,7 +262,7 @@ function AdrView({ adr, projectId }: { adr: ArchitectureDecisionRecord; projectI
         <div className="metric-label" style={{ marginBottom: 6 }}>
           Scored options
         </div>
-        <p style={{ fontSize: 12, color: '#5a6472', margin: '0 0 10px' }}>
+        <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 10px' }}>
           Each candidate is scored 0-1 on seven weighted criteria
           {adr.criteriaWeights
             ? ` (vector volume ${(adr.criteriaWeights.vectorCount * 100).toFixed(0)}%, query throughput ${(adr.criteriaWeights.qps * 100).toFixed(0)}%, latency ${(adr.criteriaWeights.latency * 100).toFixed(0)}%, recall ${(adr.criteriaWeights.recall * 100).toFixed(0)}%, existing-platform fit ${(adr.criteriaWeights.existingPlatform * 100).toFixed(0)}%, operational simplicity ${(adr.criteriaWeights.operationalComplexity * 100).toFixed(0)}%, cost ${(adr.criteriaWeights.cost * 100).toFixed(0)}%)`
@@ -274,7 +274,7 @@ function AdrView({ adr, projectId }: { adr: ArchitectureDecisionRecord; projectI
         </p>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+            <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
               <th style={{ padding: '6px 8px' }}>Platform</th>
               <th style={{ padding: '6px 8px' }}>Eligibility</th>
               <th style={{ padding: '6px 8px' }}>Total</th>
@@ -291,7 +291,7 @@ function AdrView({ adr, projectId }: { adr: ArchitectureDecisionRecord; projectI
             {adr.options
               .filter((o) => o.eligibilityStatus !== 'ineligible')
               .map((o) => (
-                <tr key={o.platformId} style={{ borderBottom: '1px solid #eceff3', fontWeight: o.platformId === adr.decision ? 600 : 400 }}>
+                <tr key={o.platformId} style={{ borderBottom: '1px solid var(--border)', fontWeight: o.platformId === adr.decision ? 600 : 400 }}>
                   <td style={{ padding: '6px 8px' }}>{o.label}</td>
                   <td style={{ padding: '6px 8px', textTransform: 'capitalize' }}>{o.eligibilityStatus}</td>
                   <td style={{ padding: '6px 8px' }}>{o.totalScore.toFixed(2)}</td>
@@ -314,7 +314,7 @@ function AdrView({ adr, projectId }: { adr: ArchitectureDecisionRecord; projectI
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+                <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
                   <th style={{ padding: '6px 8px' }}>Platform</th>
                   <th style={{ padding: '6px 8px' }}>Total</th>
                   <th style={{ padding: '6px 8px' }}>Why ineligible</th>
@@ -324,7 +324,7 @@ function AdrView({ adr, projectId }: { adr: ArchitectureDecisionRecord; projectI
                 {adr.options
                   .filter((o) => o.eligibilityStatus === 'ineligible')
                   .map((o) => (
-                    <tr key={o.platformId} style={{ borderBottom: '1px solid #eceff3', color: '#5a6472' }}>
+                    <tr key={o.platformId} style={{ borderBottom: '1px solid var(--border)', color: 'var(--muted)' }}>
                       <td style={{ padding: '6px 8px' }}>{o.label}</td>
                       <td style={{ padding: '6px 8px' }}>{o.totalScore.toFixed(2)}</td>
                       <td style={{ padding: '6px 8px' }}>{o.eligibilityNotes.join(' ')}</td>
@@ -341,7 +341,7 @@ function AdrView({ adr, projectId }: { adr: ArchitectureDecisionRecord; projectI
               <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
                 Why {o.label} scored this way
               </summary>
-              <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, color: '#5a6472' }}>
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, color: 'var(--muted)' }}>
                 {o.evidence.map((e) => (
                   <li key={e}>{e}</li>
                 ))}
@@ -374,7 +374,7 @@ function AdrView({ adr, projectId }: { adr: ArchitectureDecisionRecord; projectI
         </div>
         <details>
           <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>How these figures are calculated</summary>
-          <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, color: '#5a6472' }}>
+          <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, color: 'var(--muted)' }}>
             {adr.infrastructureEstimate.notes.map((n) => (
               <li key={n}>{n}</li>
             ))}
@@ -510,7 +510,7 @@ export function VectorDbSelectionPage() {
 
         {!outcome && (
           <div className="card" style={{ marginBottom: 20 }}>
-            <p style={{ fontSize: 13, color: '#5a6472' }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)' }}>
               Runs the Recommendation Engine against your latest Discovery assessment, Data & Embedding Design, and
               Index Design to qualify and score candidate platforms. Requires Phases 1-3 to be complete.
             </p>
@@ -556,7 +556,7 @@ export function VectorDbSelectionPage() {
                     style={{ marginRight: 8 }}
                   />
                   <strong>{p.label}</strong>
-                  <div style={{ fontSize: 12, color: '#5a6472' }}>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                     Operational complexity: {p.operationalComplexity}
                     {p.requiresKubernetes ? ' - requires Kubernetes' : ''}
                   </div>
@@ -583,7 +583,7 @@ export function VectorDbSelectionPage() {
               {project.platform} {project.platformIsManualOverride ? '(manual override)' : ''}
             </div>
             {project.platformDecisionRationale && (
-              <p style={{ fontSize: 13, color: '#5a6472' }}>{project.platformDecisionRationale}</p>
+              <p style={{ fontSize: 13, color: 'var(--muted)' }}>{project.platformDecisionRationale}</p>
             )}
           </div>
         )}

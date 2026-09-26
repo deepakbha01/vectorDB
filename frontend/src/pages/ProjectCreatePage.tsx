@@ -68,7 +68,7 @@ export function ProjectCreatePage() {
                   style={{ marginRight: 8 }}
                 />
                 <strong>New / Greenfield</strong>
-                <div style={{ fontSize: 12, color: '#5a6472' }}>No existing vector/search deployment to account for.</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>No existing vector/search deployment to account for.</div>
               </label>
               <label className={`platform-option ${customerMode === 'existing' ? 'selected' : ''}`} style={{ display: 'block' }}>
                 <input
@@ -79,7 +79,7 @@ export function ProjectCreatePage() {
                   style={{ marginRight: 8 }}
                 />
                 <strong>Existing / Modernization</strong>
-                <div style={{ fontSize: 12, color: '#5a6472' }}>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                   Migrating or upgrading an existing deployment - capture the current database, vector/search
                   technology, and Kubernetes footprint in Phase 1 Discovery's "Existing technology" fields.
                 </div>
@@ -89,7 +89,7 @@ export function ProjectCreatePage() {
 
           <div>
             <label>AI Factory pattern (optional)</label>
-            <p style={{ fontSize: 12, color: '#5a6472', margin: '2px 0 10px' }}>
+            <p style={{ fontSize: 12, color: 'var(--muted)', margin: '2px 0 10px' }}>
               Seeds sensible starting defaults for the Phase 1 Discovery assessment - every value stays fully
               editable, and Phase 4 (Vector DB Selection) still qualifies and scores platforms from scratch
               regardless of which pattern you pick.
@@ -105,7 +105,7 @@ export function ProjectCreatePage() {
                   style={{ marginRight: 8 }}
                 />
                 <strong>Start from scratch</strong>
-                <div style={{ fontSize: 12, color: '#5a6472' }}>No pattern - use the generic Discovery defaults.</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>No pattern - use the generic Discovery defaults.</div>
               </label>
               {patterns.map((p) => (
                 <label
@@ -122,7 +122,7 @@ export function ProjectCreatePage() {
                     style={{ marginRight: 8 }}
                   />
                   <strong>{p.name}</strong>
-                  <div style={{ fontSize: 12, color: '#5a6472' }}>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                     {p.industry} - {p.description}
                   </div>
                 </label>

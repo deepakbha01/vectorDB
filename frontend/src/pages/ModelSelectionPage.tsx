@@ -8,10 +8,10 @@ import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
 const ELIGIBILITY: Record<Eligibility, { label: string; color: string }> = {
-  eligible: { label: 'Eligible', color: '#1e8449' },
-  conditional: { label: 'Conditional', color: '#9a6700' },
-  not_eligible: { label: 'Not eligible', color: '#b03a2e' },
-  not_assessed: { label: 'Not assessed', color: '#7a7f8c' },
+  eligible: { label: 'Eligible', color: 'var(--success)' },
+  conditional: { label: 'Conditional', color: 'var(--warning)' },
+  not_eligible: { label: 'Not eligible', color: 'var(--danger)' },
+  not_assessed: { label: 'Not assessed', color: 'var(--muted)' },
 };
 const FAMILY = { open_weight: 'Open weights (self-hostable)', proprietary_api: 'Managed API tier' } as const;
 
@@ -111,7 +111,7 @@ export function ModelSelectionPage() {
           </div>
         ) : (
           <>
-            <p style={{ fontSize: 13, color: '#5a6472', marginTop: -8, maxWidth: 1000 }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: -8, maxWidth: 1000 }}>
               Chooses a primary, secondary and fallback model from a technology-neutral catalogue: every candidate is first checked against mandatory requirements (a failure means{' '}
               <em>not eligible</em>, whatever it would score), then the rest are scored. Requirements left on <em>Default</em> are derived from the{' '}
               <Link to={`/projects/${project.id}/workload-profile`}>AI Workload Profile</Link>. Serving is sized separately in the{' '}
@@ -162,7 +162,7 @@ export function ModelSelectionPage() {
 function SelectionResult({ r, version, createdAt, projectId }: { r: ModelSelectionResult; version: number; createdAt: string; projectId: string }) {
   return (
     <div style={{ marginTop: 28, maxWidth: 1100, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div className="card" style={{ borderLeft: `4px solid ${r.primary ? '#2f6fde' : '#b03a2e'}` }}>
+      <div className="card" style={{ borderLeft: `4px solid ${r.primary ? 'var(--primary-text)' : 'var(--danger)'}` }}>
         <div className="metric-label">
           Model Decision Record · v{version} · {new Date(createdAt).toLocaleString()} · confidence {r.confidence}
         </div>
@@ -200,7 +200,7 @@ function SelectionResult({ r, version, createdAt, projectId }: { r: ModelSelecti
         </div>
         <div className="card">
           <Bullets title="Benchmark before production" items={r.benchmarkRequired} />
-          <p style={{ fontSize: 12, color: '#5a6472', margin: '8px 0 0' }}>
+          <p style={{ fontSize: 12, color: 'var(--muted)', margin: '8px 0 0' }}>
             Scoring weights used: {Object.entries(r.weightsUsed).map(([k, v]) => `${k} ${v}`).join(', ')}. Tiers are relative planning ratings (config/models.yaml, rules {r.rulesVersion}), not benchmark results.
           </p>
         </div>
@@ -215,7 +215,7 @@ function Pick({ title, m, sub }: { title: string; m: EvaluatedModel | null; sub?
       <div className="metric-label">{title}</div>
       <div className="metric-value" style={{ fontSize: 18 }}>{m ? m.label : '—'}</div>
       {m && (
-        <div style={{ fontSize: 12, color: '#5a6472', marginTop: 4 }}>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
           {FAMILY[m.family]} · score {m.score.toFixed(3)} · <span style={{ color: ELIGIBILITY[m.eligibility].color }}>{ELIGIBILITY[m.eligibility].label}</span>
           {sub ? <div>{sub}</div> : null}
         </div>
@@ -241,7 +241,7 @@ function Bullets({ title, items }: { title: string; items: string[] }) {
   if (!items.length) return null;
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#5a6472' }}>{title}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>{title}</div>
       <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13 }}>
         {items.map((x) => (
           <li key={x}>{x}</li>
@@ -255,7 +255,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
       <thead>
-        <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+        <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
           {headers.map((h) => (
             <th key={h} style={{ padding: '6px 8px' }}>
               {h}
@@ -265,7 +265,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} style={{ borderBottom: '1px solid #eceff3' }}>
+          <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
             {row.map((c, j) => (
               <td key={j} style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                 {c}

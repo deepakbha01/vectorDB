@@ -18,12 +18,12 @@ import { TopBar } from '../components/TopBar';
 
 const EMPTY: CreateWorkloadProfileInput = { businessObjective: '', businessCriticality: 'medium', workloadTypes: [], dataTypes: [], deploymentTargets: [] };
 const TIER_LABEL: Record<string, string> = { small: 'Small', medium: 'Medium', large: 'Large', enterprise: 'Enterprise', extreme_scale: 'Extreme Scale' };
-const LEVEL_COLOR: Record<string, string> = { restricted: '#b03a2e', confidential: '#9a6700', internal: '#1e8449' };
+const LEVEL_COLOR: Record<string, string> = { restricted: 'var(--danger)', confidential: 'var(--warning)', internal: 'var(--success)' };
 const EVIDENCE: Record<EvidenceType, { label: string; color: string }> = {
-  measured: { label: 'Measured', color: '#1e8449' },
-  estimated: { label: 'Estimated', color: '#2f6fde' },
-  vendor_listed: { label: 'Vendor-listed', color: '#6b3fa0' },
-  assumption: { label: 'Assumption', color: '#9a6700' },
+  measured: { label: 'Measured', color: 'var(--success)' },
+  estimated: { label: 'Estimated', color: 'var(--primary-text)' },
+  vendor_listed: { label: 'Vendor-listed', color: 'var(--violet)' },
+  assumption: { label: 'Assumption', color: 'var(--warning)' },
 };
 
 type NumKey = 'expectedUsers' | 'numberOfApplications' | 'documentCount' | 'expectedVectorCount' | 'dailyRequests' | 'peakQps' | 'concurrentUsers' | 'dataGrowthPercentPerMonth' | 'targetLatencyMs' | 'targetTtftMs' | 'throughputRps' | 'availabilityTargetPercent';
@@ -139,7 +139,7 @@ export function WorkloadProfilePage() {
           </div>
         ) : (
           <>
-            <p style={{ fontSize: 13, color: '#5a6472', marginTop: -8, maxWidth: 1000 }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: -8, maxWidth: 1000 }}>
               Describes the AI workload itself - business goal, workload type, data, scale, deployment and sensitivity - and classifies it. Blank answers are taken from{' '}
               <Link to={`/projects/${project.id}/discovery`}>Discovery</Link> or the project details and labelled as such, so nothing is asked twice. Part of step 01-02 in the{' '}
               <Link to={`/projects/${project.id}/ai-factory`}>AI Factory</Link> view.
@@ -234,12 +234,12 @@ export function WorkloadProfilePage() {
 function ProfileResult({ result: r, version, createdAt }: { result: WorkloadProfileResult; version: number; createdAt: string }) {
   return (
     <div style={{ marginTop: 28, maxWidth: 1100, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div className="card" style={{ borderLeft: `4px solid ${r.status === 'complete' ? '#2f6fde' : '#9a6700'}` }}>
+      <div className="card" style={{ borderLeft: `4px solid ${r.status === 'complete' ? 'var(--primary-text)' : 'var(--warning)'}` }}>
         <div className="metric-label">
           AI Workload Profile · v{version} · {new Date(createdAt).toLocaleString()} · {r.status === 'complete' ? 'complete' : 'incomplete'}
         </div>
         {r.missingInputs.length > 0 && (
-          <p style={{ fontSize: 13, color: '#9a6700', margin: '6px 0 0' }}>Still needed before downstream phases rely on it: {r.missingInputs.join(', ')}.</p>
+          <p style={{ fontSize: 13, color: 'var(--warning)', margin: '6px 0 0' }}>Still needed before downstream phases rely on it: {r.missingInputs.join(', ')}.</p>
         )}
         <div className="card-grid" style={{ marginTop: 12 }}>
           <Metric label="Workload size" value={r.workloadSize.tier ? TIER_LABEL[r.workloadSize.tier] : '—'} sub={r.workloadSize.explanation} />
@@ -270,7 +270,7 @@ function ProfileResult({ result: r, version, createdAt }: { result: WorkloadProf
           {r.performanceProfile.length ? (
             <Table headers={['', 'Value', 'Evidence']} rows={r.performanceProfile.map((x) => [x.label, x.value, <Evidence key="e" t={x.evidenceType} />])} />
           ) : (
-            <p style={{ fontSize: 13, color: '#5a6472' }}>No performance targets given yet.</p>
+            <p style={{ fontSize: 13, color: 'var(--muted)' }}>No performance targets given yet.</p>
           )}
         </div>
       </div>
@@ -279,8 +279,8 @@ function ProfileResult({ result: r, version, createdAt }: { result: WorkloadProf
         <div className="card">
           <div className="metric-label">Security requirements ({r.dataClassification.level})</div>
           <Bullets items={r.securityRequirements.controls} />
-          {r.securityRequirements.alreadyRequired.length > 0 && <p style={{ fontSize: 12, color: '#5a6472' }}>Already required in Discovery: {r.securityRequirements.alreadyRequired.join(', ')}.</p>}
-          <Bullets items={r.securityRequirements.notes} color="#9a6700" />
+          {r.securityRequirements.alreadyRequired.length > 0 && <p style={{ fontSize: 12, color: 'var(--muted)' }}>Already required in Discovery: {r.securityRequirements.alreadyRequired.join(', ')}.</p>}
+          <Bullets items={r.securityRequirements.notes} color="var(--warning)" />
         </div>
         <div className="card">
           <div className="metric-label">Deployment requirements</div>
@@ -316,7 +316,7 @@ function Metric({ label, value, sub, color }: { label: string; value: string; su
     <div className="card">
       <div className="metric-label">{label}</div>
       <div className="metric-value" style={{ color, textTransform: 'capitalize' }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: '#5a6472', marginTop: 4 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }
@@ -340,7 +340,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
       <thead>
-        <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+        <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
           {headers.map((h, i) => (
             <th key={i} style={{ padding: '6px 8px' }}>
               {h}
@@ -350,7 +350,7 @@ function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} style={{ borderBottom: '1px solid #eceff3' }}>
+          <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
             {row.map((c, j) => (
               <td key={j} style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                 {c}

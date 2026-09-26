@@ -685,7 +685,7 @@ export function DiscoveryPage() {
         {outcome && !showForm && (
           <div className="card" style={{ marginBottom: 20 }}>
             <div className="metric-label">Assessment submitted</div>
-            <p style={{ fontSize: 13, color: '#5a6472' }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)' }}>
               Version {outcome.assessment.version} is recorded. This is a workload qualification only - it does not
               select a target platform. Continue to Phase 2 (Data & Embeddings) and Phase 3 (Index Design), then run{' '}
               <Link to={`/projects/${project.id}/vector-db-selection`}>Phase 4: Vector DB Selection</Link> to get a
@@ -699,7 +699,7 @@ export function DiscoveryPage() {
 
         {showForm && usedPattern && (
           <div className="card" style={{ marginBottom: 16 }}>
-            <p style={{ fontSize: 13, color: '#5a6472', margin: 0 }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>
               Defaults below are seeded from the <strong>{usedPattern.name}</strong> pattern - every field is
               editable before you submit.
             </p>

@@ -52,7 +52,7 @@ export function OptimizationPage() {
         <TopBar title="Phase 6 - Operations: Latency & Recall Tuning" />
 
         <form className="stacked" style={{ maxWidth: 480, marginBottom: 24 }} onSubmit={onRun}>
-          <p style={{ fontSize: 13, color: '#5a6472' }}>
+          <p style={{ fontSize: 13, color: 'var(--muted)' }}>
             Runs a synthetic benchmark against your Phase 3 index configuration - a corpus of random vectors at your
             embedding dimension is provisioned in an ephemeral collection, queried across several search-parameter
             values, measured, and cleaned up automatically.
@@ -86,7 +86,7 @@ export function OptimizationPage() {
               <div className="metric-value" style={{ fontSize: 20 }}>
                 {report.recommendedVariant.searchParamName} = {report.recommendedVariant.searchParamValue}
               </div>
-              <p style={{ fontSize: 13, color: '#5a6472' }}>
+              <p style={{ fontSize: 13, color: 'var(--muted)' }}>
                 P95 {report.recommendedVariant.p95LatencyMs}ms - recall {report.recommendedVariant.avgRecall} - achieved{' '}
                 {report.recommendedVariant.achievedQps} QPS (single connection)
               </p>
@@ -98,7 +98,7 @@ export function OptimizationPage() {
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
-                  <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+                  <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
                     <th style={{ padding: '6px 8px' }}>{report.variantResults[0]?.searchParamName}</th>
                     <th style={{ padding: '6px 8px' }}>P50</th>
                     <th style={{ padding: '6px 8px' }}>P95</th>
@@ -112,7 +112,7 @@ export function OptimizationPage() {
                     <tr
                       key={v.searchParamValue}
                       style={{
-                        borderBottom: '1px solid #eceff3',
+                        borderBottom: '1px solid var(--border)',
                         fontWeight: v.searchParamValue === report.recommendedVariant.searchParamValue ? 600 : 400,
                       }}
                     >
@@ -128,7 +128,7 @@ export function OptimizationPage() {
                   ))}
                 </tbody>
               </table>
-              <p style={{ fontSize: 12, color: '#5a6472', marginTop: 8 }}>
+              <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
                 Memory estimate: {report.capacityImpact.estimatedMemoryGb} GB - directional cost estimate: $
                 {report.costImplications.estimatedCostPerHourUsd}/hour (same across variants; search-time parameters
                 don't change the index's memory footprint).

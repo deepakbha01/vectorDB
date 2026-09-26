@@ -5,9 +5,9 @@ import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
 function statusColor(statusCode: number): string {
-  if (statusCode >= 500) return '#c0392b';
-  if (statusCode >= 400) return '#c0392b';
-  return '#1e8e5a';
+  if (statusCode >= 500) return 'var(--danger)';
+  if (statusCode >= 400) return 'var(--danger)';
+  return 'var(--success)';
 }
 
 export function AuditLogPage() {
@@ -34,7 +34,7 @@ export function AuditLogPage() {
       </div>
       <div className="main-content">
         <TopBar title="Audit Log" />
-        <p style={{ fontSize: 13, color: '#5a6472', marginBottom: 16 }}>
+        <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16 }}>
           Every action taken on this project - who, what, when - most recent first. Click a row for the request/
           response details (secrets are redacted).
         </p>
@@ -44,7 +44,7 @@ export function AuditLogPage() {
         <div className="card" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '1px solid #dfe3e8' }}>
+              <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
                 <th style={{ padding: '6px 8px' }}>Time</th>
                 <th style={{ padding: '6px 8px' }}>User</th>
                 <th style={{ padding: '6px 8px' }}>Method</th>
@@ -57,7 +57,7 @@ export function AuditLogPage() {
               {entries.map((entry) => (
                 <Fragment key={entry.id}>
                   <tr
-                    style={{ borderBottom: '1px solid #eceff3', cursor: 'pointer' }}
+                    style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
                     onClick={() => setExpanded(expanded === entry.id ? null : entry.id)}
                   >
                     <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{new Date(entry.createdAt).toLocaleString()}</td>
@@ -69,7 +69,7 @@ export function AuditLogPage() {
                   </tr>
                   {expanded === entry.id && (
                     <tr>
-                      <td colSpan={6} style={{ padding: '6px 8px', background: '#f5f6f8' }}>
+                      <td colSpan={6} style={{ padding: '6px 8px', background: 'var(--surface-2)' }}>
                         <div style={{ fontSize: 12, marginBottom: 4 }}>
                           <strong>Request:</strong>
                         </div>

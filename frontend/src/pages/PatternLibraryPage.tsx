@@ -31,7 +31,7 @@ export function PatternLibraryPage() {
   return (
     <div className="main-content">
       <TopBar title="AI Factory Pattern Library" />
-      <p style={{ fontSize: 13, color: '#5a6472', maxWidth: 760, marginBottom: 20 }}>
+      <p style={{ fontSize: 13, color: 'var(--muted)', maxWidth: 760, marginBottom: 20 }}>
         Reusable, configurable starting points for a new project. Picking a pattern on{' '}
         <Link to="/projects/new">project creation</Link> seeds Phase 1 Discovery with typical defaults for that use
         case - every value stays fully editable, and Phase 4 (Vector DB Selection) still qualifies and scores
@@ -43,11 +43,11 @@ export function PatternLibraryPage() {
 
       {patterns?.map((p) => (
         <div key={p.id} className="card" style={{ marginBottom: 16 }}>
-          <div className="metric-value" style={{ fontSize: 18 }}>
+          <div className="card-title">
             {p.name}
           </div>
           <span className="status-pill">{p.industry}</span>
-          <p style={{ fontSize: 13, color: '#5a6472', marginTop: 8 }}>{p.description}</p>
+          <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 8 }}>{p.description}</p>
 
           <div className="card-grid" style={{ marginTop: 12 }}>
             <div className="card">

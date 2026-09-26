@@ -6,8 +6,8 @@ import { linkBtn, VIZ } from './charts';
 
 /** Status colours are reserved for status and always come with an icon and a label. */
 const SEVERITY: Record<TokenAlert['severity'], { icon: string; label: string; color: string }> = {
-  critical: { icon: '◆', label: 'Critical', color: '#d03b3b' },
-  warning: { icon: '▲', label: 'Warning', color: '#b8860b' },
+  critical: { icon: '◆', label: 'Critical', color: 'var(--danger)' },
+  warning: { icon: '▲', label: 'Warning', color: 'var(--warning)' },
 };
 const RULE_LABEL: Record<string, string> = {
   budget: 'Token budget',
@@ -60,7 +60,7 @@ export function AlertsPanel({ projectId, onChanged }: { projectId: string; onCha
   const shown = showAll ? (data?.alerts ?? []) : open;
 
   return (
-    <div className="card" style={{ maxWidth: 1250, marginTop: 16, borderLeft: `4px solid ${open.some((a) => a.severity === 'critical') ? '#d03b3b' : open.length ? '#fab219' : '#dfe3e8'}` }}>
+    <div className="card" style={{ maxWidth: 1250, marginTop: 16, borderLeft: `4px solid ${open.some((a) => a.severity === 'critical') ? 'var(--danger)' : open.length ? 'var(--warning)' : 'var(--border)'}` }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
         <div className="metric-label" style={{ marginBottom: 0 }}>
           Alerts - {open.length ? `${open.length} open` : 'none open'}
@@ -86,7 +86,7 @@ export function AlertsPanel({ projectId, onChanged }: { projectId: string; onCha
             const s = SEVERITY[a.severity];
             const resolved = a.status === 'resolved';
             return (
-              <div key={a.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', fontSize: 13, opacity: resolved ? 0.65 : 1, borderTop: '1px solid #eceff3', paddingTop: 8 }}>
+              <div key={a.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', fontSize: 13, opacity: resolved ? 0.65 : 1, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
                 <span style={{ color: resolved ? VIZ.muted : s.color, minWidth: 78, fontWeight: 600 }}>
                   {resolved ? '○ Resolved' : `${s.icon} ${s.label}`}
                 </span>

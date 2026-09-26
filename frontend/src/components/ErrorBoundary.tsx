@@ -29,11 +29,11 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div style={{ padding: 40, maxWidth: 560, margin: '0 auto', fontFamily: 'system-ui, sans-serif' }}>
           <h2>Something went wrong</h2>
-          <p style={{ color: '#5a6472' }}>
+          <p style={{ color: 'var(--muted)' }}>
             This page hit an unexpected error and couldn't render. Reloading usually fixes it; if it keeps happening,
             check the browser console for details.
           </p>
-          <pre style={{ background: '#f5f6f8', padding: 12, borderRadius: 6, fontSize: 12, overflowX: 'auto' }}>
+          <pre style={{ background: 'var(--surface-2)', padding: 12, borderRadius: 6, fontSize: 12, overflowX: 'auto' }}>
             {this.state.error.message}
           </pre>
           <button
