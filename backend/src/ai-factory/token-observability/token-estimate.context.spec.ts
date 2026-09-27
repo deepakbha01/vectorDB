@@ -49,7 +49,7 @@ describe('resolveEstimateContext', () => {
     expect(resolveEstimateContext({ ...none, profile }, CAT).context.gaps[0]).toMatch(/No RAG \/ agent design yet/);
   });
 
-  it('prices the model at the tier Inference sized, and treats self-hosted serving as capacity cost like FinOps', () => {
+  it('prices the model at the tier Inference sized, and treats self-hosted serving as capacity cost like the Cost Recommendation', () => {
     const managed = resolveEstimateContext({ ...none, inference: inference() }, CAT).context.llm!;
     expect(managed).toEqual(expect.objectContaining({ provider: MANAGED_API_TIER, model: 'mid', selfHosted: null, assessedPrices: { inputPer1M: 3, outputPer1M: 15 } }));
     const self = resolveEstimateContext({ ...none, inference: inference({ result: { ...inference().result, decision: 'self_hosted' } }) }, CAT).context.llm!;
@@ -63,7 +63,7 @@ describe('resolveEstimateContext', () => {
     expect(r.requestsSource).toBe('Discovery v4: 2 QPS average');
   });
 
-  it('computes new-document embedding tokens the same way FinOps does', () => {
+  it('computes new-document embedding tokens the same way the Cost Recommendation does', () => {
     const pipeline = { version: 1, chunkingStrategy: ChunkingStrategy.TOKEN_BASED, chunkSize: 500, embeddingProviderId: 'openai', embeddingModelId: 'emb-small' } as any;
     const discovery = { version: 2, documentCount: 10_000, chunksPerDocument: 8, documentGrowthPercentPerMonth: 5, qps: 1, monthlyBudgetUsd: 9000 } as any;
     const { context } = resolveEstimateContext({ ...none, pipeline, discovery }, CAT);

@@ -89,7 +89,7 @@ when - click a row for the full (redacted) request/response detail.
 When the AI Factory is enabled, the sidebar gains an **Inference track**:
 **AI Factory (guided)** plus one page per phase - AI Workload Profile, Model
 Selection, Inference Architecture, Infrastructure Design, RAG / Agent
-Architecture, Security & Governance, Performance & Benchmark, Cost & FinOps,
+Architecture, Security & Governance, Performance & Benchmark, Cost Recommendation,
 Operations Model and Final Recommendation.
 
 - Start at **AI Factory (guided)**: it lists the steps (01 Use Case to the
@@ -135,8 +135,8 @@ On the Simulated and Live dashboards: filter by time, environment,
 application, service, workflow, provider, model (and tenant, for admins and
 architects). Click a trend bar to narrow the time range, a service or model
 bar to filter to it, and a request to open its trace. *Export CSV* saves the
-summary. Choose *Executive view* for the headline figures only. The Cost &
-FinOps page shows token cost estimated vs actual, and the Final
+summary. Choose *Executive view* for the headline figures only. The Cost
+Recommendation page shows token cost estimated vs actual, and the Final
 Recommendation weighs token evidence in its cost check. Details:
 [TOKEN_OBSERVABILITY.md](TOKEN_OBSERVABILITY.md).
 

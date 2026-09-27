@@ -44,7 +44,7 @@ describe('operations catalogue (config/operations.yaml)', () => {
   });
 });
 
-describe('drTier (shared with Cost & FinOps)', () => {
+describe('drTier (shared with the Cost Recommendation)', () => {
   it.each([
     [{ requiresMultiRegion: true, rtoMinutes: 600 }, 'active'],
     [{ regionalFailoverRequired: true, rtoMinutes: 600 }, 'warm'],

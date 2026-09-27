@@ -233,8 +233,8 @@ resolves itself when it stops; acknowledging records who is on it.
   the token estimate against the budget, whether usage was measured, live
   cost against the estimate and open token alerts; the ADR records token
   consumption. A new estimate marks the recommendation out of date.
-- **Cost & FinOps page**: a read-only "Token cost - estimated vs actual"
-  panel. The FinOps assessment itself is unchanged.
+- **Cost Recommendation page**: a read-only "Token cost - estimated vs actual"
+  panel. The Cost Recommendation itself is unchanged.
 - **Central state** (spec §16): the `tokenObservability` section.
 
 ## Security and privacy (spec §18)

@@ -90,8 +90,8 @@ export function readinessGate(x: FinalInputs): FinalResult['readiness'] {
     technology,
     stage('performance', ['performance_benchmark'], fromValidation(summary(x.state.performance).statusKey, 'Performance & Benchmark')),
     x.tokenObservability
-      ? stage('cost', ['finops', 'token_observability'], combine(fromValidation(summary(x.state.cost).validation, 'Cost & FinOps'), tokenEvidence(x.state.tokenObservability)))
-      : stage('cost', ['finops'], fromValidation(summary(x.state.cost).validation, 'Cost & FinOps')),
+      ? stage('cost', ['finops', 'token_observability'], combine(fromValidation(summary(x.state.cost).validation, 'Cost Recommendation'), tokenEvidence(x.state.tokenObservability)))
+      : stage('cost', ['finops'], fromValidation(summary(x.state.cost).validation, 'Cost Recommendation')),
     stage('operations', ['operations_model'], fromValidation(summary(x.state.operations).verdict, 'Operations model')),
   ];
 
@@ -152,7 +152,7 @@ export function architectureAlternatives(x: FinalInputs): FinalResult['alternati
       strengths: candidate ? [`Score ${candidate.score ?? 'n/a'} in ${d.title}`, ...candidate.notes.filter((n) => !/conditional|needs|requires|must/i.test(n)).slice(0, 2)] : [`Usable alternative in ${d.title}`],
       limitations: candidate ? candidate.notes.filter((n) => /conditional|needs|requires|must|not /i.test(n)).slice(0, 3) : [alt.reason],
       deployment: phase === 'infrastructure_design' ? alt.label : 'Within the chosen deployment',
-      costConsiderations: costed ? `${costed.notes[0]} (Cost & FinOps)` : 'Not priced separately - re-run Cost & FinOps if chosen.',
+      costConsiderations: costed ? `${costed.notes[0]} (Cost Recommendation)` : 'Not priced separately - re-run Cost Recommendation if chosen.',
       risks: alt.eligibility === 'conditional' ? [alt.reason] : [],
       whenToChoose: d.wouldChangeIf[0] ?? `If the reason for the current ${d.title.toLowerCase()} choice no longer holds.`,
       sourcePhase: phase,
@@ -192,7 +192,7 @@ export function buildFinalRecommendation(x: FinalInputs): FinalResult {
     { step: 'AI application', component: str(S('rag').scope, 'not designed'), source: 'rag_agent_architecture', status: status('rag_agent_architecture') },
     { step: 'Security', component: S('security').overall ? `${S('security').overall} (${S('security').validation})` : 'not assessed', source: 'security_governance', status: status('security_governance') },
     { step: 'Monitoring', component: S('operations').verdict ? `Operations model: ${S('operations').verdict}` : 'not modelled', source: 'operations_model', status: status('operations_model') },
-    { step: 'FinOps', component: S('cost').chosenMonthlyUsd ? `~$${Math.round(S('cost').chosenMonthlyUsd).toLocaleString()} / month (estimate)` : 'not priced', source: 'finops', status: status('finops') },
+    { step: 'Cost', component: S('cost').chosenMonthlyUsd ? `~$${Math.round(S('cost').chosenMonthlyUsd).toLocaleString()} / month (estimate)` : 'not priced', source: 'finops', status: status('finops') },
   ];
 
   const alternatives = architectureAlternatives(x);

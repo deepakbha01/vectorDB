@@ -7,7 +7,7 @@ import { rangeFor } from './ObservedDashboard';
 
 /**
  * Token cost, estimated vs actual (Token Observability, spec §13), shown on
- * the Cost & FinOps page. Read-only: it never changes the FinOps assessment,
+ * the Cost Recommendation page. Read-only: it never changes the Cost Recommendation,
  * which prices the whole architecture; this is the token-driven part.
  */
 export function TokenCostPanel({ projectId }: { projectId: string }) {
@@ -66,7 +66,7 @@ export function TokenCostPanel({ projectId }: { projectId: string }) {
           <div style={{ color: VIZ.ink2, fontSize: 12 }}>{estimate?.result.budget.monthlyBudgetUsd ? `of ${usd(estimate.result.budget.monthlyBudgetUsd, 0)} (${estimate.result.budget.source})` : 'No budget recorded'}</div>
         </div>
       </div>
-      <div style={{ fontSize: 12, color: VIZ.muted, marginTop: 8 }}>Token-driven cost only. The FinOps assessment above prices the whole architecture and is not changed by this panel.</div>
+      <div style={{ fontSize: 12, color: VIZ.muted, marginTop: 8 }}>Token-driven cost only. The Cost Recommendation above prices the whole architecture and is not changed by this panel.</div>
     </div>
   );
 }

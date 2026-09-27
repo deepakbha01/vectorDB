@@ -127,7 +127,7 @@ function priced(id: PricedOption['id'], label: string, a: Assignment, allowed: b
   };
 }
 
-/** Cost & FinOps Assessment (spec §13). Pure. */
+/** Cost Recommendation (spec §13). Pure. */
 export function assessFinops(ctx: FinopsContext, cat: FinopsCatalogue): FinopsResult {
   const allowed = (ts: TargetId[]) => ts.every((t) => ctx.allowedTargets.includes(t));
   const single = TARGETS.map((t) => priced(t, TARGET_LABELS[t], { inference: t, vector: t, application: t }, allowed([t]), ctx, cat));

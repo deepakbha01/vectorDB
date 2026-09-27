@@ -72,7 +72,7 @@ import { InferenceModule } from '../inference/inference.module';
  * AI Factory foundations (Wave 1), AI Workload Profile (Wave 2), Model
  * Selection (Wave 3), Inference Architecture (Wave 4), Infrastructure
  * (Wave 5), RAG / Agent architecture (Wave 6), Security & Governance
- * (Wave 7), Performance & Benchmark (Wave 8), Cost & FinOps (Wave 9), the
+ * (Wave 7), Performance & Benchmark (Wave 8), Cost Recommendation (Wave 9), the
  * Operations model (Wave 10), the Final Recommendation (Wave 11) and Token
  * Observability (Wave 12). Registers repositories for the existing
  * deliverable entities for READ access only; the only tables this module

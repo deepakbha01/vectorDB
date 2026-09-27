@@ -226,7 +226,7 @@ export function assessOperations(ctx: OperationsContext, cat: OperationsCatalogu
 
   const wouldChangeIf: string[] = [];
   if (sla.meets === false && ctx.deployment?.targets.includes('on_premises') && !ctx.deployment.multipleOnPremSites) wouldChangeIf.push('A second on-premises site (or a cloud DR target) lifts the site availability that limits the SLA.');
-  if (rto.meets === false && rto.tier === 'cold') wouldChangeIf.push('A warm standby cuts recovery to minutes, at the DR cost shown in Cost & FinOps.');
+  if (rto.meets === false && rto.tier === 'cold') wouldChangeIf.push('A warm standby cuts recovery to minutes, at the DR cost shown in the Cost Recommendation.');
   if (!load.withinCapacity) wouldChangeIf.push('Managed serving or a managed vector database reduces the operational load; so does a larger operations team.');
   if (needsOnCall && ctx.onCallCoverage !== '24x7') wouldChangeIf.push('24x7 on-call (or a lower availability target) closes the incident-management gap.');
 

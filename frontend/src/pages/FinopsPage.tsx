@@ -64,7 +64,7 @@ export function FinopsPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="Cost & FinOps" />
+        <TopBar title="Cost Recommendation" />
         {!features.aiFactory && !defaults && !defaultsError ? (
           <div className="card" style={{ maxWidth: 800 }}>
             The AI Factory workflow is not enabled on this server (<code>AI_FACTORY_ENABLED</code>). The existing phases are unaffected either way.
@@ -107,7 +107,7 @@ function FinopsResultView({ r, version, createdAt }: { r: FinopsResult; version:
     <div style={{ marginTop: 28, maxWidth: 1150, display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div className="card" style={{ borderLeft: `4px solid ${v.color}` }}>
         <div className="metric-label">
-          Cost &amp; FinOps Assessment · v{version} · {new Date(createdAt).toLocaleString()}
+          Cost Recommendation · v{version} · {new Date(createdAt).toLocaleString()}
         </div>
         <div className="metric-value" style={{ fontSize: 20 }}>
           {c?.monthlyUsd ? `~${money(c.monthlyUsd)} / month (estimate)` : 'Chosen design not priced'} · <span style={{ color: v.color }}>{v.label}</span>
