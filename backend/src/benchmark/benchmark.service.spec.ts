@@ -19,7 +19,7 @@ describe('BenchmarkService', () => {
   let indexDesignService: { getLatest: jest.Mock };
   let indexRecommendationEngine: { estimateMemoryGb: jest.Mock };
   let platformConfig: { getBenchmarkDefaults: jest.Mock; getIndexCatalog: jest.Mock };
-  let adapterFactory: { getAdapter: jest.Mock };
+  let adapterFactory: { getAdapter: jest.Mock; forProject: jest.Mock };
 
   const requester = { id: 'user-1', email: 'architect@example.com', role: 'architect' as any };
   const indexDesign = {
@@ -77,7 +77,7 @@ describe('BenchmarkService', () => {
       getBenchmarkDefaults: jest.fn().mockReturnValue(benchmarkDefaults),
       getIndexCatalog: jest.fn().mockReturnValue([{ id: 'hnsw', memoryOverheadFactor: 1.7 }]),
     };
-    adapterFactory = { getAdapter: jest.fn() };
+    adapterFactory = { getAdapter: jest.fn(), forProject: jest.fn(async (p: { platform: unknown }) => adapterFactory.getAdapter(p.platform)) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

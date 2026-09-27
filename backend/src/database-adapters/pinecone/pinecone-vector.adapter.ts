@@ -11,8 +11,8 @@ import {
 import { IndexTuningParameter } from '../../schema-generator/schema-generator.types';
 import { IndexType } from '../../index-recommendation-engine/enums/index-type.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
-import { fieldsFromSample, normaliseMetric, pineconeFilter, trimMetadata, vectorFields } from '../explorer-helpers';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { fieldsFromSample, normaliseMetric, pineconeFilter, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
  * Connects to the customer's target Pinecone project. Connection details come
@@ -164,7 +164,7 @@ export class PineconeVectorAdapter implements VectorDatabaseAdapter, VectorExplo
 
   /** Pinecone lists records by id only - it cannot filter a listing, so filters apply to search. */
   async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
-    if (Object.keys(options.filter).length) throw new BadRequestException('Pinecone cannot filter a record listing; use Search to filter.');
+    if (options.filter.conditions.length) throw new BadRequestException('Pinecone cannot filter a record listing; use Search to filter.');
     const p = await this.page(name, options.limit, options.cursor);
     return {
       records: p.records.map((r) => ({ id: r.id, metadata: trimMetadata(r.metadata ?? {}), ...vectorFields(r.values, options.withVectors) })),
@@ -177,5 +177,11 @@ export class PineconeVectorAdapter implements VectorDatabaseAdapter, VectorExplo
       .index(name)
       .query({ vector: query.vector, topK: query.topK, includeMetadata: true, filter: pineconeFilter(query.filter) } as any)) as any;
     return ((r.matches ?? []) as any[]).map((m) => ({ id: m.id, score: m.score ?? 0, metadata: trimMetadata((m.metadata as Record<string, unknown>) ?? {}) }));
+  }
+
+  async getRecord(name: string, id: string): Promise<ExplorerRecordDetail | null> {
+    const f = (await (this.getClient().index(name) as any).fetch({ ids: [id] })) as any;
+    const rec = f.records?.[id];
+    return rec ? recordDetail(String(rec.id), rec.metadata ?? {}, rec.values) : null;
   }
 }

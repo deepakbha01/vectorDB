@@ -14,8 +14,8 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
-import { normaliseIndexType, normaliseMetric, pgWhere, trimMetadata, vectorFields } from '../explorer-helpers';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { normaliseIndexType, normaliseMetric, pgWhere, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
  * Connects to the customer's target PostgreSQL+pgvector instance - a
@@ -357,9 +357,12 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplo
     };
   }
 
+  readonly supportsSort = true;
+
   async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
     const table = sanitizeSqlIdentifier(name, 'collectionOrTableName');
     const columns = (await this.columnsOf(table)).map((c) => c.name);
+    if (options.sort) return this.browseSorted(table, columns, options);
     const where = pgWhere(options.filter, columns, options.cursor === null ? 1 : 2);
     const conditions = [options.cursor === null ? null : `id::text > $1`, where.sql || null].filter(Boolean);
     const params = [...(options.cursor === null ? [] : [options.cursor]), ...where.params, options.limit + 1];
@@ -374,6 +377,28 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplo
         return { id: String(id), metadata: trimMetadata(metadata), ...vectorFields(embedding, options.withVectors) };
       }),
       nextCursor: r.rows.length > options.limit ? String(rows[rows.length - 1].id) : null,
+    };
+  }
+
+  /** Sorted listings page by offset (the cursor is the offset); id breaks ties so pages never overlap. */
+  private async browseSorted(table: string, columns: string[], options: BrowseOptions): Promise<ExplorerPage> {
+    const sort = options.sort!;
+    if (!columns.includes(sort.field) || ['id', 'embedding'].includes(sort.field)) throw new BadRequestException(`Cannot sort by '${sort.field}'.`);
+    const offset = options.cursor === null ? 0 : Number(options.cursor);
+    if (!Number.isInteger(offset) || offset < 0) throw new BadRequestException('Invalid page cursor.');
+    const where = pgWhere(options.filter, columns, 1);
+    const params = [...where.params, options.limit + 1, offset];
+    const r = await this.getPool().query(
+      `SELECT * FROM "${table}"${where.sql ? ` WHERE ${where.sql}` : ''} ORDER BY "${sort.field}" ${sort.direction === 'desc' ? 'DESC' : 'ASC'} NULLS LAST, id::text LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params,
+    );
+    const rows = r.rows.slice(0, options.limit);
+    return {
+      records: rows.map((row) => {
+        const { id, embedding, created_at, ...metadata } = row;
+        return { id: String(id), metadata: trimMetadata(metadata), ...vectorFields(embedding, options.withVectors) };
+      }),
+      nextCursor: r.rows.length > options.limit ? String(offset + options.limit) : null,
     };
   }
 
@@ -401,5 +426,37 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplo
       const { id, embedding, score, created_at, ...metadata } = row;
       return { id: String(id), score: Number(score), metadata: trimMetadata(metadata) };
     });
+  }
+
+  readonly keywordRanking = 'PostgreSQL full-text search (ts_rank, language-neutral "simple" dictionary) over the text columns';
+
+  /**
+   * Built-in full-text search over every text column - no extension or index
+   * needed (without a GIN index it scans the table). The "simple" dictionary
+   * matches whole words in any language, without stemming.
+   */
+  async keywordSearch(name: string, query: { text: string; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+    const table = sanitizeSqlIdentifier(name, 'collectionOrTableName');
+    const columns = await this.columnsOf(table);
+    const text = columns.filter((c) => ['text', 'varchar', 'bpchar'].includes(c.type) && c.name !== 'id').map((c) => c.name);
+    if (!text.length) throw new BadRequestException(`Table '${table}' has no text columns to search by keyword.`);
+    const doc = `to_tsvector('simple', concat_ws(' ', ${text.map((c) => `"${c}"`).join(', ')}))`;
+    const where = pgWhere(query.filter, columns.map((c) => c.name), 3);
+    const r = await this.getPool().query(
+      `SELECT *, ts_rank(${doc}, plainto_tsquery('simple', $1)) AS score FROM "${table}" WHERE ${doc} @@ plainto_tsquery('simple', $1)${where.sql ? ` AND ${where.sql}` : ''} ORDER BY score DESC, id LIMIT $2`,
+      [query.text, query.topK, ...where.params],
+    );
+    return r.rows.map((row) => {
+      const { id, embedding, score, created_at, ...metadata } = row;
+      return { id: String(id), score: Number(score), metadata: trimMetadata(metadata) };
+    });
+  }
+
+  async getRecord(name: string, id: string): Promise<ExplorerRecordDetail | null> {
+    const table = sanitizeSqlIdentifier(name, 'collectionOrTableName');
+    const r = await this.getPool().query(`SELECT * FROM "${table}" WHERE id::text = $1`, [id]);
+    if (!r.rows[0]) return null;
+    const { id: rid, embedding, created_at, ...metadata } = r.rows[0];
+    return recordDetail(String(rid), metadata, embedding);
   }
 }

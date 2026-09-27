@@ -60,7 +60,7 @@ export class BenchmarkService {
     const queries = Array.from({ length: queryCount }, (_, i) => corpus[(i * step) % sampleSize]);
     const groundTruth = new Map(queries.map((q) => [q.id, bruteForceTopK(q.vector, corpus, topK)]));
 
-    const adapter = this.adapterFactory.getAdapter(project.platform);
+    const adapter = await this.adapterFactory.forProject(project);
     const collectionName = `bench_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
 
     let variantResults: VariantResult[];

@@ -6,6 +6,7 @@
  * Run with `npm run test:e2e -- data-explorer`.
  */
 import * as path from 'path';
+import { parseFilterInput as eqf } from '../src/database-adapters/explorer-helpers';
 import { config } from 'dotenv';
 import { ConfigService } from '@nestjs/config';
 import { PostgresVectorAdapter } from '../src/database-adapters/postgres/postgres-vector.adapter';
@@ -64,26 +65,64 @@ d('Data Explorer - PostgreSQL target', () => {
   });
 
   it('pages in id order with a cursor, and filters on typed columns', async () => {
-    const first = await adapter.browse(TABLE, { limit: 2, cursor: null, filter: {} });
+    const first = await adapter.browse(TABLE, { limit: 2, cursor: null, filter: eqf({}) });
     expect(first.records.map((r) => r.id)).toEqual(['a', 'b']);
     expect(first.records[0]).toEqual(expect.objectContaining({ metadata: { dept: 'legal', year: 2024 }, vectorPreview: [1, 0, 0], dimension: 3 }));
-    const second = await adapter.browse(TABLE, { limit: 2, cursor: first.nextCursor, filter: {} });
+    const second = await adapter.browse(TABLE, { limit: 2, cursor: first.nextCursor, filter: eqf({}) });
     expect(second.records.map((r) => r.id)).toEqual(['c', 'd']);
-    const last = await adapter.browse(TABLE, { limit: 2, cursor: second.nextCursor, filter: {} });
+    const last = await adapter.browse(TABLE, { limit: 2, cursor: second.nextCursor, filter: eqf({}) });
     expect([last.records.map((r) => r.id), last.nextCursor]).toEqual([['e'], null]);
-    const legal2022 = await adapter.browse(TABLE, { limit: 10, cursor: null, filter: { dept: 'legal', year: 2022 } });
+    const legal2022 = await adapter.browse(TABLE, { limit: 10, cursor: null, filter: eqf({ dept: 'legal', year: 2022 }) });
     expect(legal2022.records.map((r) => r.id)).toEqual(['e']);
   });
 
   it('searches nearest first, with the filter applied', async () => {
-    const all = await adapter.searchFiltered(TABLE, { vector: [1, 0, 0], topK: 3, filter: {} });
+    const all = await adapter.searchFiltered(TABLE, { vector: [1, 0, 0], topK: 3, filter: eqf({}) });
     expect(all.map((r) => r.id)).toEqual(['a', 'b', 'e']);
     expect(all[0].score).toBeCloseTo(1, 5);
-    const hr = await adapter.searchFiltered(TABLE, { vector: [1, 0, 0], topK: 3, filter: { dept: 'hr' } });
+    const hr = await adapter.searchFiltered(TABLE, { vector: [1, 0, 0], topK: 3, filter: eqf({ dept: 'hr' }) });
     expect(hr.map((r) => r.id)).toEqual(['c']);
   });
 
+  it('richer filters on real data: any-of, ranges, in-lists, not-equal', async () => {
+    const ids = async (filter: any) => (await adapter.browse(TABLE, { limit: 10, cursor: null, filter })).records.map((r) => r.id).sort();
+    const f = (combine: 'and' | 'or', ...c: Array<[string, any, any]>) => ({ combine, conditions: c.map(([field, op, value]) => ({ field, op, value })) });
+    expect(await ids(f('or', ['dept', 'eq', 'hr'], ['year', 'lte', 2022]))).toEqual(['c', 'd', 'e']);
+    expect(await ids(f('and', ['year', 'gte', 2023], ['dept', 'ne', 'hr']))).toEqual(['a', 'b']);
+    expect(await ids(f('and', ['year', 'in', [2022, 2023]]))).toEqual(['b', 'd', 'e']);
+    expect((await adapter.searchFiltered(TABLE, { vector: [1, 0, 0], topK: 5, filter: f('and', ['year', 'lt', 2024]) })).map((r) => r.id)).toEqual(['b', 'e', 'd']);
+  });
+
+  it('sorts a listing by a field, both ways, paging by offset without overlaps', async () => {
+    const all = async (direction: 'asc' | 'desc') => {
+      const out: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const p = await adapter.browse(TABLE, { limit: 2, cursor, filter: eqf({}), sort: { field: 'year', direction } });
+        out.push(...p.records.map((r) => `${r.metadata.year}:${r.id}`));
+        cursor = p.nextCursor;
+      } while (cursor);
+      return out;
+    };
+    expect(await all('asc')).toEqual(['2022:d', '2022:e', '2023:b', '2024:a', '2024:c']);
+    expect(await all('desc')).toEqual(['2024:a', '2024:c', '2023:b', '2022:d', '2022:e']);
+    await expect(adapter.browse(TABLE, { limit: 2, cursor: null, filter: eqf({}), sort: { field: 'embedding', direction: 'asc' } })).rejects.toThrow(/Cannot sort by/);
+  });
+
+  it('searches by keyword with Postgres full-text ranking (no extension needed), with filters', async () => {
+    const hits = await adapter.keywordSearch(TABLE, { text: 'legal', topK: 10, filter: eqf({}) });
+    expect(hits.map((h) => h.id).sort()).toEqual(['a', 'b', 'e']);
+    expect(hits.every((h) => h.score > 0)).toBe(true);
+    expect((await adapter.keywordSearch(TABLE, { text: 'legal', topK: 10, filter: eqf({ year: 2024 }) })).map((h) => h.id)).toEqual(['a']);
+    expect(await adapter.keywordSearch(TABLE, { text: 'nonexistentword', topK: 10, filter: eqf({}) })).toEqual([]);
+  });
+
+  it('fetches one record in full, and null for a missing id', async () => {
+    expect(await adapter.getRecord(TABLE, 'c')).toEqual({ id: 'c', metadata: { dept: 'hr', year: 2024 }, dimension: 3, vectorHead: [0, 1, 0], norm: 1 });
+    expect(await adapter.getRecord(TABLE, 'nope')).toBeNull();
+  });
+
   it('refuses a filter on a column the table does not have', async () => {
-    await expect(adapter.browse(TABLE, { limit: 5, cursor: null, filter: { 'dept"; DROP TABLE x; --': 'x' } })).rejects.toThrow(/Unknown column/);
+    await expect(adapter.browse(TABLE, { limit: 5, cursor: null, filter: eqf({ 'dept"; DROP TABLE x; --': 'x' }) })).rejects.toThrow(/Unknown column/);
   });
 });

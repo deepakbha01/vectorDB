@@ -145,8 +145,8 @@ Recommendation weighs token evidence in its cost check. Details:
 When enabled (`DATA_EXPLORER_ENABLED`), **Data Explorer** appears under
 *Project tools*. It is a **read-only** look inside the project's target vector
 database - the platform chosen in Vector DB Selection, connected through the
-server's `TARGET_*` settings. It never writes to, loads or changes the
-database. It works with every platform the tool connects to - PostgreSQL +
+server's `TARGET_*` settings or the project's own connection (below). It
+never writes to, loads or changes the database. It works with every platform the tool connects to - PostgreSQL +
 pgvector, Oracle, Milvus, Qdrant, Pinecone, Weaviate, Chroma, Elasticsearch,
 Redis, MongoDB Atlas and LanceDB. Actian says "not supported" (it has no
 Node.js driver).
@@ -161,18 +161,51 @@ Pick a collection (the one your Data & Embedding design deploys is marked
   phase the designed value comes from. A value either side does not know is
   *Unknown*, never a guessed match.
 - **Documents** - 25 records per page, with their metadata and the first few
-  vector values. *Add a filter* for exact matches on up to five fields.
-- **Search** - type text (embedded with the project's own embedding model,
-  as ingestion does) or paste a vector; set Top K and filters. Results show
-  their score, and the query time against the Discovery P95 target (one
-  query - the Performance phase measures percentiles).
-- **Map** - *Draw map* projects a sample of 100-1,000 records to 2D on the
-  server: **PCA** (distances along the axes mean something; it says how much
-  of the variance the picture keeps) or **UMAP** (shows clusters; distances
-  between clusters mean nothing). *Colour by* a field colours its three most
-  common values; the rest are *Other*, and records without a value are drawn
-  hollow. *Show as a table* lists every point. Only ids, positions and the
-  colour-by value reach the browser - never the vectors.
+  vector values. *Add a filter*: up to five conditions (=, ≠, >, ≥, <, ≤ on
+  numbers, or *is one of* a list), all of which must hold (*match all*) or
+  any one (*match any*). Where the database can order a listing (PostgreSQL,
+  Oracle, MongoDB, Elasticsearch, Weaviate) *Sort by* a field. Click an id to
+  open the record in full: every field, the first 64 vector values and the
+  vector's length (norm).
+- **Search** - **Dense**: type text (embedded with the project's own
+  embedding model, as ingestion does) or paste a vector. **Keyword**: the
+  database's own text ranking (PostgreSQL full text, Elasticsearch and
+  Weaviate BM25, LanceDB and MongoDB Atlas full-text indexes). **Hybrid**:
+  both, fused by rank; the slider sets the weight on dense. Results show
+  their score (and, for hybrid, each list's rank), the score spread, and the
+  query time against the Discovery P95 target (one query - the Performance
+  phase measures percentiles).
+- **Compare** - the same query run two ways side by side (dense vs hybrid,
+  two weightings, with and without a filter, two Top Ks): how many results
+  they share, which appear on one side only, and how far each shared record
+  moved.
+- **Map** - *Draw map* projects a sample of 100-1,000 records to **2D or 3D**
+  on the server: **PCA** (distances along the axes mean something; it says
+  how much of the variance each axis keeps), **UMAP** (shows clusters;
+  distances between clusters mean nothing) or **t-SNE** (the sharpest
+  clusters, but the layout between them means nothing; slowest - several
+  seconds for 1,000 records). Drag a 3D map, or focus it and use the arrow
+  keys, to turn it. *Colour by* a field colours its three most common values;
+  the rest are *Other*, and records without a value are drawn hollow. *Show
+  as a table* lists every point. Only ids, positions and the colour-by value
+  reach the browser - never the vectors.
+
+**Named vectors** (Qdrant, Weaviate): when a collection holds several vectors
+per record, a *Vector* selector appears next to the collection. Search,
+Compare, the Map and the record view then use the chosen vector (its own
+dimension is checked against the query).
+
+**Connection** - *Manage connection* shows whether the project uses the
+server's `TARGET_*` settings or its own. Admins and architects can give a
+project its own connection - host, credentials and so on for its platform -
+and *Test* it before saving. Ingestion, deployment, benchmarks and the Data
+Explorer then use it for that project only; *Remove* goes back to the server's
+settings. Settings are stored encrypted with the server's
+`CONNECTION_SECRET_KEY` (without one, saving is refused); secret values are
+never shown again - leave a secret empty to keep it, or *Clear* it. If the key
+is changed, saved connections can no longer be opened: the project then
+reports an error rather than quietly using the server's settings. The Audit
+Log records which settings changed, never their values.
 
 How each database behaves: Pinecone lists records but cannot filter the list
 (filter in Search instead); MongoDB Atlas can filter a search only on the
@@ -181,7 +214,7 @@ first; offset-paged databases (Milvus, Weaviate, Elasticsearch, Chroma,
 Redis, LanceDB) page up to their own depth limits. Where a database chooses
 its own index (Pinecone), the design check shows the index as *Unknown*.
 
-Documents, Search and Map show customer data, so they are for admins and
+Documents, Search, Compare, Map and the record view show customer data, so they are for admins and
 architects, and every read is recorded in the Audit Log (who, what, how many
 records - never the records themselves). Long values are shortened. A Milvus
 collection must be loaded in Milvus first; the explorer does not load it.

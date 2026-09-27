@@ -390,10 +390,14 @@ Simulated from load tests, Live from usage events or OpenTelemetry. See
 [TOKEN_OBSERVABILITY.md](TOKEN_OBSERVABILITY.md).
 
 The Data Explorer (behind `DATA_EXPLORER_ENABLED`) is a read-only view into
-the project's target vector database - collections, records and search -
-with a design-vs-deployed check against the project's own phases, and an
-embedding map (PCA / UMAP, projected on the server). It covers every live
-target platform (all but Actian). See `USER_GUIDE.md` §12.
+the project's target vector database - collections, records (filters,
+sorting, full record view), dense / keyword / hybrid search, side-by-side
+search comparison - with a design-vs-deployed check against the project's
+own phases, and an embedding map (PCA / UMAP / t-SNE in 2D or 3D, projected
+on the server; named vectors selectable). It covers every live target
+platform (all but Actian). A project can also have its own target connection
+instead of the server's `TARGET_*` settings, stored encrypted with
+`CONNECTION_SECRET_KEY`. See `USER_GUIDE.md` §12.
 
 ## Architecture
 

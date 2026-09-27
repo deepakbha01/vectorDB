@@ -68,3 +68,9 @@ describe('document-read audit match', () => {
     expect(DOCUMENTS_READ.test('/api/projects/p/data-explorer/collections/documents/documents')).toBe(true);
   });
 });
+
+describe('record-read audit match', () => {
+  it('audits a single-record read too', () => {
+    expect(DOCUMENTS_READ.test('/api/projects/p/data-explorer/collections/docs/records/doc-1%3A%3A0')).toBe(true);
+  });
+});

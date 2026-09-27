@@ -12,8 +12,8 @@ import { SchemaGeneratorService } from '../../schema-generator/schema-generator.
 import { IndexTuningParameter } from '../../schema-generator/schema-generator.types';
 import { IndexType } from '../../index-recommendation-engine/enums/index-type.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
-import { fieldsFromSample, mongoFilter, normaliseMetric, trimMetadata, vectorFields } from '../explorer-helpers';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { fieldsFromSample, filterFields, mongoFilter, normaliseMetric, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /** A document id in a page cursor, keeping ObjectId and string ids apart. */
 type IdCursor = { t: 'o' | 's'; v: string };
@@ -207,20 +207,37 @@ export class MongoDbAtlasVectorAdapter implements VectorDatabaseAdapter, VectorE
     throw new BadRequestException('Invalid page cursor.');
   }
 
-  /** Pages in _id order, continuing after the last id seen. */
+  readonly supportsSort = true;
+
+  /** Pages in _id order, continuing after the last id seen - or, sorted by a field, by offset. */
   async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
     const collection = (await this.getDb()).collection(name);
     const path = (await this.vectorIndex(name))?.vector?.path ?? 'embedding';
     const query: Record<string, unknown> = { ...mongoFilter(options.filter) };
-    if (options.cursor !== null) query._id = { $gt: this.decodeCursor(options.cursor) };
-    const docs = await collection.find(query as any).sort({ _id: 1 }).limit(options.limit + 1).toArray();
+    let docs: any[];
+    let sortedOffset: number | null = null;
+    if (options.sort) {
+      // Sorted listings page by offset; _id breaks ties.
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(options.sort.field) || options.sort.field === path) throw new BadRequestException(`Cannot sort by '${options.sort.field}'.`);
+      sortedOffset = options.cursor === null ? 0 : Number(options.cursor);
+      if (!Number.isInteger(sortedOffset) || sortedOffset < 0) throw new BadRequestException('Invalid page cursor.');
+      docs = await collection
+        .find(query as any)
+        .sort({ [options.sort.field]: options.sort.direction === 'desc' ? -1 : 1, _id: 1 })
+        .skip(sortedOffset)
+        .limit(options.limit + 1)
+        .toArray();
+    } else {
+      if (options.cursor !== null) query._id = { $gt: this.decodeCursor(options.cursor) };
+      docs = await collection.find(query as any).sort({ _id: 1 }).limit(options.limit + 1).toArray();
+    }
     const page = docs.slice(0, options.limit);
     return {
       records: page.map((d: any) => {
         const { _id, [path]: vec, ...metadata } = d;
         return { id: String(_id), metadata: trimMetadata(metadata), ...vectorFields(vec, options.withVectors) };
       }),
-      nextCursor: docs.length > options.limit ? this.encodeCursor(page[page.length - 1]._id) : null,
+      nextCursor: docs.length > options.limit ? (sortedOffset !== null ? String(sortedOffset + options.limit) : this.encodeCursor(page[page.length - 1]._id)) : null,
     };
   }
 
@@ -230,7 +247,7 @@ export class MongoDbAtlasVectorAdapter implements VectorDatabaseAdapter, VectorE
     if (!idx) throw new BadRequestException(`Collection '${name}' has no Atlas Vector Search index.`);
     const path = idx.vector?.path ?? 'embedding';
     const f = mongoFilter(query.filter);
-    const unindexed = Object.keys(f).filter((k) => !idx.filters.includes(k));
+    const unindexed = filterFields(query.filter).filter((k) => !idx.filters.includes(k));
     if (unindexed.length) throw new BadRequestException(`Atlas can only filter a vector search on the index's filter fields (${idx.filters.join(', ') || 'none'}); not on ${unindexed.join(', ')}.`);
     const results = await collection
       .aggregate([
@@ -242,5 +259,44 @@ export class MongoDbAtlasVectorAdapter implements VectorDatabaseAdapter, VectorE
       const { _id, score, ...metadata } = r;
       return { id: String(_id), score: score ?? 0, metadata: trimMetadata(metadata) };
     });
+  }
+
+  readonly keywordRanking = 'MongoDB Atlas Search (BM25) through the collection’s search index';
+
+  /** Needs an Atlas Search index (type "search") - a vector index alone cannot rank text. */
+  async keywordSearch(name: string, query: { text: string; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+    const collection = (await this.getDb()).collection(name);
+    let searchIndex: string | undefined;
+    try {
+      searchIndex = ((await collection.listSearchIndexes().toArray()) as any[]).find((i) => (i.type ?? 'search') === 'search')?.name;
+    } catch {
+      searchIndex = undefined;
+    }
+    if (!searchIndex) throw new BadRequestException(`Collection '${name}' has no Atlas Search index, so it cannot be searched by keyword.`);
+    const vectorPath = (await this.vectorIndex(name))?.vector?.path ?? 'embedding';
+    const f = mongoFilter(query.filter);
+    const results = await collection
+      .aggregate([
+        { $search: { index: searchIndex, text: { query: query.text, path: { wildcard: '*' } } } },
+        ...(Object.keys(f).length ? [{ $match: f }] : []),
+        { $limit: query.topK },
+        { $project: { [vectorPath]: 0, score: { $meta: 'searchScore' } } },
+      ])
+      .toArray();
+    return results.map((r: any) => {
+      const { _id, score, ...metadata } = r;
+      return { id: String(_id), score: score ?? 0, metadata: trimMetadata(metadata) };
+    });
+  }
+
+  /** Our ingestion uses string ids; a 24-hex id is also tried as an ObjectId. */
+  async getRecord(name: string, id: string): Promise<ExplorerRecordDetail | null> {
+    const collection = (await this.getDb()).collection(name);
+    const path = (await this.vectorIndex(name))?.vector?.path ?? 'embedding';
+    let d: any = await collection.findOne({ _id: id } as any);
+    if (!d && /^[0-9a-f]{24}$/i.test(id)) d = await collection.findOne({ _id: new ObjectId(id) } as any);
+    if (!d) return null;
+    const { _id, [path]: vec, ...metadata } = d;
+    return recordDetail(String(_id), metadata, vec);
   }
 }

@@ -64,7 +64,7 @@ export class IngestionService {
     }
 
     const config = this.resolveConfig(dto);
-    const adapter = this.adapterFactory.getAdapter(project.platform);
+    const adapter = await this.adapterFactory.forProject(project);
     const rateLimiter = new RateLimiter(config.rateLimitPerSecond);
 
     const metrics: IngestionMetrics = {
@@ -292,7 +292,7 @@ export class IngestionService {
     if (!pipelineDesign) {
       throw new BadRequestException('Complete Phase 2 (Data & Embedding Design) before retrying dead letters.');
     }
-    const adapter = this.adapterFactory.getAdapter(project.platform);
+    const adapter = await this.adapterFactory.forProject(project);
     const config = this.resolveConfig({ documents: [] } as unknown as CreateIngestionRunDto);
 
     const candidates = (await this.deadLetters.find({ where: { ingestionRun: { id: run.id }, reprocessed: false } })).filter(

@@ -11,8 +11,8 @@ import {
 import { IndexTuningParameter } from '../../schema-generator/schema-generator.types';
 import { IndexType } from '../../index-recommendation-engine/enums/index-type.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
-import { chromaWhere, fieldsFromSample, normaliseMetric, trimMetadata, vectorFields } from '../explorer-helpers';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { chromaWhere, fieldsFromSample, normaliseMetric, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
  * Connects to a self-hosted Chroma server (typically a single lightweight
@@ -168,5 +168,11 @@ export class ChromaVectorAdapter implements VectorDatabaseAdapter, VectorExplore
     const r = await c.query({ queryEmbeddings: [query.vector], nResults: query.topK, where: chromaWhere(query.filter) as any, include: ['metadatas' as any, 'distances' as any] });
     const ids = r.ids[0] ?? [];
     return ids.map((id, i) => ({ id: String(id), score: 1 - Number(r.distances?.[0]?.[i] ?? 0), metadata: trimMetadata((r.metadatas?.[0]?.[i] as Record<string, unknown>) ?? {}) }));
+  }
+
+  async getRecord(name: string, id: string): Promise<ExplorerRecordDetail | null> {
+    const r = await (await this.open(name)).get({ ids: [id], include: ['embeddings' as any, 'metadatas' as any] });
+    if (!r.ids.length) return null;
+    return recordDetail(String(r.ids[0]), (r.metadatas?.[0] as Record<string, unknown>) ?? {}, r.embeddings?.[0]);
   }
 }

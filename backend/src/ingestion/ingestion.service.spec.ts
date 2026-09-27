@@ -23,7 +23,7 @@ describe('IngestionService', () => {
   let dataPipelineDesignService: { getLatest: jest.Mock };
   let chunkingServiceMock: { chunk: jest.Mock };
   let embeddingClient: { embed: jest.Mock };
-  let adapterFactory: { getAdapter: jest.Mock };
+  let adapterFactory: { getAdapter: jest.Mock; forProject: jest.Mock };
   let platformConfig: { getPipelineDefaults: jest.Mock };
 
   const requester = { id: 'user-1', email: 'architect@example.com', role: 'architect' as any };
@@ -67,7 +67,7 @@ describe('IngestionService', () => {
     dataPipelineDesignService = { getLatest: jest.fn().mockResolvedValue(pipelineDesign) };
     chunkingServiceMock = { chunk: jest.fn().mockReturnValue(makeChunks(1)) };
     embeddingClient = { embed: jest.fn().mockResolvedValue({ vector: [0.1, 0.2, 0.3, 0.4], isLiveProvider: false }) };
-    adapterFactory = { getAdapter: jest.fn() };
+    adapterFactory = { getAdapter: jest.fn(), forProject: jest.fn(async (p: { platform: unknown }) => adapterFactory.getAdapter(p.platform)) };
     platformConfig = {
       getPipelineDefaults: jest.fn().mockReturnValue({
         batchSize: 100,

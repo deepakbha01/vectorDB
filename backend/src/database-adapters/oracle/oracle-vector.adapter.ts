@@ -15,8 +15,8 @@ import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
 import { splitSqlStatements } from '../../common/sql-statements';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
-import { oracleWhere, trimMetadata, vectorFields } from '../explorer-helpers';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { oracleWhere, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /** Oracle 23ai vector index subtypes → the Index Design choices. */
 const ORACLE_INDEX_SUBTYPE: Record<string, string> = { INMEMORY_NEIGHBOR_GRAPH: 'hnsw', NEIGHBOR_PARTITIONS: 'ivf_flat' };
@@ -264,9 +264,33 @@ export class OracleVectorAdapter implements VectorDatabaseAdapter, VectorExplore
   }
 
   /** Pages in id order, continuing after the last id seen. */
+  readonly supportsSort = true;
+
   async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
     const table = this.upper(name);
-    const where = oracleWhere(options.filter, (await this.columnsOf(table)).map((c) => c.name));
+    const columnNames = (await this.columnsOf(table)).map((c) => c.name);
+    if (options.sort) {
+      // Sorted listings page by offset; id breaks ties.
+      const col = options.sort.field.toUpperCase();
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(options.sort.field) || !columnNames.includes(col) || ['ID', 'EMBEDDING'].includes(col)) throw new BadRequestException(`Cannot sort by '${options.sort.field}'.`);
+    const offset = options.cursor === null ? 0 : Number(options.cursor);
+    if (!Number.isInteger(offset) || offset < 0) throw new BadRequestException('Invalid page cursor.');
+      const w = oracleWhere(options.filter, columnNames);
+      const sorted = (
+        await this.query(
+          `SELECT * FROM "${table}"${w.sql ? ` WHERE ${w.sql}` : ''} ORDER BY "${col}" ${options.sort.direction === 'desc' ? 'DESC' : 'ASC'} NULLS LAST, id OFFSET :o ROWS FETCH FIRST :n ROWS ONLY`,
+          { ...w.binds, o: offset, n: options.limit + 1 },
+        )
+      ).map(lowercaseKeys);
+      return {
+        records: sorted.slice(0, options.limit).map((row) => {
+          const { id, embedding, created_at, ...metadata } = row;
+          return { id: String(id), metadata: trimMetadata(metadata), ...vectorFields(embedding, options.withVectors) };
+        }),
+        nextCursor: sorted.length > options.limit ? String(offset + options.limit) : null,
+      };
+    }
+    const where = oracleWhere(options.filter, columnNames);
     const conditions = [options.cursor === null ? null : 'id > :cur', where.sql || null].filter(Boolean);
     const binds: Record<string, unknown> = { ...where.binds, n: options.limit + 1, ...(options.cursor === null ? {} : { cur: options.cursor }) };
     const rows = (await this.query(`SELECT * FROM "${table}"${conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''} ORDER BY id FETCH FIRST :n ROWS ONLY`, binds)).map(lowercaseKeys);
@@ -291,5 +315,13 @@ export class OracleVectorAdapter implements VectorDatabaseAdapter, VectorExplore
       const { id, embedding, distance, created_at, ...metadata } = lowercaseKeys(raw);
       return { id: String(id), score: 1 - Number(distance), metadata: trimMetadata(metadata) };
     });
+  }
+
+  async getRecord(name: string, id: string): Promise<ExplorerRecordDetail | null> {
+    const table = this.upper(name);
+    const rows = (await this.query(`SELECT * FROM "${table}" WHERE id = :id`, { id })).map(lowercaseKeys);
+    if (!rows[0]) return null;
+    const { id: rid, embedding, created_at, ...metadata } = rows[0];
+    return recordDetail(String(rid), metadata, embedding);
   }
 }
