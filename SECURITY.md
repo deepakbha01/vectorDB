@@ -21,6 +21,11 @@
   real target database - requires `admin` specifically.
 - Project-level access is owner-or-admin (`ProjectsService.assertAccess`);
   there is no per-project collaborator/sharing model yet.
+- The first admin is created on start-up only while no admin exists, from
+  `BOOTSTRAP_ADMIN_EMAIL` and a password of 12+ characters (preferably a
+  mounted secret file, `BOOTSTRAP_ADMIN_PASSWORD_FILE`). It never resets a
+  password, never takes over an existing account, never logs the password,
+  and is audited. Self-registration never grants `admin`.
 
 ## Input validation
 

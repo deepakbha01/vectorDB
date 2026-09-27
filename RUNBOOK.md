@@ -17,9 +17,20 @@ Every previously issued token becomes invalid immediately (there is no
 grace period/dual-secret support). Expect every logged-in user to be signed
 out. Do this during a maintenance window, not silently.
 
+### The first admin account
+
+A new deployment creates it on start-up from `BOOTSTRAP_ADMIN_*` (see
+`DEPLOYMENT.md`, "The first admin account"); the log line
+`[AdminBootstrap] Created the first admin account ...` confirms it, and the
+audit log has a `SYSTEM bootstrap/first-admin` entry. If an existing
+database has no admin, set the variables and restart. The bootstrap never
+changes an existing admin: to reset a lost admin password, have another
+admin handle it or update the `users` table as below.
+
 ### A user is locked out / needs a role change
 
-There is no admin UI for this yet - update the `users` table directly:
+Admins can change roles on the *Manage Users* page. Without an admin, update
+the `users` table directly:
 `UPDATE users SET role = 'admin' WHERE email = '...'`. Treat this as a
 privileged, logged action on your side (this app's own audit log only
 covers its own API, not direct database access).

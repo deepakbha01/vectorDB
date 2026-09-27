@@ -27,6 +27,52 @@ matters for your environment:
 - `OPENAI_API_KEY` - optional; without it, ingestion uses a deterministic
   offline embedding stand-in (see `SECURITY.md`/`PRODUCTION_READINESS.md`).
 - `THROTTLE_TTL_SECONDS` / `THROTTLE_LIMIT` - app-wide rate limit.
+- `BOOTSTRAP_ADMIN_*` - the first admin account; see below.
+
+### The first admin account
+
+A new deployment creates its first admin automatically. Set, before the
+first start:
+
+- `BOOTSTRAP_ADMIN_EMAIL` - the admin's sign-in email.
+- `BOOTSTRAP_ADMIN_PASSWORD_FILE` - path to a file holding the password
+  (a mounted Docker or Kubernetes secret; a trailing newline is ignored).
+  `BOOTSTRAP_ADMIN_PASSWORD` works too, but a secret file keeps the
+  password out of the process environment. At least 12 characters.
+- `BOOTSTRAP_ADMIN_NAME` - optional display name (default "Administrator").
+
+What happens on each start:
+
+| The database has... | Result |
+| --- | --- |
+| an admin already | Nothing. The settings are not even read, so they can stay in place; no password is ever reset. |
+| no admin, settings complete | The admin is created (password hashed with bcrypt), the creation is written to the audit log (never the password), and the log says so. |
+| no admin, no `BOOTSTRAP_ADMIN_EMAIL` | A warning in the log; the app starts with no admin. |
+| no admin, email set but password missing, short or unreadable | Start-up stops with a clear error, so production never runs half-configured. |
+| no admin, but that email is already registered | Start-up stops: the bootstrap never takes over an existing account. Promote it deliberately (`RUNBOOK.md`) or use another email. |
+
+Several replicas starting at once are safe: a PostgreSQL advisory lock lets
+exactly one create the admin. After the first successful start, sign in, and
+remove `BOOTSTRAP_ADMIN_PASSWORD` from the environment if you used it
+instead of a secret file.
+
+Kubernetes example:
+
+```yaml
+env:
+  - name: BOOTSTRAP_ADMIN_EMAIL
+    value: ops@example.com
+  - name: BOOTSTRAP_ADMIN_PASSWORD_FILE
+    value: /run/secrets/aventra-admin/password
+volumeMounts:
+  - name: aventra-admin
+    mountPath: /run/secrets/aventra-admin
+    readOnly: true
+volumes:
+  - name: aventra-admin
+    secret:
+      secretName: aventra-admin   # kubectl create secret generic aventra-admin --from-literal=password=...
+```
 
 Never commit a real `.env` file. In a real deployment, source these from
 your platform's secret manager (not from files checked into version
