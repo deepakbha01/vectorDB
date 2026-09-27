@@ -473,6 +473,64 @@ form.stacked textarea {
   justify-content: center;
 }
 
+.auth-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+/* AVENTRA wordmark (top bar of every page; larger above the sign-in card). */
+.brand-mark {
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.22em;
+  color: var(--primary-text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+a.brand-mark:hover {
+  text-decoration: none;
+  opacity: 0.85;
+}
+
+.brand-mark-large {
+  font-size: 34px;
+  letter-spacing: 0.28em;
+  color: var(--text);
+}
+
+/*
+ * AVENTRA watermark on the front pages: fixed across the viewport, faint,
+ * above the content so cards do not hide it, and never in the way - no
+ * pointer events, no selection, hidden from assistive technology.
+ */
+.watermark {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  user-select: none;
+  z-index: 50;
+  overflow: hidden;
+  font-weight: 900;
+  font-size: clamp(72px, 16vw, 240px);
+  letter-spacing: 0.18em;
+  color: var(--text);
+  opacity: 0.045;
+  transform: rotate(-24deg);
+  white-space: nowrap;
+}
+
+@media print {
+  .watermark {
+    opacity: 0.08;
+  }
+}
+
 .project-list {
   list-style: none;
   margin: 0;

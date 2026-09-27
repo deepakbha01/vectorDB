@@ -1,4 +1,6 @@
-# Vector Database Assessment & Optimization Platform
+# AVENTRA
+
+Vector Database Assessment & Optimization Platform.
 
 Production-grade platform for assessing, designing, provisioning, ingesting,
 optimizing, and scaling vector database solutions across 12 platforms:

@@ -3,8 +3,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { extractErrorMessage } from '../api/client';
 import { PasswordField } from '../components/PasswordField';
+import { BrandMark, usePageTitle, Watermark } from '../components/Brand';
 
 export function LoginPage() {
+  usePageTitle('Sign in');
   const { login } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
@@ -28,27 +30,31 @@ export function LoginPage() {
 
   return (
     <div className="auth-page">
-      <div className="card" style={{ width: 360 }}>
-        <h2>Sign in</h2>
-        <form className="stacked" onSubmit={onSubmit}>
-          <div>
-            <label>Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </div>
-          <PasswordField
-            label="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          {error && <div className="error-text">{error}</div>}
-          <button className="primary-btn" type="submit" disabled={submitting}>
-            {submitting ? 'Signing in...' : 'Sign in'}
-          </button>
-        </form>
-        <p style={{ fontSize: 13, marginTop: 14 }}>
-          No account? <Link to="/register">Register</Link>
-        </p>
+      <Watermark />
+      <div className="auth-stack">
+        <BrandMark linked={false} large />
+        <div className="card" style={{ width: 360 }}>
+          <h2>Sign in</h2>
+          <form className="stacked" onSubmit={onSubmit}>
+            <div>
+              <label>Email</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            </div>
+            <PasswordField
+              label="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            {error && <div className="error-text">{error}</div>}
+            <button className="primary-btn" type="submit" disabled={submitting}>
+              {submitting ? 'Signing in...' : 'Sign in'}
+            </button>
+          </form>
+          <p style={{ fontSize: 13, marginTop: 14 }}>
+            No account? <Link to="/register">Register</Link>
+          </p>
+        </div>
       </div>
     </div>
   );
