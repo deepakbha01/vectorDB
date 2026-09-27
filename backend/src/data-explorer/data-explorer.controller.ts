@@ -9,7 +9,7 @@ import { UserRole } from '../users/user.entity';
 import { DataExplorerEnabledGuard } from './data-explorer-enabled.guard';
 import { DataExplorerReadAuditInterceptor } from './data-explorer-read-audit.interceptor';
 import { DataExplorerService } from './data-explorer.service';
-import { ExplorerDocumentsQueryDto, ExplorerMapQueryDto, ExplorerSearchDto } from './dto/explorer-search.dto';
+import { ExplorerCompareDto, ExplorerDocumentsQueryDto, ExplorerMapQueryDto, ExplorerRecordQueryDto, ExplorerSearchDto } from './dto/explorer-search.dto';
 
 /**
  * Data Explorer - read-only view into the project's target vector database.
@@ -50,6 +50,21 @@ export class DataExplorerController {
   @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
   map(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('name') name: string, @Query() q: ExplorerMapQueryDto, @CurrentUser() user: AuthenticatedUser) {
     return this.service.map(projectId, user, name, q);
+  }
+
+  /** One record in full. A record read, so admins and architects only, and audited. */
+  @Get('collections/:name/records/:id')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  record(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('name') name: string, @Param('id') id: string, @Query() q: ExplorerRecordQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.record(projectId, user, name, id, q.vectorName);
+  }
+
+  /** The same query run two ways, side by side. Changes nothing. */
+  @Post('collections/:name/compare')
+  @HttpCode(200)
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  compare(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('name') name: string, @Body() dto: ExplorerCompareDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.compare(projectId, user, name, dto);
   }
 
   /** POST only because the query can be a long text or vector; it changes nothing. */

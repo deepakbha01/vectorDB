@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { ProjectConnectionProfile } from './connection/project-connection-profile.entity';
 import { OracleVectorAdapter } from './oracle/oracle-vector.adapter';
 import { PostgresVectorAdapter } from './postgres/postgres-vector.adapter';
 import { MilvusVectorAdapter } from './milvus/milvus-vector.adapter';
@@ -15,7 +17,7 @@ import { VectorAdapterFactory } from './vector-adapter.factory';
 import { SchemaGeneratorModule } from '../schema-generator/schema-generator.module';
 
 @Module({
-  imports: [SchemaGeneratorModule],
+  imports: [SchemaGeneratorModule, TypeOrmModule.forFeature([ProjectConnectionProfile])],
   providers: [
     OracleVectorAdapter,
     PostgresVectorAdapter,

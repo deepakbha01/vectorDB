@@ -12,8 +12,8 @@ import {
 import { IndexTuningParameter, MetadataFieldDefinition } from '../../schema-generator/schema-generator.types';
 import { IndexType } from '../../index-recommendation-engine/enums/index-type.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
-import { lanceWhere, normaliseIndexType, trimMetadata, vectorFields } from '../explorer-helpers';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { lanceWhere, normaliseIndexType, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /** Escapes a value for use inside a LanceDB SQL-like `delete`/`where` predicate string. */
 function sqlLiteral(value: string): string {
@@ -186,5 +186,29 @@ export class LanceDbVectorAdapter implements VectorDatabaseAdapter, VectorExplor
       const { id, embedding, _distance, ...metadata } = this.plainRow(r);
       return { id: String(id), score: 1 - Number(_distance ?? 0), metadata: trimMetadata(metadata) };
     });
+  }
+
+  readonly keywordRanking = 'LanceDB full-text search (BM25) over the column with a full-text index';
+
+  /** Needs a full-text (FTS / inverted) index on a text column - LanceDB cannot rank text without one. */
+  async keywordSearch(name: string, query: { text: string; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+    const table = await (await this.getConnection()).openTable(name);
+    const fts = (await table.listIndices()).filter((i) => /fts|inverted/i.test(i.indexType));
+    if (!fts.length) throw new BadRequestException(`Table '${name}' has no full-text index, so it cannot be searched by keyword. Create an FTS index on a text column first.`);
+    let search = (table.search(query.text, 'fts') as any).limit(query.topK);
+    const where = lanceWhere(query.filter);
+    if (where) search = search.where(where);
+    return ((await search.toArray()) as any[]).map((r) => {
+      const { id, embedding, _score, ...metadata } = this.plainRow(r);
+      return { id: String(id), score: Number(_score ?? 0), metadata: trimMetadata(metadata) };
+    });
+  }
+
+  async getRecord(name: string, id: string): Promise<ExplorerRecordDetail | null> {
+    const table = await (await this.getConnection()).openTable(name);
+    const rows = (await table.query().where(`id = ${sqlLiteral(id)}`).limit(1).toArray()).map((r) => this.plainRow(r));
+    if (!rows[0]) return null;
+    const { id: rid, embedding, ...metadata } = rows[0];
+    return recordDetail(String(rid), metadata, embedding);
   }
 }

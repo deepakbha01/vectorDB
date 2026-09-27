@@ -14,8 +14,8 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
-import { milvusExpr, normaliseIndexType, normaliseMetric, trimMetadata, vectorFields } from '../explorer-helpers';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { milvusExpr, normaliseIndexType, normaliseMetric, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 
 const MILVUS_DATA_TYPES: Record<string, DataType> = {
   VarChar: DataType.VarChar,
@@ -236,5 +236,26 @@ export class MilvusVectorAdapter implements VectorDatabaseAdapter, VectorExplore
       if (s.vectorField) delete metadata[s.vectorField];
       return { id: String(id ?? row[s.primary]), score: Number(score), metadata: trimMetadata(metadata) };
     });
+  }
+
+  async getRecord(name: string, id: string): Promise<ExplorerRecordDetail | null> {
+    await this.requireLoaded(name);
+    const s = await this.schemaOf(name);
+    const d = (await this.getClient().describeCollection({ collection_name: name })) as any;
+    const numeric = /int/i.test(String(((d.schema?.fields ?? []) as any[]).find((f) => f.is_primary_key)?.data_type));
+    if (numeric && !/^-?\d+$/.test(id)) return null;
+    const literal = numeric ? id : `"${id.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+    const r = (await this.getClient().query({
+      collection_name: name,
+      filter: `${s.primary} == ${literal}`,
+      output_fields: [s.primary, ...s.fields.map((f) => f.name), ...(s.vectorField ? [s.vectorField] : [])],
+      limit: 1,
+    } as any)) as any;
+    const row = (r.data ?? [])[0] as Record<string, unknown> | undefined;
+    if (!row) return null;
+    const { [s.primary]: rid, ...rest } = row;
+    const vec = s.vectorField ? rest[s.vectorField] : undefined;
+    if (s.vectorField) delete rest[s.vectorField];
+    return recordDetail(String(rid), rest, vec);
   }
 }

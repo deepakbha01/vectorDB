@@ -14,8 +14,8 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
-import { normaliseIndexType, normaliseMetric, trimMetadata, vectorFields } from '../explorer-helpers';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { normaliseIndexType, normaliseMetric, pickVector, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
  * Connects to the customer's target Weaviate instance (self-hosted on
@@ -141,28 +141,33 @@ export class WeaviateVectorAdapter implements VectorDatabaseAdapter, VectorExplo
     return (await (await this.getClient()).collections.listAll()).map((c) => c.name).sort();
   }
 
-  /** Exact match on each property, ANDed. */
+  /** Each condition on a property; all of them (Filters.and) or any (Filters.or). */
   private filters(collection: any, filter: ExplorerFilter): unknown {
-    const parts = Object.entries(filter).map(([name, value]) => collection.filter.byProperty(name).equal(value));
-    return parts.length === 0 ? undefined : parts.length === 1 ? parts[0] : Filters.and(...parts);
+    const METHOD = { eq: 'equal', ne: 'notEqual', gt: 'greaterThan', gte: 'greaterOrEqual', lt: 'lessThan', lte: 'lessOrEqual', in: 'containsAny' } as const;
+    const parts = filter.conditions.map((c) => {
+      const p = collection.filter.byProperty(c.field);
+      return p[METHOD[c.op]](c.op === 'in' ? (Array.isArray(c.value) ? c.value : [c.value]) : c.value);
+    });
+    return parts.length === 0 ? undefined : parts.length === 1 ? parts[0] : filter.combine === 'or' ? Filters.or(...parts) : Filters.and(...parts);
   }
 
-  /** The first (usually only) vector of an object, named or unnamed. */
-  private firstVector(o: any): unknown {
-    const v = o?.vectors;
-    if (!v) return undefined;
-    return Array.isArray(v) ? v : Object.values(v)[0];
+  /** An object's vector: the named one asked for, else the first (usually only). */
+  private firstVector(o: any, vectorName?: string): unknown {
+    return pickVector(o?.vectors, vectorName);
   }
 
   async describeCollection(name: string): Promise<ExplorerCollectionInfo> {
     const collection = (await this.getClient()).collections.use(name);
     const config = (await collection.config.get()) as any;
-    const [vecName, vec] = Object.entries((config.vectorizers ?? {}) as Record<string, { indexType?: string; indexConfig?: { distance?: string } }>)[0] ?? [null, null];
+    const spaces = Object.entries((config.vectorizers ?? {}) as Record<string, { indexType?: string; indexConfig?: { distance?: string } }>);
+    const [vecName, vec] = spaces[0] ?? [null, null];
     const total = (await collection.aggregate.overAll()) as any;
     const sample = (await collection.query.fetchObjects({ limit: 1, includeVector: true } as any)) as any;
     const first = this.firstVector(sample.objects?.[0]) as ArrayLike<number> | undefined;
     const notes: string[] = [];
-    if (vecName && vecName !== 'default') notes.push(`Named vector '${vecName}' is shown.`);
+    const named = spaces.length > 1 || (vecName !== null && vecName !== 'default');
+    if (named) notes.push(`Named vectors: ${spaces.map(([n]) => n).join(', ')}. The figures above are for '${vecName}'.`);
+    const sampleVectors = (sample.objects?.[0]?.vectors ?? {}) as Record<string, ArrayLike<number>>;
     return {
       name,
       recordCount: typeof total.totalCount === 'number' ? total.totalCount : null,
@@ -172,25 +177,49 @@ export class WeaviateVectorAdapter implements VectorDatabaseAdapter, VectorExplo
       indexes: vec?.indexType ? [{ type: normaliseIndexType(vec.indexType), detail: `${vec.indexType} (${vec.indexConfig?.distance ?? 'distance not stated'})` }] : [],
       fields: ((config.properties ?? []) as Array<{ name: string; dataType: string }>).map((p) => ({ name: p.name, type: p.dataType })),
       notes,
+      ...(named ? { vectors: spaces.map(([n, c]) => ({ name: n, dimension: sampleVectors[n]?.length ?? null, metric: normaliseMetric(c?.indexConfig?.distance ?? null) })) } : {}),
     };
   }
+
+  readonly supportsSort = true;
 
   /** Weaviate pages by offset (its cursor API cannot be combined with filters); 10,000 deep at most by default. */
   async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
     const offset = options.cursor === null ? 0 : Number(options.cursor);
     if (!Number.isInteger(offset) || offset < 0) throw new BadRequestException('Invalid page cursor.');
     const collection = (await this.getClient()).collections.use(name);
-    const r = (await collection.query.fetchObjects({ limit: options.limit + 1, offset, filters: this.filters(collection, options.filter), includeVector: true } as any)) as any;
+    const r = (await collection.query.fetchObjects({
+      limit: options.limit + 1,
+      offset,
+      filters: this.filters(collection, options.filter),
+      includeVector: true,
+      ...(options.sort ? { sort: (collection as any).sort.byProperty(options.sort.field, options.sort.direction === 'asc') } : {}),
+    } as any)) as any;
     const objects = (r.objects ?? []) as any[];
     return {
-      records: objects.slice(0, options.limit).map((o) => ({ id: String(o.uuid), metadata: trimMetadata((o.properties as Record<string, unknown>) ?? {}), ...vectorFields(this.firstVector(o), options.withVectors) })),
+      records: objects.slice(0, options.limit).map((o) => ({ id: String(o.uuid), metadata: trimMetadata((o.properties as Record<string, unknown>) ?? {}), ...vectorFields(this.firstVector(o, options.vectorName), options.withVectors) })),
       nextCursor: objects.length > options.limit ? String(offset + options.limit) : null,
     };
   }
 
-  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter; vectorName?: string }): Promise<VectorSearchResult[]> {
     const collection = (await this.getClient()).collections.use(name);
-    const r = (await collection.query.nearVector(query.vector, { limit: query.topK, filters: this.filters(collection, query.filter), returnMetadata: ['distance'] } as any)) as any;
+    const r = (await collection.query.nearVector(query.vector, { limit: query.topK, filters: this.filters(collection, query.filter), returnMetadata: ['distance'], ...(query.vectorName ? { targetVector: query.vectorName } : {}) } as any)) as any;
     return ((r.objects ?? []) as any[]).map((o) => ({ id: String(o.uuid), score: 1 - (o.metadata?.distance ?? 0), metadata: trimMetadata((o.properties as Record<string, unknown>) ?? {}) }));
+  }
+
+  readonly keywordRanking = 'Weaviate BM25 over the searchable text properties';
+
+  async keywordSearch(name: string, query: { text: string; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+    const collection = (await this.getClient()).collections.use(name);
+    const r = (await collection.query.bm25(query.text, { limit: query.topK, filters: this.filters(collection, query.filter), returnMetadata: ['score'] } as any)) as any;
+    return ((r.objects ?? []) as any[]).map((o) => ({ id: String(o.uuid), score: Number(o.metadata?.score ?? 0), metadata: trimMetadata((o.properties as Record<string, unknown>) ?? {}) }));
+  }
+
+  async getRecord(name: string, id: string, vectorName?: string): Promise<ExplorerRecordDetail | null> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+    const collection = (await this.getClient()).collections.use(name);
+    const o = (await collection.query.fetchObjectById(id, { includeVector: true } as any)) as any;
+    return o ? recordDetail(String(o.uuid), (o.properties as Record<string, unknown>) ?? {}, this.firstVector(o, vectorName)) : null;
   }
 }

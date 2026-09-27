@@ -1,4 +1,5 @@
 import { ChromaVectorAdapter } from './chroma/chroma-vector.adapter';
+import { parseFilterInput as eqf } from './explorer-helpers';
 import { PineconeVectorAdapter } from './pinecone/pinecone-vector.adapter';
 import { WeaviateVectorAdapter } from './weaviate/weaviate-vector.adapter';
 import { ElasticsearchVectorAdapter } from './elasticsearch/elasticsearch-vector.adapter';
@@ -44,10 +45,10 @@ describe('Chroma explorer', () => {
   });
 
   it('pages by offset with a where filter, and searches with it', async () => {
-    const page = await c.browse('a', { limit: 1, cursor: null, filter: { dept: 'legal' } });
+    const page = await c.browse('a', { limit: 1, cursor: null, filter: eqf({ dept: 'legal' }) });
     expect(col.get).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 2, offset: 0, where: { dept: { $eq: 'legal' } } }));
     expect(page).toEqual({ records: [{ id: 'a', metadata: { dept: 'legal' }, vectorPreview: [0.1, 0.2], dimension: 2 }], nextCursor: '1' });
-    expect(await c.searchFiltered('a', { vector: [1, 0], topK: 1, filter: {} })).toEqual([{ id: 'a', score: 0.75, metadata: { dept: 'legal' } }]);
+    expect(await c.searchFiltered('a', { vector: [1, 0], topK: 1, filter: eqf({}) })).toEqual([{ id: 'a', score: 0.75, metadata: { dept: 'legal' } }]);
   });
 
   it("says when a collection sets no distance (Chroma's default is L2)", async () => {
@@ -74,9 +75,9 @@ describe('Pinecone explorer', () => {
   });
 
   it('pages with the list token, refuses a filtered listing, and filters search', async () => {
-    expect(await p.browse('kb-docs', { limit: 2, cursor: null, filter: {} })).toEqual(expect.objectContaining({ nextCursor: 'tok2' }));
-    await expect(p.browse('kb-docs', { limit: 2, cursor: null, filter: { dept: 'legal' } })).rejects.toThrow(/use Search to filter/);
-    await p.searchFiltered('kb-docs', { vector: [1, 0], topK: 1, filter: { dept: 'legal' } });
+    expect(await p.browse('kb-docs', { limit: 2, cursor: null, filter: eqf({}) })).toEqual(expect.objectContaining({ nextCursor: 'tok2' }));
+    await expect(p.browse('kb-docs', { limit: 2, cursor: null, filter: eqf({ dept: 'legal' }) })).rejects.toThrow(/use Search to filter/);
+    await p.searchFiltered('kb-docs', { vector: [1, 0], topK: 1, filter: eqf({ dept: 'legal' }) });
     expect(index.query).toHaveBeenCalledWith(expect.objectContaining({ filter: { dept: { $eq: 'legal' } } }));
   });
 });
@@ -101,9 +102,9 @@ describe('Weaviate explorer', () => {
   });
 
   it('filters by property on browse and search', async () => {
-    await w.browse('KbDocs', { limit: 5, cursor: '10', filter: { dept: 'legal' } });
+    await w.browse('KbDocs', { limit: 5, cursor: '10', filter: eqf({ dept: 'legal' }) });
     expect(collection.query.fetchObjects).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 6, offset: 10, filters: { name: 'dept', v: 'legal' } }));
-    expect(await w.searchFiltered('KbDocs', { vector: [1, 0, 0], topK: 1, filter: {} })).toEqual([{ id: 'u1', score: 0.8, metadata: { dept: 'legal' } }]);
+    expect(await w.searchFiltered('KbDocs', { vector: [1, 0, 0], topK: 1, filter: eqf({}) })).toEqual([{ id: 'u1', score: 0.8, metadata: { dept: 'legal' } }]);
   });
 });
 
@@ -123,12 +124,12 @@ describe('Elasticsearch explorer', () => {
   });
 
   it('filters browse with term / match_phrase and the kNN search with the same clauses', async () => {
-    const page = await e.browse('docs', { limit: 1, cursor: null, filter: { dept: 'legal' } });
+    const page = await e.browse('docs', { limit: 1, cursor: null, filter: eqf({ dept: 'legal' }) });
     expect(client.search).toHaveBeenLastCalledWith(expect.objectContaining({ from: 0, size: 2, query: { bool: { filter: [{ term: { dept: 'legal' } }] } } }));
     expect(page.records[0]).toEqual({ id: 'd1', metadata: { dept: 'legal' }, vectorPreview: [1, 2, 3, 4], dimension: 4 });
-    await e.searchFiltered('docs', { vector: [1, 0, 0, 0], topK: 2, filter: { body: 'notice period' } });
+    await e.searchFiltered('docs', { vector: [1, 0, 0, 0], topK: 2, filter: eqf({ body: 'notice period' }) });
     expect(client.search).toHaveBeenLastCalledWith(expect.objectContaining({ knn: expect.objectContaining({ field: 'embedding', k: 2, filter: { bool: { filter: [{ match_phrase: { body: 'notice period' } }] } } }) }));
-    await expect(e.browse('docs', { limit: 100, cursor: '9950', filter: {} })).rejects.toThrow(/10,000 records deep/);
+    await expect(e.browse('docs', { limit: 100, cursor: '9950', filter: eqf({}) })).rejects.toThrow(/10,000 records deep/);
   });
 });
 
@@ -154,14 +155,14 @@ describe('Redis explorer', () => {
   });
 
   it('pages with LIMIT, filters tags, and reads the vector bytes back', async () => {
-    const page = await r.browse('kb', { limit: 1, cursor: null, filter: { dept: 'legal' } });
+    const page = await r.browse('kb', { limit: 1, cursor: null, filter: eqf({ dept: 'legal' }) });
     expect(search).toHaveBeenLastCalledWith('kb_idx', '@dept:{legal}', expect.objectContaining({ LIMIT: { from: 0, size: 2 } }));
     expect(page.records[0]).toEqual({ id: 'a', metadata: { dept: 'legal' }, vectorPreview: [0.5, -1], dimension: 2 });
   });
 
   it('pre-filters the KNN query', async () => {
     search.mockResolvedValueOnce({ documents: [{ id: 'kb:a', value: { dept: 'legal', score: '0.1' } }] });
-    expect(await r.searchFiltered('kb', { vector: [1, 0], topK: 3, filter: { dept: 'legal' } })).toEqual([{ id: 'a', score: 0.9, metadata: { dept: 'legal' } }]);
+    expect(await r.searchFiltered('kb', { vector: [1, 0], topK: 3, filter: eqf({ dept: 'legal' }) })).toEqual([{ id: 'a', score: 0.9, metadata: { dept: 'legal' } }]);
     expect(search).toHaveBeenLastCalledWith('kb_idx', '(@dept:{legal})=>[KNN 3 @embedding $BLOB AS score]', expect.anything());
   });
 });
@@ -185,17 +186,17 @@ describe('MongoDB Atlas explorer', () => {
   });
 
   it('pages after the last _id and keeps the id type in the cursor', async () => {
-    const page = await m.browse('kb', { limit: 1, cursor: null, filter: { dept: 'legal' } });
+    const page = await m.browse('kb', { limit: 1, cursor: null, filter: eqf({ dept: 'legal' }) });
     expect(find).toHaveBeenLastCalledWith({ dept: { $eq: 'legal' } });
     expect(page.nextCursor).toBe(JSON.stringify({ t: 's', v: 'a' }));
-    await m.browse('kb', { limit: 1, cursor: page.nextCursor, filter: {} });
+    await m.browse('kb', { limit: 1, cursor: page.nextCursor, filter: eqf({}) });
     expect(find).toHaveBeenLastCalledWith({ _id: { $gt: 'a' } });
-    await expect(m.browse('kb', { limit: 1, cursor: 'nonsense', filter: {} })).rejects.toThrow(/Invalid page cursor/);
+    await expect(m.browse('kb', { limit: 1, cursor: 'nonsense', filter: eqf({}) })).rejects.toThrow(/Invalid page cursor/);
   });
 
   it('filters search only on the index filter fields', async () => {
-    expect(await m.searchFiltered('kb', { vector: [1, 0], topK: 1, filter: { dept: 'legal' } })).toEqual([{ id: 'a', score: 0.95, metadata: { dept: 'legal' } }]);
-    await expect(m.searchFiltered('kb', { vector: [1, 0], topK: 1, filter: { owner: 'x' } })).rejects.toThrow(/filter fields \(dept\); not on owner/);
+    expect(await m.searchFiltered('kb', { vector: [1, 0], topK: 1, filter: eqf({ dept: 'legal' }) })).toEqual([{ id: 'a', score: 0.95, metadata: { dept: 'legal' } }]);
+    await expect(m.searchFiltered('kb', { vector: [1, 0], topK: 1, filter: eqf({ owner: 'x' }) })).rejects.toThrow(/filter fields \(dept\); not on owner/);
   });
 });
 
@@ -219,10 +220,131 @@ describe('Oracle explorer', () => {
   });
 
   it('pages in id order with bound filters, and searches with them', async () => {
-    const page = await o.browse('kb_docs', { limit: 1, cursor: null, filter: { dept: 'legal' } });
+    const page = await o.browse('kb_docs', { limit: 1, cursor: null, filter: eqf({ dept: 'legal' }) });
     expect(execute).toHaveBeenCalledWith(expect.stringContaining('WHERE "DEPT" = :f0 ORDER BY id FETCH FIRST :n ROWS ONLY'), expect.objectContaining({ f0: 'legal', n: 2 }));
     expect(page).toEqual({ records: [{ id: 'a', metadata: { dept: 'legal' }, vectorPreview: [1, 2, 3], dimension: 3 }], nextCursor: 'a' });
-    expect(await o.searchFiltered('kb_docs', { vector: [1, 0, 0], topK: 1, filter: { dept: 'legal' } })).toEqual([{ id: 'a', score: 0.9, metadata: { dept: 'legal' } }]);
+    expect(await o.searchFiltered('kb_docs', { vector: [1, 0, 0], topK: 1, filter: eqf({ dept: 'legal' }) })).toEqual([{ id: 'a', score: 0.9, metadata: { dept: 'legal' } }]);
     await expect(o.describeCollection('kb docs; drop')).rejects.toThrow(/Invalid table name/);
+  });
+});
+
+describe('keyword search (phase 3)', () => {
+  it('Elasticsearch: BM25 multi_match over the text fields, with filters', async () => {
+    const client = {
+      indices: { getMapping: jest.fn().mockResolvedValue({ docs: { mappings: { properties: { embedding: { type: 'dense_vector', dims: 2 }, dept: { type: 'keyword' }, body: { type: 'text' }, title: { type: 'text' } } } } }) },
+      count: jest.fn().mockResolvedValue({ count: 1 }),
+      search: jest.fn().mockResolvedValue({ hits: { hits: [{ _id: 'd1', _score: 7.1, _source: { body: 'notice period', embedding: [1, 2] } }] } }),
+    };
+    const e = set(new ElasticsearchVectorAdapter(cfg, gen), 'client', client);
+    expect(await e.keywordSearch('docs', { text: 'notice', topK: 3, filter: eqf({ dept: 'legal' }) })).toEqual([{ id: 'd1', score: 7.1, metadata: { body: 'notice period' } }]);
+    expect(client.search).toHaveBeenLastCalledWith(expect.objectContaining({ size: 3, query: { bool: { must: [{ multi_match: { query: 'notice', fields: ['body', 'title'] } }], filter: [{ term: { dept: 'legal' } }] } } }));
+  });
+
+  it('Weaviate: native BM25 with property filters', async () => {
+    const bm25 = jest.fn().mockResolvedValue({ objects: [{ uuid: 'u1', properties: { dept: 'legal' }, metadata: { score: 2.5 } }] });
+    const collection = { filter: { byProperty: (n: string) => ({ equal: (v: unknown) => ({ n, v }) }) }, query: { bm25 } };
+    const w = set(new WeaviateVectorAdapter(cfg, gen), 'client', { collections: { use: () => collection } });
+    expect(await w.keywordSearch('Docs', { text: 'notice', topK: 2, filter: eqf({ dept: 'legal' }) })).toEqual([{ id: 'u1', score: 2.5, metadata: { dept: 'legal' } }]);
+    expect(bm25).toHaveBeenCalledWith('notice', expect.objectContaining({ limit: 2, filters: { n: 'dept', v: 'legal' } }));
+  });
+
+  it('MongoDB Atlas: needs an Atlas Search index, then $search with a post-filter', async () => {
+    const indexes: any[] = [{ name: 'kb_vector_index', type: 'vectorSearch', latestDefinition: { fields: [{ type: 'vector', path: 'embedding', numDimensions: 2 }] } }];
+    const aggregate = jest.fn(() => ({ toArray: async () => [{ _id: 'a', dept: 'legal', score: 3.3 }] }));
+    const collection = { listSearchIndexes: () => ({ toArray: async () => indexes }), aggregate };
+    const m = set(new MongoDbAtlasVectorAdapter(cfg, gen), 'db', { collection: () => collection });
+    await expect(m.keywordSearch('kb', { text: 'notice', topK: 2, filter: eqf({}) })).rejects.toThrow(/no Atlas Search index/);
+    indexes.push({ name: 'kb_text', type: 'search' });
+    expect(await m.keywordSearch('kb', { text: 'notice', topK: 2, filter: eqf({ dept: 'legal' }) })).toEqual([{ id: 'a', score: 3.3, metadata: { dept: 'legal' } }]);
+    expect(aggregate).toHaveBeenLastCalledWith([
+      { $search: { index: 'kb_text', text: { query: 'notice', path: { wildcard: '*' } } } },
+      { $match: { dept: { $eq: 'legal' } } },
+      { $limit: 2 },
+      { $project: { embedding: 0, score: { $meta: 'searchScore' } } },
+    ]);
+  });
+});
+
+describe('sorted listings (phase 3)', () => {
+  it('Elasticsearch sorts keyword / numeric fields, not analysed text', async () => {
+    const client = {
+      indices: { getMapping: jest.fn().mockResolvedValue({ docs: { mappings: { properties: { embedding: { type: 'dense_vector', dims: 2 }, year: { type: 'integer' }, body: { type: 'text' } } } } }) },
+      count: jest.fn().mockResolvedValue({ count: 1 }),
+      search: jest.fn().mockResolvedValue({ hits: { hits: [] } }),
+    };
+    const e = set(new ElasticsearchVectorAdapter(cfg, gen), 'client', client);
+    await e.browse('docs', { limit: 5, cursor: '10', filter: eqf({}), sort: { field: 'year', direction: 'desc' } });
+    expect(client.search).toHaveBeenLastCalledWith(expect.objectContaining({ from: 10, sort: [{ year: { order: 'desc', missing: '_last' } }] }));
+    await expect(e.browse('docs', { limit: 5, cursor: null, filter: eqf({}), sort: { field: 'body', direction: 'asc' } })).rejects.toThrow(/not analysed text/);
+  });
+
+  it('MongoDB sorts by the field, then _id, paging by offset', async () => {
+    const calls: any = {};
+    const cursor = { sort: (s: any) => ((calls.sort = s), cursor), skip: (n: number) => ((calls.skip = n), cursor), limit: () => cursor, toArray: async () => [{ _id: 'a', year: 2024 }] };
+    const collection = { listSearchIndexes: () => ({ toArray: async () => [] }), find: () => cursor };
+    const m = set(new MongoDbAtlasVectorAdapter(cfg, gen), 'db', { collection: () => collection });
+    const page = await m.browse('kb', { limit: 5, cursor: '15', filter: eqf({}), sort: { field: 'year', direction: 'desc' } });
+    expect(calls).toEqual({ sort: { year: -1, _id: 1 }, skip: 15 });
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('Weaviate passes a property sort', async () => {
+    const fetchObjects = jest.fn().mockResolvedValue({ objects: [] });
+    const collection = { filter: { byProperty: jest.fn() }, sort: { byProperty: (f: string, asc: boolean) => ({ f, asc }) }, query: { fetchObjects } };
+    const w = set(new WeaviateVectorAdapter(cfg, gen), 'client', { collections: { use: () => collection } });
+    await w.browse('Docs', { limit: 5, cursor: null, filter: eqf({}), sort: { field: 'year', direction: 'asc' } });
+    expect(fetchObjects).toHaveBeenCalledWith(expect.objectContaining({ sort: { f: 'year', asc: true } }));
+  });
+});
+
+describe('record detail (phase 3)', () => {
+  it('Qdrant retrieves numeric ids as numbers and UUIDs as text', async () => {
+    const retrieve = jest.fn().mockResolvedValue([{ id: 7, payload: { dept: 'legal' }, vector: [3, 4] }]);
+    const q = set(new QdrantVectorAdapter(cfg, gen), 'client', { retrieve });
+    expect(await q.getRecord('a', '7')).toEqual({ id: '7', metadata: { dept: 'legal' }, dimension: 2, vectorHead: [3, 4], norm: 5 });
+    expect(retrieve).toHaveBeenLastCalledWith('a', expect.objectContaining({ ids: [7] }));
+    retrieve.mockResolvedValueOnce([]);
+    expect(await q.getRecord('a', '5c0e1b34-1d2a-4b1c-9a55-0f5e6f7a8b9c')).toBeNull();
+    expect(retrieve).toHaveBeenLastCalledWith('a', expect.objectContaining({ ids: ['5c0e1b34-1d2a-4b1c-9a55-0f5e6f7a8b9c'] }));
+  });
+
+  it('Elasticsearch turns a 404 into "not found"', async () => {
+    const client = {
+      indices: { getMapping: jest.fn().mockResolvedValue({ docs: { mappings: { properties: { embedding: { type: 'dense_vector', dims: 2 } } } } }) },
+      get: jest.fn().mockRejectedValue(Object.assign(new Error('not found'), { meta: { statusCode: 404 } })),
+    };
+    expect(await set(new ElasticsearchVectorAdapter(cfg, gen), 'client', client).getRecord('docs', 'x')).toBeNull();
+  });
+
+  it('Redis reads the hash and its vector bytes', async () => {
+    const vec = Buffer.alloc(8);
+    vec.writeFloatLE(0.6, 0);
+    vec.writeFloatLE(0.8, 4);
+    const client: any = { isOpen: true, hGetAll: jest.fn().mockResolvedValue({ id: 'a', dept: 'legal', embedding: 'garbled' }), withTypeMapping: () => ({ hGet: jest.fn().mockResolvedValue(vec) }) };
+    const d = await set(new RedisVectorAdapter(cfg), 'client', client).getRecord('kb', 'a');
+    expect(d).toEqual(expect.objectContaining({ id: 'a', metadata: { dept: 'legal' }, dimension: 2 }));
+    expect(d!.norm).toBeCloseTo(1, 5);
+  });
+});
+
+describe('Weaviate named vectors', () => {
+  it('lists each named vector and targets the chosen one', async () => {
+    const nearVector = jest.fn().mockResolvedValue({ objects: [] });
+    const collection = {
+      filter: { byProperty: jest.fn() },
+      config: { get: jest.fn().mockResolvedValue({ properties: [], vectorizers: { title: { indexType: 'hnsw', indexConfig: { distance: 'cosine' } }, body: { indexType: 'flat', indexConfig: { distance: 'dot' } } } }) },
+      aggregate: { overAll: jest.fn().mockResolvedValue({ totalCount: 1 }) },
+      query: {
+        fetchObjects: jest.fn().mockResolvedValue({ objects: [{ uuid: 'u1', properties: {}, vectors: { title: [1, 0, 0], body: [0.5, 0.5] } }] }),
+        nearVector,
+      },
+    };
+    const w = set(new WeaviateVectorAdapter(cfg, gen), 'client', { collections: { use: () => collection } });
+    const info = await w.describeCollection('Docs');
+    expect(info.vectors).toEqual([{ name: 'title', dimension: 3, metric: 'cosine' }, { name: 'body', dimension: 2, metric: 'dot_product' }]);
+    const page = await w.browse('Docs', { limit: 1, cursor: null, filter: eqf({}), withVectors: true, vectorName: 'body' });
+    expect(page.records[0].vector).toEqual([0.5, 0.5]);
+    await w.searchFiltered('Docs', { vector: [1, 0], topK: 2, filter: eqf({}), vectorName: 'body' });
+    expect(nearVector).toHaveBeenCalledWith([1, 0], expect.objectContaining({ targetVector: 'body' }));
   });
 });

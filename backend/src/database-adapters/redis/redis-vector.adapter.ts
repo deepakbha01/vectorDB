@@ -11,8 +11,8 @@ import {
 import { IndexTuningParameter, MetadataFieldDefinition } from '../../schema-generator/schema-generator.types';
 import { IndexType } from '../../index-recommendation-engine/enums/index-type.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
-import { normaliseIndexType, normaliseMetric, redisFilter, trimMetadata, vectorFields } from '../explorer-helpers';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { normaliseIndexType, normaliseMetric, recordDetail, redisFilter, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /** Little-endian float32 bytes back to numbers. */
 function fromVectorBuffer(buf: Buffer): number[] {
@@ -231,5 +231,13 @@ export class RedisVectorAdapter implements VectorDatabaseAdapter, VectorExplorer
       const { id: _id, embedding: _e, score, ...metadata } = d.value ?? {};
       return { id: String(d.id).replace(`${name}:`, ''), score: 1 - Number(score), metadata: trimMetadata(metadata) };
     });
+  }
+
+  async getRecord(name: string, id: string): Promise<ExplorerRecordDetail | null> {
+    const key = `${name}:${id}`;
+    const h = (await (await this.getClient()).hGetAll(key)) as unknown as Record<string, string>;
+    if (!h || !Object.keys(h).length) return null;
+    const { id: _id, embedding: _e, ...metadata } = h;
+    return recordDetail(id, metadata, await this.vectorOf(key));
   }
 }

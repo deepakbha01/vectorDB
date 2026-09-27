@@ -14,8 +14,8 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
-import { esFilter, normaliseIndexType, normaliseMetric, trimMetadata, vectorFields } from '../explorer-helpers';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { esFilter, normaliseIndexType, normaliseMetric, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
  * Connects to the customer's target Elasticsearch/OpenSearch cluster
@@ -171,6 +171,8 @@ export class ElasticsearchVectorAdapter implements VectorDatabaseAdapter, Vector
     };
   }
 
+  readonly supportsSort = true;
+
   /** Elasticsearch pages by offset (from + size), 10,000 deep at most by default. */
   async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
     const offset = options.cursor === null ? 0 : Number(options.cursor);
@@ -179,7 +181,16 @@ export class ElasticsearchVectorAdapter implements VectorDatabaseAdapter, Vector
     const { vectorField } = await this.mappingOf(name);
     const info = await this.describeCollection(name);
     const clauses = esFilter(options.filter, info.fields);
-    const r = (await this.getClient().search({ index: name, from: offset, size: options.limit + 1, query: clauses.length ? { bool: { filter: clauses } } : { match_all: {} } } as any)) as any;
+    if (options.sort && (!info.fields.some((f) => f.name === options.sort!.field) || info.fields.find((f) => f.name === options.sort!.field)?.type === 'text')) {
+      throw new BadRequestException(`Cannot sort by '${options.sort.field}' (Elasticsearch sorts keyword, numeric and date fields, not analysed text).`);
+    }
+    const r = (await this.getClient().search({
+      index: name,
+      from: offset,
+      size: options.limit + 1,
+      query: clauses.length ? { bool: { filter: clauses } } : { match_all: {} },
+      ...(options.sort ? { sort: [{ [options.sort.field]: { order: options.sort.direction, missing: '_last' } }] } : {}),
+    } as any)) as any;
     const hits = (r.hits?.hits ?? []) as any[];
     return {
       records: hits.slice(0, options.limit).map((h) => {
@@ -202,5 +213,36 @@ export class ElasticsearchVectorAdapter implements VectorDatabaseAdapter, Vector
       const { [vectorField ?? 'embedding']: _vec, ...metadata } = h._source ?? {};
       return { id: String(h._id), score: h._score ?? 0, metadata: trimMetadata(metadata) };
     });
+  }
+
+  readonly keywordRanking = 'Elasticsearch BM25 (multi_match) over the text fields';
+
+  async keywordSearch(name: string, query: { text: string; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+    const { vectorField } = await this.mappingOf(name);
+    const info = await this.describeCollection(name);
+    const textFields = info.fields.filter((f) => f.type === 'text').map((f) => f.name);
+    if (!textFields.length) throw new BadRequestException(`Index '${name}' has no text fields to search by keyword.`);
+    const clauses = esFilter(query.filter, info.fields);
+    const r = (await this.getClient().search({
+      index: name,
+      size: query.topK,
+      query: { bool: { must: [{ multi_match: { query: query.text, fields: textFields } }], ...(clauses.length ? { filter: clauses } : {}) } },
+    } as any)) as any;
+    return ((r.hits?.hits ?? []) as any[]).map((h) => {
+      const { [vectorField ?? 'embedding']: _vec, ...metadata } = h._source ?? {};
+      return { id: String(h._id), score: h._score ?? 0, metadata: trimMetadata(metadata) };
+    });
+  }
+
+  async getRecord(name: string, id: string): Promise<ExplorerRecordDetail | null> {
+    const { vectorField } = await this.mappingOf(name);
+    try {
+      const d = (await this.getClient().get({ index: name, id })) as any;
+      const { [vectorField ?? 'embedding']: vec, ...metadata } = d._source ?? {};
+      return recordDetail(String(d._id), metadata, vec);
+    } catch (e) {
+      if ((e as any)?.meta?.statusCode === 404) return null;
+      throw e;
+    }
   }
 }

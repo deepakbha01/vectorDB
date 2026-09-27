@@ -31,7 +31,7 @@ describe('DeploymentPlanService', () => {
     getDeploymentChecklist: jest.Mock;
     getRollbackProcedure: jest.Mock;
   };
-  let adapterFactory: { getAdapter: jest.Mock };
+  let adapterFactory: { getAdapter: jest.Mock; forProject: jest.Mock };
 
   const requester = { id: 'user-1', email: 'architect@example.com', role: 'architect' as any };
   const pipelineDesign = {
@@ -69,7 +69,7 @@ describe('DeploymentPlanService', () => {
       getDeploymentChecklist: jest.fn().mockReturnValue(['step 1']),
       getRollbackProcedure: jest.fn().mockReturnValue(['rollback step']),
     };
-    adapterFactory = { getAdapter: jest.fn() };
+    adapterFactory = { getAdapter: jest.fn(), forProject: jest.fn(async (p: { platform: unknown }) => adapterFactory.getAdapter(p.platform)) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

@@ -9,7 +9,7 @@ import { ExplorerCollectionInfo } from '../database-adapters/vector-explorer';
 export type CheckStatus = 'match' | 'mismatch' | 'info' | 'unknown';
 
 export interface DesignCheck {
-  key: 'collection' | 'dimension' | 'metric' | 'index' | 'fields' | 'volume';
+  key: 'collection' | 'dimension' | 'metric' | 'index' | 'fields' | 'volume' | 'hybrid';
   label: string;
   designed: string;
   actual: string;
@@ -24,8 +24,14 @@ export interface DesignedCollection {
   pipeline: { version: number; collectionName: string; dimension: number; metric: string; metadataFields: string[] } | null;
   /** Index Design decision (hnsw | ivf_flat | pq); null when that phase has not run. */
   index: { version: number; type: string } | null;
-  /** Discovery's expected vector count; null when Discovery has not run. */
-  discovery: { version: number; estimatedVectorCount: number } | null;
+  /** Discovery's expected vector count and whether it requires hybrid search; null when Discovery has not run. */
+  discovery: { version: number; estimatedVectorCount: number; requiresHybridSearch?: boolean } | null;
+}
+
+/** Whether the database can rank keyword search (needed for hybrid search). */
+export interface KeywordSupport {
+  supported: boolean;
+  ranking: string | null;
 }
 
 const fmt = (n: number) => n.toLocaleString('en-US');
@@ -38,7 +44,7 @@ const volumeShare = (n: number, of: number) => {
   return pct > 0 && pct < 0.1 ? 'under 0.1%' : `${Math.round(pct * 10) / 10}%`;
 };
 
-export function compareDesign(viewing: string, info: ExplorerCollectionInfo, design: DesignedCollection): DesignCheck[] {
+export function compareDesign(viewing: string, info: ExplorerCollectionInfo, design: DesignedCollection, keyword?: KeywordSupport): DesignCheck[] {
   const p = design.pipeline;
   const pipelineSource = p ? `Data & Embedding design v${p.version}` : 'Data & Embedding design (not run)';
   const checks: DesignCheck[] = [];
@@ -113,5 +119,19 @@ export function compareDesign(viewing: string, info: ExplorerCollectionInfo, des
           note: d.estimatedVectorCount > 0 ? `${volumeShare(info.recordCount, d.estimatedVectorCount)} of the expected volume.` : null,
         },
   );
+
+  // Hybrid search: Discovery says it is needed; can this database rank keywords?
+  if (keyword && d?.requiresHybridSearch !== undefined) {
+    const discoverySource = `Discovery v${d.version}`;
+    if (!d.requiresHybridSearch) {
+      checks.push({ key: 'hybrid', label: 'Hybrid search', designed: 'not required', actual: keyword.supported ? 'available' : 'dense only', status: 'info', source: discoverySource, note: null });
+    } else {
+      checks.push(
+        keyword.supported
+          ? { key: 'hybrid', label: 'Hybrid search', designed: 'required', actual: 'available', status: 'match', source: discoverySource, note: keyword.ranking ? `Keyword ranking: ${keyword.ranking}. Some databases also need a full-text index on the collection.` : null }
+          : { key: 'hybrid', label: 'Hybrid search', designed: 'required', actual: 'dense only', status: 'mismatch', source: discoverySource, note: 'This database cannot rank keyword search here, so hybrid search is not available.' },
+      );
+    }
+  }
   return checks;
 }

@@ -1,4 +1,5 @@
 import { QdrantVectorAdapter } from './qdrant/qdrant-vector.adapter';
+import { parseFilterInput as eqf } from './explorer-helpers';
 import { MilvusVectorAdapter } from './milvus/milvus-vector.adapter';
 
 /** Data Explorer methods of the Qdrant and Milvus adapters, against a mocked SDK client. */
@@ -26,15 +27,15 @@ describe('Qdrant explorer', () => {
   });
 
   it('scrolls with a typed cursor and a must-match filter', async () => {
-    const page = await q.browse('a', { limit: 1, cursor: null, filter: { dept: 'legal' } });
+    const page = await q.browse('a', { limit: 1, cursor: null, filter: eqf({ dept: 'legal' }) });
     expect(page).toEqual({ records: [{ id: '7', metadata: { dept: 'legal' }, vectorPreview: [0.5, 0.25], dimension: 2 }], nextCursor: '8' });
-    await q.browse('a', { limit: 1, cursor: '8', filter: {} });
+    await q.browse('a', { limit: 1, cursor: '8', filter: eqf({}) });
     expect(client.scroll).toHaveBeenLastCalledWith('a', expect.objectContaining({ offset: 8 }));
-    await expect(q.browse('a', { limit: 1, cursor: '{bad', filter: {} })).rejects.toThrow(/Invalid page cursor/);
+    await expect(q.browse('a', { limit: 1, cursor: '{bad', filter: eqf({}) })).rejects.toThrow(/Invalid page cursor/);
   });
 
   it('searches with the filter applied', async () => {
-    expect(await q.searchFiltered('a', { vector: [1, 0], topK: 3, filter: { dept: 'legal' } })).toEqual([{ id: 'u-1', score: 0.8, metadata: { dept: 'legal' } }]);
+    expect(await q.searchFiltered('a', { vector: [1, 0], topK: 3, filter: eqf({ dept: 'legal' }) })).toEqual([{ id: 'u-1', score: 0.8, metadata: { dept: 'legal' } }]);
     expect(client.query).toHaveBeenCalledWith('a', expect.objectContaining({ limit: 3, filter: { must: [{ key: 'dept', match: { value: 'legal' } }] } }));
   });
 });
@@ -65,20 +66,45 @@ describe('Milvus explorer', () => {
   });
 
   it('pages by offset with an escaped filter expression', async () => {
-    const page = await m.browse('docs', { limit: 1, cursor: null, filter: { dept: 'legal' } });
+    const page = await m.browse('docs', { limit: 1, cursor: null, filter: eqf({ dept: 'legal' }) });
     expect(client.query).toHaveBeenCalledWith(expect.objectContaining({ filter: 'dept == "legal"', limit: 2, offset: 0, output_fields: ['id', 'dept', 'embedding'] }));
     expect(page).toEqual({ records: [{ id: 'a', metadata: { dept: 'legal' }, vectorPreview: [1, 2, 3, 4], dimension: 4 }], nextCursor: '1' });
-    await expect(m.browse('docs', { limit: 100, cursor: '16300', filter: {} })).rejects.toThrow(/16,384 rows deep/);
+    await expect(m.browse('docs', { limit: 100, cursor: '16300', filter: eqf({}) })).rejects.toThrow(/16,384 rows deep/);
   });
 
   it('never loads a collection - it says it is not loaded', async () => {
     client.getLoadState.mockResolvedValueOnce({ state: 'LoadStateNotLoad' });
-    await expect(m.searchFiltered('docs', { vector: [1, 0, 0, 0], topK: 1, filter: {} })).rejects.toThrow(/is not loaded/);
+    await expect(m.searchFiltered('docs', { vector: [1, 0, 0, 0], topK: 1, filter: eqf({}) })).rejects.toThrow(/is not loaded/);
     expect((client as any).loadCollection).toBeUndefined();
   });
 
   it('searches with the filter expression', async () => {
-    expect(await m.searchFiltered('docs', { vector: [1, 0, 0, 0], topK: 1, filter: { dept: 'legal' } })).toEqual([{ id: 'a', score: 0.7, metadata: { dept: 'legal' } }]);
+    expect(await m.searchFiltered('docs', { vector: [1, 0, 0, 0], topK: 1, filter: eqf({ dept: 'legal' }) })).toEqual([{ id: 'a', score: 0.7, metadata: { dept: 'legal' } }]);
     expect(client.search).toHaveBeenCalledWith(expect.objectContaining({ data: [[1, 0, 0, 0]], limit: 1, filter: 'dept == "legal"' }));
+  });
+});
+
+describe('Qdrant explorer - named vectors', () => {
+  const client = {
+    getCollection: jest.fn().mockResolvedValue({ points_count: 2, config: { params: { vectors: { title: { size: 4, distance: 'Cosine' }, body: { size: 2, distance: 'Dot' } } }, hnsw_config: {} }, payload_schema: {} }),
+    scroll: jest.fn().mockResolvedValue({ points: [{ id: 1, payload: {}, vector: { title: [1, 0, 0, 0], body: [0.5, 0.5] } }], next_page_offset: null }),
+    query: jest.fn().mockResolvedValue({ points: [] }),
+    retrieve: jest.fn().mockResolvedValue([{ id: 1, payload: {}, vector: { title: [1, 0, 0, 0], body: [0.6, 0.8] } }]),
+  };
+  const q = withClient(new QdrantVectorAdapter({} as any, {} as any), client);
+
+  it('lists every named vector space', async () => {
+    const info = await q.describeCollection('a');
+    expect(info.vectors).toEqual([{ name: 'title', dimension: 4, metric: 'cosine' }, { name: 'body', dimension: 2, metric: 'dot_product' }]);
+    expect(info.dimension).toBe(4);
+  });
+
+  it('reads, searches and fetches the chosen vector', async () => {
+    const page = await q.browse('a', { limit: 1, cursor: null, filter: eqf({}), withVectors: true, vectorName: 'body' });
+    expect(page.records[0].vector).toEqual([0.5, 0.5]);
+    expect((await q.browse('a', { limit: 1, cursor: null, filter: eqf({}), withVectors: true })).records[0].vector).toEqual([1, 0, 0, 0]);
+    await q.searchFiltered('a', { vector: [1, 0], topK: 3, filter: eqf({}), vectorName: 'body' });
+    expect(client.query).toHaveBeenLastCalledWith('a', expect.objectContaining({ using: 'body' }));
+    expect((await q.getRecord('a', '1', 'body'))!.norm).toBeCloseTo(1, 6);
   });
 });

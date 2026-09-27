@@ -43,6 +43,7 @@ import { InferenceModule } from './inference/inference.module';
 import { InferenceAssessment } from './inference/inference-assessment.entity';
 import { AiFactoryModule } from './ai-factory/ai-factory.module';
 import { DataExplorerModule } from './data-explorer/data-explorer.module';
+import { ConnectionProfilesModule } from './connection-profiles/connection-profiles.module';
 import { AiFactoryStateSnapshot } from './ai-factory/ai-factory-state-snapshot.entity';
 import { AiWorkloadProfile } from './ai-factory/workload-profile/workload-profile.entity';
 import { AiModelSelection } from './ai-factory/model-selection/model-selection.entity';
@@ -60,6 +61,7 @@ import { AiUsageEvent } from './ai-factory/token-observability/usage-event.entit
 import { AiUsageRollup } from './ai-factory/token-observability/usage-rollup.entity';
 import { AiSimulationRun } from './ai-factory/token-observability/simulation-run.entity';
 import { AiIngestKey } from './ai-factory/token-observability/ingest-key.entity';
+import { ProjectConnectionProfile } from './database-adapters/connection/project-connection-profile.entity';
 import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entity';
 
 @Module({
@@ -107,6 +109,7 @@ import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entit
           AiUsageRollup,
           AiSimulationRun,
           AiIngestKey,
+          ProjectConnectionProfile,
           AiTokenAlert,
         ],
         // Sprint 1 uses schema sync for velocity. Replace with TypeORM migrations
@@ -151,6 +154,7 @@ import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entit
     InferenceModule,
     AiFactoryModule,
     DataExplorerModule,
+    ConnectionProfilesModule,
   ],
   controllers: [HealthController, FeaturesController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

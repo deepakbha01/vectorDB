@@ -136,7 +136,7 @@ export class DeploymentPlanService {
       throw new BadRequestException('Phase 2/3 outputs are missing - re-run Design before executing.');
     }
 
-    const adapter = this.adapterFactory.getAdapter(project.platform);
+    const adapter = await this.adapterFactory.forProject(project);
 
     const healthCheckPassed = await adapter.healthCheck();
     if (!healthCheckPassed) {

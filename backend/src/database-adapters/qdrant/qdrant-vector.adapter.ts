@@ -14,8 +14,8 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, VectorExplorer } from '../vector-explorer';
-import { normaliseMetric, qdrantFilter, trimMetadata, vectorFields } from '../explorer-helpers';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { normaliseMetric, pickVector, qdrantFilter, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
  * Connects to the customer's target Qdrant instance (self-hosted on
@@ -131,7 +131,7 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter, VectorExplore
     const v = named ? vectors[named] : vectors;
     const hnsw = info.config?.hnsw_config ?? {};
     const notes: string[] = [];
-    if (named) notes.push(`Named vectors: showing '${named}' of ${Object.keys(vectors).join(', ')}.`);
+    if (named) notes.push(`Named vectors: ${Object.keys(vectors).join(', ')}. The figures above are for '${named}'.`);
     const quant = info.config?.quantization_config;
     const quantized = quant && (quant.product || quant.scalar || quant.binary);
     return {
@@ -144,6 +144,7 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter, VectorExplore
       indexes: [{ type: quant?.product ? 'pq' : 'hnsw', detail: `HNSW m=${hnsw.m ?? '?'}, ef_construct=${hnsw.ef_construct ?? '?'}${quantized ? `, ${Object.keys(quant).join('/')} quantization` : ''}` }],
       fields: Object.entries(info.payload_schema ?? {}).map(([field, s]: [string, any]) => ({ name: field, type: String(s?.data_type ?? 'unknown') })),
       notes,
+      ...(named ? { vectors: Object.entries(vectors).map(([n, c]: [string, any]) => ({ name: n, dimension: typeof c?.size === 'number' ? c.size : null, metric: normaliseMetric(c?.distance ?? null) })) } : {}),
     };
   }
 
@@ -166,7 +167,7 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter, VectorExplore
     } as any)) as any;
     return {
       records: (r.points ?? []).map((p: any) => {
-        const vec = Array.isArray(p.vector) || p.vector === undefined ? p.vector : Object.values(p.vector)[0];
+        const vec = pickVector(p.vector, options.vectorName);
         return { id: String(p.id), metadata: trimMetadata((p.payload as Record<string, unknown>) ?? {}), ...vectorFields(vec, options.withVectors) };
       }),
       // The next point id (number or UUID), kept as JSON so its type survives the round trip.
@@ -174,8 +175,18 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter, VectorExplore
     };
   }
 
-  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
-    const r = (await this.getClient().query(name, { query: query.vector, limit: query.topK, filter: qdrantFilter(query.filter), with_payload: true } as any)) as any;
+  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter; vectorName?: string }): Promise<VectorSearchResult[]> {
+    const r = (await this.getClient().query(name, { query: query.vector, limit: query.topK, filter: qdrantFilter(query.filter), with_payload: true, ...(query.vectorName ? { using: query.vectorName } : {}) } as any)) as any;
     return (r.points ?? []).map((p: any) => ({ id: String(p.id), score: p.score, metadata: trimMetadata((p.payload as Record<string, unknown>) ?? {}) }));
+  }
+
+  /** Qdrant point ids are unsigned integers or UUIDs. */
+  async getRecord(name: string, id: string, vectorName?: string): Promise<ExplorerRecordDetail | null> {
+    const key: string | number = /^\d+$/.test(id) ? Number(id) : id;
+    const r = (await this.getClient().retrieve(name, { ids: [key], with_payload: true, with_vector: true } as any)) as any[];
+    const p = r?.[0];
+    if (!p) return null;
+    const vec = pickVector(p.vector, vectorName);
+    return recordDetail(String(p.id), (p.payload as Record<string, unknown>) ?? {}, vec);
   }
 }
