@@ -3,16 +3,16 @@ import { ProjectsService } from '../projects/projects.service';
 import { AuthenticatedUser } from '../auth/auth.service';
 import { VectorPlatform } from '../projects/enums/platform.enum';
 import { ConnectionSource, VectorAdapterFactory } from '../database-adapters/vector-adapter.factory';
-import { ExplorerCollectionInfo, ExplorerFilter, fuseResults, isExplorable, NO_FILTER, VectorExplorer } from '../database-adapters/vector-explorer';
+import { ExplorerCollectionInfo, ExplorerFilter, ExplorerSort, fuseResults, fuseWeighted, isExplorable, MAX_SORT_FIELDS, NO_FILTER, SparseVector, VectorExplorer, VectorKind } from '../database-adapters/vector-explorer';
 import { VectorDatabaseAdapter } from '../database-adapters/vector-database-adapter.interface';
-import { coerceFilter, parseFilterInput } from '../database-adapters/explorer-helpers';
+import { checkPartition, coerceFilter, parseFilterInput } from '../database-adapters/explorer-helpers';
 import { DataPipelineDesignService } from '../data-pipeline/data-pipeline-design.service';
 import { IndexDesignService } from '../index-design/index-design.service';
 import { DiscoveryService } from '../discovery/discovery.service';
 import { EmbeddingClientService } from '../embedding-client/embedding-client.service';
 import { compareDesign, DesignedCollection, KeywordSupport } from './data-explorer.compare';
 import { ExplorerCompareDto, ExplorerMapQueryDto, ExplorerSearchDto } from './dto/explorer-search.dto';
-import { compareResults, scoreStats } from './search-stats';
+import { compareResults, queryStats, scoreStats } from './search-stats';
 import { project } from './projection';
 
 export const CALL_TIMEOUT_MS = 10_000;
@@ -111,11 +111,17 @@ export class DataExplorerService {
    * reach the database unchecked), and the dimension and metric of the space
    * used - the chosen one, else the collection's first.
    */
-  private vectorSpace(info: ExplorerCollectionInfo, requested: string | undefined): { vectorName: string | undefined; dimension: number | null } {
-    if (!requested) return { vectorName: undefined, dimension: info.dimension };
+  private vectorSpace(info: ExplorerCollectionInfo, requested: string | undefined): { vectorName: string | undefined; dimension: number | null; kind: VectorKind } {
+    if (!requested) return { vectorName: undefined, dimension: info.dimension, kind: 'dense' };
     const space = info.vectors?.find((v) => v.name === requested);
     if (!space) throw new BadRequestException(info.vectors?.length ? `The collection has no vector '${requested}' (it has ${info.vectors.map((v) => v.name).join(', ')}).` : 'This collection has a single vector; there is no vector to choose.');
-    return { vectorName: space.name, dimension: space.dimension };
+    return { vectorName: space.name, dimension: space.dimension, kind: space.kind ?? 'dense' };
+  }
+
+  /** The collection described for one tenant / namespace (where it has them), and that partition checked. */
+  private async describePartition(adapter: VectorExplorer, name: string, requested: string | undefined): Promise<{ info: ExplorerCollectionInfo; partition: string | undefined }> {
+    const info = await this.call('describe collection', () => adapter.describeCollection(name, requested));
+    return { info, partition: checkPartition(info.partitions, requested) };
   }
 
   private keywordSupport(adapter: VectorExplorer): KeywordSupport {
@@ -153,12 +159,23 @@ export class DataExplorerService {
     return { designedCollection: designed, collections: names.map((name) => ({ name, designed: name === designed })) };
   }
 
-  async overview(projectId: string, requester: AuthenticatedUser, name: string) {
+  async overview(projectId: string, requester: AuthenticatedUser, name: string, partition?: string) {
     const { platform, adapter } = await this.target(projectId, requester);
     await this.collection(adapter, name);
-    const [info, design] = await Promise.all([this.call('describe collection', () => adapter.describeCollection(name)), this.design(projectId, requester, adapter)]);
+    const [info, design] = await Promise.all([this.call('describe collection', () => adapter.describeCollection(name, partition)), this.design(projectId, requester, adapter)]);
+    if (partition) checkPartition(info.partitions, partition);
     const keyword = this.keywordSupport(adapter);
-    return { platform, info, capabilities: { keyword, sort: !!adapter.supportsSort }, checks: compareDesign(name, info, design, keyword) };
+    return {
+      platform,
+      info,
+      capabilities: {
+        keyword,
+        sort: !!adapter.supportsSort,
+        nativeHybrid: { supported: typeof adapter.nativeHybrid === 'function', ranking: adapter.nativeHybridRanking ?? null },
+        searchableKinds: ['dense', ...(adapter.searchableKinds ?? [])] as VectorKind[],
+      },
+      checks: compareDesign(name, info, design, keyword),
+    };
   }
 
   /**
@@ -182,20 +199,36 @@ export class DataExplorerService {
     }
   }
 
-  async documents(projectId: string, requester: AuthenticatedUser, name: string, q: { limit?: number; cursor?: string; filter?: string; sortBy?: string; sortDir?: 'asc' | 'desc' }) {
+  /** "year:desc,dept" -> [{year, desc}, {dept, asc}]; sortBy/sortDir is the one-field form. */
+  private parseSort(q: { sort?: string; sortBy?: string; sortDir?: 'asc' | 'desc' }): ExplorerSort[] {
+    if (!q.sort) return q.sortBy ? [{ field: q.sortBy, direction: q.sortDir ?? 'asc' }] : [];
+    const parts = q.sort.split(',').map((p) => p.trim()).filter(Boolean);
+    if (parts.length > MAX_SORT_FIELDS) throw new BadRequestException(`Sort by at most ${MAX_SORT_FIELDS} fields.`);
+    const sort = parts.map((p) => {
+      const i = p.lastIndexOf(':');
+      const field = (i > 0 ? p.slice(0, i) : p).trim();
+      const direction = (i > 0 ? p.slice(i + 1) : 'asc').trim().toLowerCase();
+      if (!field || (direction !== 'asc' && direction !== 'desc')) throw new BadRequestException(`Invalid sort '${p}': use field or field:asc / field:desc.`);
+      return { field, direction: direction as 'asc' | 'desc' };
+    });
+    if (new Set(sort.map((s) => s.field)).size !== sort.length) throw new BadRequestException('Each field can be sorted by once.');
+    return sort;
+  }
+
+  async documents(projectId: string, requester: AuthenticatedUser, name: string, q: { limit?: number; cursor?: string; filter?: string; sort?: string; sortBy?: string; sortDir?: 'asc' | 'desc'; partition?: string }) {
     const { adapter } = await this.target(projectId, requester);
     await this.collection(adapter, name);
+    const { partition } = await this.describePartition(adapter, name, q.partition);
     const filter = await this.filterFor(adapter, name, this.parseFilterParam(q.filter));
     const limit = Math.min(MAX_PAGE, Math.max(1, q.limit ?? DEFAULT_PAGE));
-    let sort: { field: string; direction: 'asc' | 'desc' } | undefined;
-    if (q.sortBy) {
+    const sort = this.parseSort(q);
+    if (sort.length) {
       if (!adapter.supportsSort) throw new BadRequestException('This database cannot order a record listing; sorting is not available here.');
       const info = await this.call('describe collection', () => adapter.describeCollection(name));
-      if (!info.fields.some((f) => f.name === q.sortBy)) throw new BadRequestException(`The collection has no field '${q.sortBy}'.`);
-      sort = { field: q.sortBy, direction: q.sortDir ?? 'asc' };
+      for (const s of sort) if (!info.fields.some((f) => f.name === s.field)) throw new BadRequestException(`The collection has no field '${s.field}'.`);
     }
-    const page = await this.call('browse', () => adapter.browse(name, { limit, cursor: q.cursor ?? null, filter, ...(sort ? { sort } : {}) }));
-    return { collection: name, limit, filter, sort: sort ?? null, rows: page.records, nextCursor: page.nextCursor };
+    const page = await this.call('browse', () => adapter.browse(name, { limit, cursor: q.cursor ?? null, filter, ...(sort.length ? { sort } : {}), ...(partition ? { partition } : {}) }));
+    return { collection: name, partition: partition ?? null, limit, filter, sort: sort.length ? sort : null, rows: page.records, nextCursor: page.nextCursor };
   }
 
   /**
@@ -206,13 +239,14 @@ export class DataExplorerService {
   async map(projectId: string, requester: AuthenticatedUser, name: string, q: ExplorerMapQueryDto) {
     const { adapter } = await this.target(projectId, requester);
     await this.collection(adapter, name);
-    const info = await this.call('describe collection', () => adapter.describeCollection(name));
+    const { info, partition } = await this.describePartition(adapter, name, q.partition);
     if (q.colorBy && !info.fields.some((f) => f.name === q.colorBy)) throw new BadRequestException(`The collection has no field '${q.colorBy}'.`);
     const filter = await this.filterFor(adapter, name, this.parseFilterParam(q.filter));
     const sample = Math.min(MAX_MAP_SAMPLE, Math.max(10, q.sample ?? DEFAULT_MAP_SAMPLE));
     const method = q.method ?? 'pca';
     const dims = q.dims === 3 ? 3 : 2;
-    const { vectorName } = this.vectorSpace(info, q.vectorName);
+    const { vectorName, kind } = this.vectorSpace(info, q.vectorName);
+    if (kind !== 'dense') throw new BadRequestException(`The map projects dense vectors; '${vectorName}' is ${kind}.`);
 
     // The first records in the database's own order, 100 at a time.
     const rows: Array<{ id: string; vector: number[]; group: string | null }> = [];
@@ -220,7 +254,7 @@ export class DataExplorerService {
     let dimension: number | null = null;
     let skipped = 0;
     do {
-      const page = await this.call('read vectors', () => adapter.browse(name, { limit: Math.min(100, sample - rows.length), cursor, filter, withVectors: true, vectorName }));
+      const page = await this.call('read vectors', () => adapter.browse(name, { limit: Math.min(100, sample - rows.length), cursor, filter, withVectors: true, vectorName, ...(partition ? { partition } : {}) }));
       for (const r of page.records) {
         if (!r.vector?.length) {
           skipped++;
@@ -277,16 +311,21 @@ export class DataExplorerService {
   }
 
   /** One record in full - every field (up to 20,000 characters each) and the head of its vector. */
-  async record(projectId: string, requester: AuthenticatedUser, name: string, id: string, requestedVector?: string) {
+  async record(projectId: string, requester: AuthenticatedUser, name: string, id: string, requestedVector?: string, requestedPartition?: string) {
     const { adapter } = await this.target(projectId, requester);
     await this.collection(adapter, name);
     if (!adapter.getRecord) throw new BadRequestException('This database cannot fetch a single record here.');
     if (!id || id.length > 500) throw new BadRequestException('Invalid record id.');
     let vectorName: string | undefined;
-    if (requestedVector) vectorName = this.vectorSpace(await this.call('describe collection', () => adapter.describeCollection(name)), requestedVector).vectorName;
-    const r = await this.call('read record', () => adapter.getRecord!(name, id, vectorName));
+    let partition: string | undefined;
+    if (requestedVector || requestedPartition) {
+      const d = await this.describePartition(adapter, name, requestedPartition);
+      partition = d.partition;
+      vectorName = this.vectorSpace(d.info, requestedVector).vectorName;
+    }
+    const r = await this.call('read record', () => adapter.getRecord!(name, id, { vectorName, partition }));
     if (!r) throw new NotFoundException(`No record '${id}' in '${name}'.`);
-    return { collection: name, vectorName: vectorName ?? null, ...r };
+    return { collection: name, vectorName: vectorName ?? null, partition: partition ?? null, ...r };
   }
 
   /**
@@ -295,7 +334,7 @@ export class DataExplorerService {
    * how much the two result lists overlap and which records moved.
    */
   async compare(projectId: string, requester: AuthenticatedUser, name: string, dto: ExplorerCompareDto) {
-    const side = (s: ExplorerCompareDto['a']) => ({ text: dto.text, vector: dto.vector, mode: s.mode, alpha: s.alpha, topK: s.topK, filter: s.filter, vectorName: s.vectorName }) as ExplorerSearchDto;
+    const side = (s: ExplorerCompareDto['a']) => ({ text: dto.text, vector: dto.vector, sparse: dto.sparse, partition: dto.partition, mode: s.mode, alpha: s.alpha, topK: s.topK, filter: s.filter, vectorName: s.vectorName, fusion: s.fusion, minScore: s.minScore }) as ExplorerSearchDto;
     const a = await this.search(projectId, requester, name, side(dto.a));
     const b = await this.search(projectId, requester, name, side(dto.b));
     return { collection: name, a, b, overlap: compareResults(a.results, b.results) };
@@ -305,14 +344,45 @@ export class DataExplorerService {
     const { adapter } = await this.target(projectId, requester);
     await this.collection(adapter, name);
     const mode = dto.mode ?? 'dense';
-    if (mode === 'dense' && !!dto.text === !!dto.vector) throw new BadRequestException('Give either text (embedded with the project’s embedding model) or a vector, not both.');
-    if (mode !== 'dense' && (!dto.text || dto.vector)) throw new BadRequestException(`A ${mode} search takes text only.`);
-    if (mode !== 'dense' && !adapter.keywordSearch) throw new BadRequestException(`${mode === 'hybrid' ? 'Hybrid' : 'Keyword'} search needs keyword ranking, which this database does not offer here.`);
-    const [info, pipeline, discovery] = await Promise.all([
-      this.call('describe collection', () => adapter.describeCollection(name)),
+    const [{ info, partition }, pipeline, discovery] = await Promise.all([
+      this.describePartition(adapter, name, dto.partition),
       this.pipelines.getLatest(projectId, requester),
       this.discovery.getLatest(projectId, requester),
     ]);
+    const { vectorName, dimension, kind } = this.vectorSpace(info, dto.vectorName);
+
+    // What the query is: text, a dense vector, bits for a binary space, or a sparse vector.
+    let sparse: SparseVector | undefined;
+    if (kind !== 'dense') {
+      if (mode !== 'dense') throw new BadRequestException(`'${vectorName}' is a ${kind} vector; keyword and hybrid search use the dense vector.`);
+      if (!(adapter.searchableKinds ?? []).includes(kind)) throw new BadRequestException(`This database cannot search ${kind} vectors here.`);
+      if (dto.text) throw new BadRequestException(`'${vectorName}' is a ${kind} vector; text is embedded as a dense vector, so give the query as a ${kind} vector.`);
+    }
+    if (kind === 'sparse') {
+      if (!dto.sparse || dto.vector) throw new BadRequestException(`'${vectorName}' is a sparse vector; give the query as { indices, values }.`);
+      if (dto.sparse.indices.length !== dto.sparse.values.length) throw new BadRequestException('A sparse vector needs as many values as indices.');
+      if (new Set(dto.sparse.indices).size !== dto.sparse.indices.length) throw new BadRequestException('A sparse vector cannot repeat an index.');
+      sparse = { indices: dto.sparse.indices, values: dto.sparse.values };
+    } else if (dto.sparse) throw new BadRequestException('A sparse query needs a sparse vector space; choose one in Vector.');
+    if (kind === 'binary') {
+      if (!dto.vector) throw new BadRequestException(`'${vectorName}' is a binary vector; give the query as bits (0 and 1).`);
+      if (dto.vector.some((b) => b !== 0 && b !== 1)) throw new BadRequestException('A binary query vector is bits: 0 and 1 only.');
+    }
+    if (kind === 'dense') {
+      if (mode === 'dense' && !!dto.text === !!dto.vector) throw new BadRequestException('Give either text (embedded with the project’s embedding model) or a vector, not both.');
+      if (mode !== 'dense' && (!dto.text || dto.vector)) throw new BadRequestException(`A ${mode} search takes text only.`);
+    }
+
+    // Hybrid: fused here (rank or weighted scores), or by the database.
+    const fusion = mode === 'hybrid' ? (dto.fusion ?? 'rrf') : null;
+    if (mode !== 'hybrid' && dto.fusion) throw new BadRequestException('Fusion applies to hybrid search only.');
+    if (fusion === 'native') {
+      if (!adapter.nativeHybrid) throw new BadRequestException('This database has no hybrid search of its own here; use rrf or weighted fusion.');
+      if (dto.minScore !== undefined) throw new BadRequestException('A minimum score cannot be applied to the database’s own hybrid ranking; use rrf or weighted fusion.');
+    } else if (mode !== 'dense' && !adapter.keywordSearch) {
+      throw new BadRequestException(`${mode === 'hybrid' ? 'Hybrid' : 'Keyword'} search needs keyword ranking, which this database does not offer here.`);
+    }
+
     let vector = dto.vector ?? null;
     let embedding: { providerId: string; modelId: string; live: boolean } | null = null;
     if (dto.text && mode !== 'keyword') {
@@ -322,25 +392,42 @@ export class DataExplorerService {
       vector = e.vector;
       embedding = { providerId: pipeline.embeddingProviderId, modelId: pipeline.embeddingModelId, live: e.isLiveProvider };
     }
-    const { vectorName, dimension } = this.vectorSpace(info, dto.vectorName);
-    if (vector && dimension !== null && vector.length !== dimension) {
-      throw new BadRequestException(`The query vector has ${vector!.length} dimensions; the ${vectorName ? `vector '${vectorName}'` : 'collection'} holds ${dimension}.`);
+    if (vector && kind !== 'sparse' && dimension !== null && vector.length !== dimension) {
+      const unit = kind === 'binary' ? 'bits' : 'dimensions';
+      throw new BadRequestException(`The query vector has ${vector.length} ${unit}; the ${vectorName ? `vector '${vectorName}'` : 'collection'} holds ${dimension}.`);
     }
+
     const filter = await this.filterFor(adapter, name, dto.filter);
     const topK = dto.topK ?? 10;
     const alpha = dto.alpha ?? 0.5;
     const candidates = Math.min(MAX_HYBRID_CANDIDATES, topK * HYBRID_CANDIDATES_PER_RESULT);
+    const minScore = dto.minScore;
+    const above = <T extends { score: number }>(list: T[]) => (minScore === undefined ? list : list.filter((r) => r.score >= minScore));
+    const scope = { ...(vectorName ? { vectorName } : {}), ...(partition ? { partition } : {}) };
     const started = process.hrtime.bigint();
     let results;
-    if (mode === 'dense') results = await this.call('search', () => adapter.searchFiltered(name, { vector: vector!, topK, filter, vectorName }));
-    else if (mode === 'keyword') results = await this.call('keyword search', () => adapter.keywordSearch!(name, { text: dto.text!, topK, filter }));
-    else {
-      // Both searches run together; ranks, not their differently scaled scores, are fused.
-      const [dense, keyword] = await Promise.all([
-        this.call('search', () => adapter.searchFiltered(name, { vector: vector!, topK: candidates, filter, vectorName })),
-        this.call('keyword search', () => adapter.keywordSearch!(name, { text: dto.text!, topK: candidates, filter })),
+    let removed = 0;
+    let lists: { dense: number; keyword: number } | null = null;
+    if (mode === 'dense') {
+      const all = await this.call('search', () => adapter.searchFiltered(name, { vector: vector ?? [], ...(sparse ? { sparse } : {}), topK, filter, ...scope }));
+      results = above(all);
+      removed = all.length - results.length;
+    } else if (mode === 'keyword') {
+      const all = await this.call('keyword search', () => adapter.keywordSearch!(name, { text: dto.text!, topK, filter, ...(partition ? { partition } : {}) }));
+      results = above(all);
+      removed = all.length - results.length;
+    } else if (fusion === 'native') {
+      results = await this.call('hybrid search', () => adapter.nativeHybrid!(name, { text: dto.text!, vector: vector!, alpha, topK, filter, ...scope }));
+    } else {
+      // Both searches run together; the minimum score trims the dense candidates before fusion.
+      const [denseAll, keyword] = await Promise.all([
+        this.call('search', () => adapter.searchFiltered(name, { vector: vector!, topK: candidates, filter, ...scope })),
+        this.call('keyword search', () => adapter.keywordSearch!(name, { text: dto.text!, topK: candidates, filter, ...(partition ? { partition } : {}) })),
       ]);
-      results = fuseResults(dense, keyword, alpha, topK);
+      const dense = above(denseAll);
+      removed = denseAll.length - dense.length;
+      lists = { dense: dense.length, keyword: keyword.length };
+      results = fusion === 'weighted' ? fuseWeighted(dense, keyword, alpha, topK) : fuseResults(dense, keyword, alpha, topK);
     }
     const latencyMs = Math.round(Number(process.hrtime.bigint() - started) / 1e5) / 10;
     const target = discovery?.assessment.targetP95LatencyMs ?? null;
@@ -348,21 +435,32 @@ export class DataExplorerService {
       collection: name,
       mode,
       vectorName: vectorName ?? null,
+      vectorKind: kind,
+      partition: partition ?? null,
       alpha: mode === 'hybrid' ? alpha : null,
-      keywordRanking: mode === 'dense' ? null : adapter.keywordRanking ?? null,
+      fusion,
+      keywordRanking: mode === 'dense' ? null : fusion === 'native' ? adapter.nativeHybridRanking ?? null : adapter.keywordRanking ?? null,
       topK,
       filter,
       results,
       stats: scoreStats(results),
+      queryStats: mode === 'keyword' ? null : queryStats({ vector, sparse, binary: kind === 'binary' }),
+      threshold: minScore === undefined ? null : { minScore, removed, appliedTo: mode === 'hybrid' ? 'dense candidates, before fusion' : `${mode} scores` },
+      candidates: lists,
       latencyMs,
       targetP95LatencyMs: target,
       withinTarget: target === null ? null : latencyMs <= target,
       embedding,
       notes: [
-        mode === 'hybrid'
+        fusion === 'rrf'
           ? `Hybrid: ${candidates} candidates each way, fused by rank (weighted reciprocal rank fusion, ${Math.round(alpha * 100)}% dense / ${Math.round((1 - alpha) * 100)}% keyword). Fused scores rank results; they are not similarities.`
-          : null,
-        `${mode === 'hybrid' ? 'Both searches, run together,' : 'One query,'} timed from this server including the network - an indication, not a P95; the Performance phase measures percentiles.`,
+          : fusion === 'weighted'
+            ? `Hybrid: ${candidates} candidates each way; each list's scores rescaled to 0-1 and combined ${Math.round(alpha * 100)}% dense / ${Math.round((1 - alpha) * 100)}% keyword. Keeps how far apart scores are, so one outlier can dominate.`
+            : fusion === 'native'
+              ? `Hybrid by the database itself: ${adapter.nativeHybridRanking ?? 'its own fusion'}. Its scores are the database's own.`
+              : null,
+        minScore !== undefined && removed ? `${removed} result(s) below the minimum score ${minScore} were dropped${mode === 'hybrid' ? ' from the dense candidates' : ''}, so fewer than Top K may show.` : null,
+        `${mode === 'hybrid' && fusion !== 'native' ? 'Both searches, run together,' : 'One query,'} timed from this server including the network - an indication, not a P95; the Performance phase measures percentiles.`,
         embedding && !embedding.live ? 'The embedding provider was not reachable, so the query used the offline stand-in embedding. Results are only meaningful if the records were ingested the same way.' : null,
       ].filter(Boolean),
     };

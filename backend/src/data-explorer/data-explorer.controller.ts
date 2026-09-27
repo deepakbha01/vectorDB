@@ -9,7 +9,7 @@ import { UserRole } from '../users/user.entity';
 import { DataExplorerEnabledGuard } from './data-explorer-enabled.guard';
 import { DataExplorerReadAuditInterceptor } from './data-explorer-read-audit.interceptor';
 import { DataExplorerService } from './data-explorer.service';
-import { ExplorerCompareDto, ExplorerDocumentsQueryDto, ExplorerMapQueryDto, ExplorerRecordQueryDto, ExplorerSearchDto } from './dto/explorer-search.dto';
+import { ExplorerCompareDto, ExplorerDocumentsQueryDto, ExplorerMapQueryDto, ExplorerOverviewQueryDto, ExplorerRecordQueryDto, ExplorerSearchDto } from './dto/explorer-search.dto';
 
 /**
  * Data Explorer - read-only view into the project's target vector database.
@@ -35,8 +35,8 @@ export class DataExplorerController {
   }
 
   @Get('collections/:name')
-  overview(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('name') name: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.service.overview(projectId, user, name);
+  overview(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('name') name: string, @Query() q: ExplorerOverviewQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.overview(projectId, user, name, q.partition);
   }
 
   @Get('collections/:name/documents')
@@ -56,7 +56,7 @@ export class DataExplorerController {
   @Get('collections/:name/records/:id')
   @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
   record(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('name') name: string, @Param('id') id: string, @Query() q: ExplorerRecordQueryDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.service.record(projectId, user, name, id, q.vectorName);
+    return this.service.record(projectId, user, name, id, q.vectorName, q.partition);
   }
 
   /** The same query run two ways, side by side. Changes nothing. */

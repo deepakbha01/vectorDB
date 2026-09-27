@@ -1,4 +1,4 @@
-import { summarizeForAudit } from './audit-summarize';
+import { auditSummaries, summarizeForAudit } from './audit-summarize';
 
 describe('summarizeForAudit', () => {
   it('passes through undefined/null unchanged', () => {
@@ -34,5 +34,15 @@ describe('summarizeForAudit', () => {
   it('leaves a small payload untouched (not wrapped in a truncation marker)', () => {
     const result = summarizeForAudit({ a: 1 }, 100);
     expect(result).toEqual({ a: 1 });
+  });
+});
+
+describe('auditSummaries - phase 4 search fields', () => {
+  it('records a sparse query by its size and the search settings, never the weights or results', () => {
+    const body = { sparse: { indices: [4, 17, 99], values: [0.51, 1.27, 0.33] }, vectorName: 'splade', partition: 'acme', minScore: 0.4, topK: 5 };
+    const s = auditSummaries('/api/projects/p/data-explorer/collections/docs/search', body, { results: [{ id: 'secret-doc', score: 1, metadata: { body: 'confidential' } }], latencyMs: 3 });
+    expect(s.requestSummary).toEqual(expect.objectContaining({ sparse: '3 entries', partition: 'acme', vectorName: 'splade', minScore: 0.4, topK: 5 }));
+    expect(s.responseSummary).toEqual({ results: 1, latencyMs: 3 });
+    expect(JSON.stringify(s)).not.toMatch(/1\.27|0\.51|secret-doc|confidential/);
   });
 });

@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { ExplorerField, ExplorerFilter, ExplorerRecordDetail, FilterCondition, FilterOp, FilterValue, NO_FILTER } from './vector-explorer';
+import { ExplorerField, ExplorerFilter, ExplorerRecordDetail, FilterCondition, FilterOp, FilterValue, NO_FILTER, SparseVector, VectorKind } from './vector-explorer';
 
 /**
  * Pure helpers shared by the Data Explorer implementations of the adapters:
@@ -43,8 +43,65 @@ export function trimMetadata(m: Record<string, unknown>, max = MAX_VALUE_CHARS):
 export const DETAIL_VALUE_CHARS = 20_000;
 export const DETAIL_COMPONENTS = 64;
 
+/**
+ * A sparse vector in any of the forms databases return it: { indices, values }
+ * (Qdrant), an index → weight object (Milvus), or pgvector text
+ * "{1:0.5,3:0.2}/100" (1-based there; 0-based here). Null if it is none of these.
+ */
+export function toSparse(v: unknown): SparseVector | null {
+  if (typeof v === 'string') {
+    const m = /^\{(.*)\}\/(\d+)$/.exec(v.trim());
+    if (!m) return null;
+    const entries = m[1] ? m[1].split(',').map((p) => p.split(':').map(Number)) : [];
+    if (entries.some(([i, x]) => !Number.isInteger(i) || !Number.isFinite(x))) return null;
+    return { indices: entries.map(([i]) => i - 1), values: entries.map(([, x]) => x) };
+  }
+  if (!v || typeof v !== 'object' || Array.isArray(v) || ArrayBuffer.isView(v)) return null;
+  const o = v as Record<string, unknown>;
+  if (Array.isArray(o.indices) && Array.isArray(o.values) && o.indices.length === o.values.length) {
+    return { indices: (o.indices as unknown[]).map(Number), values: (o.values as unknown[]).map(Number) };
+  }
+  const keys = Object.keys(o);
+  if (keys.length && keys.every((k) => /^\d+$/.test(k) && typeof o[k] === 'number')) {
+    return { indices: keys.map(Number), values: keys.map((k) => o[k] as number) };
+  }
+  return null;
+}
+
+/** Bits from a binary vector: pgvector bit text ("0101…") or bytes (Milvus; most significant bit first). */
+export function toBits(v: unknown): number[] | null {
+  if (typeof v === 'string') return /^[01]+$/.test(v) ? Array.from(v, (c) => (c === '1' ? 1 : 0)) : null;
+  const bytes = Array.isArray(v) ? (v as unknown[]) : ArrayBuffer.isView(v) && !(v instanceof DataView) ? Array.from(v as unknown as ArrayLike<number>) : null;
+  if (!bytes || !bytes.every((b) => Number.isInteger(b) && (b as number) >= 0 && (b as number) <= 255)) return null;
+  return (bytes as number[]).flatMap((b) => Array.from({ length: 8 }, (_, i) => (b >> (7 - i)) & 1));
+}
+
+/** Bits (0/1) → bytes, most significant bit first; the last byte is zero-padded. */
+export function bitsToBytes(bits: number[]): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < bits.length; i += 8) {
+    let b = 0;
+    for (let j = 0; j < 8; j++) b = (b << 1) | (bits[i + j] ? 1 : 0);
+    out.push(b);
+  }
+  return out;
+}
+
+const r6 = (x: number) => Math.round(x * 1e6) / 1e6;
+
 /** One record in full: metadata up to 20,000 characters per value, the first 64 vector values, its dimension and L2 norm. */
-export function recordDetail(id: string, metadata: Record<string, unknown>, vector: unknown): ExplorerRecordDetail {
+export function recordDetail(id: string, metadata: Record<string, unknown>, vector: unknown, kind: VectorKind = 'dense'): ExplorerRecordDetail {
+  const meta = trimMetadata(metadata, DETAIL_VALUE_CHARS);
+  if (kind === 'sparse' || (kind === 'dense' && !fullVector(vector) && toSparse(vector))) {
+    const s = toSparse(vector);
+    if (!s) return { id, metadata: meta, kind: 'sparse', dimension: null, vectorHead: null, norm: null };
+    const top = s.indices.map((index, i) => ({ index, value: s.values[i] })).sort((a, b) => Math.abs(b.value) - Math.abs(a.value) || a.index - b.index).slice(0, DETAIL_COMPONENTS);
+    return { id, metadata: meta, kind: 'sparse', dimension: null, vectorHead: null, norm: r6(Math.sqrt(s.values.reduce((a, x) => a + x * x, 0))), sparse: { nonZero: s.indices.length, top: top.map((t) => ({ index: t.index, value: r6(t.value) })) } };
+  }
+  if (kind === 'binary') {
+    const b = toBits(vector);
+    return { id, metadata: meta, kind: 'binary', dimension: b ? b.length : null, vectorHead: null, norm: null, ...(b ? { bits: { length: b.length, ones: b.reduce((a, x) => a + x, 0), head: b.slice(0, 256).join('') } } : {}) };
+  }
   const v = fullVector(vector);
   return {
     id,
@@ -53,6 +110,20 @@ export function recordDetail(id: string, metadata: Record<string, unknown>, vect
     vectorHead: v ? v.slice(0, DETAIL_COMPONENTS).map((x) => Math.round(x * 1e6) / 1e6) : null,
     norm: v ? Math.round(Math.sqrt(v.reduce((s, x) => s + x * x, 0)) * 1e6) / 1e6 : null,
   };
+}
+
+/** A partition name the collection really has (names from the request never reach a query unchecked). */
+export function checkPartition(partitions: { names: string[]; required: boolean; kind: string; truncated?: boolean } | undefined, requested: string | undefined): string | undefined {
+  if (!partitions) {
+    if (requested) throw new BadRequestException('This collection has no tenants or namespaces.');
+    return undefined;
+  }
+  if (!requested) {
+    if (partitions.required) throw new BadRequestException(`This collection is split by ${partitions.kind}; choose one.`);
+    return undefined;
+  }
+  if (!partitions.names.includes(requested) && !partitions.truncated) throw new BadRequestException(`The collection has no ${partitions.kind} '${requested}'.`);
+  return requested;
 }
 
 /** A vector as pgvector text ("[0.1,0.2]"), an array, or a typed array → its first components and length. */

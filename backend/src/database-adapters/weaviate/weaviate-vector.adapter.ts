@@ -14,7 +14,7 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerKeywordQuery, ExplorerNativeHybridQuery, ExplorerPage, ExplorerPartitions, ExplorerRecordDetail, ExplorerVectorQuery, MAX_PARTITIONS, RecordReadOptions, VectorExplorer } from '../vector-explorer';
 import { normaliseIndexType, normaliseMetric, pickVector, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
@@ -156,18 +156,39 @@ export class WeaviateVectorAdapter implements VectorDatabaseAdapter, VectorExplo
     return pickVector(o?.vectors, vectorName);
   }
 
-  async describeCollection(name: string): Promise<ExplorerCollectionInfo> {
-    const collection = (await this.getClient()).collections.use(name);
-    const config = (await collection.config.get()) as any;
+  /**
+   * The collection handle, for one tenant where the collection is
+   * multi-tenant (every read there must name a tenant).
+   */
+  private async handle(name: string, partition?: string): Promise<any> {
+    const collection = (await this.getClient()).collections.use(name) as any;
+    return partition ? collection.withTenant(partition) : collection;
+  }
+
+  /** Tenants of a multi-tenant collection, or null when it is not one. */
+  private async tenantsOf(name: string, config: any): Promise<ExplorerPartitions | null> {
+    if (!config?.multiTenancy?.enabled) return null;
+    const all = Object.values(((await ((await this.getClient()).collections.use(name) as any).tenants.get()) ?? {}) as Record<string, { name: string }>).map((t) => t.name).sort();
+    return { kind: 'tenant', names: all.slice(0, MAX_PARTITIONS), required: true, ...(all.length > MAX_PARTITIONS ? { truncated: true } : {}) };
+  }
+
+  async describeCollection(name: string, partition?: string): Promise<ExplorerCollectionInfo> {
+    const base = (await this.getClient()).collections.use(name);
+    const config = (await base.config.get()) as any;
+    const tenants = await this.tenantsOf(name, config);
+    // A multi-tenant collection is counted and sampled one tenant at a time.
+    const tenant = tenants ? (partition ?? tenants.names[0]) : undefined;
+    const collection = await this.handle(name, tenant);
     const spaces = Object.entries((config.vectorizers ?? {}) as Record<string, { indexType?: string; indexConfig?: { distance?: string } }>);
     const [vecName, vec] = spaces[0] ?? [null, null];
-    const total = (await collection.aggregate.overAll()) as any;
-    const sample = (await collection.query.fetchObjects({ limit: 1, includeVector: true } as any)) as any;
+    const total = tenant || !tenants ? ((await collection.aggregate.overAll()) as any) : {};
+    const sample = tenant || !tenants ? ((await collection.query.fetchObjects({ limit: 1, includeVector: true } as any)) as any) : {};
     const first = this.firstVector(sample.objects?.[0]) as ArrayLike<number> | undefined;
     const notes: string[] = [];
     const named = spaces.length > 1 || (vecName !== null && vecName !== 'default');
     if (named) notes.push(`Named vectors: ${spaces.map(([n]) => n).join(', ')}. The figures above are for '${vecName}'.`);
     const sampleVectors = (sample.objects?.[0]?.vectors ?? {}) as Record<string, ArrayLike<number>>;
+    if (tenants) notes.push(tenant ? `Multi-tenant: counts are for tenant '${tenant}'.` : 'Multi-tenant collection with no tenants yet.');
     return {
       name,
       recordCount: typeof total.totalCount === 'number' ? total.totalCount : null,
@@ -178,6 +199,7 @@ export class WeaviateVectorAdapter implements VectorDatabaseAdapter, VectorExplo
       fields: ((config.properties ?? []) as Array<{ name: string; dataType: string }>).map((p) => ({ name: p.name, type: p.dataType })),
       notes,
       ...(named ? { vectors: spaces.map(([n, c]) => ({ name: n, dimension: sampleVectors[n]?.length ?? null, metric: normaliseMetric(c?.indexConfig?.distance ?? null) })) } : {}),
+      ...(tenants ? { partitions: tenants } : {}),
     };
   }
 
@@ -187,13 +209,13 @@ export class WeaviateVectorAdapter implements VectorDatabaseAdapter, VectorExplo
   async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
     const offset = options.cursor === null ? 0 : Number(options.cursor);
     if (!Number.isInteger(offset) || offset < 0) throw new BadRequestException('Invalid page cursor.');
-    const collection = (await this.getClient()).collections.use(name);
+    const collection = await this.handle(name, options.partition);
     const r = (await collection.query.fetchObjects({
       limit: options.limit + 1,
       offset,
       filters: this.filters(collection, options.filter),
       includeVector: true,
-      ...(options.sort ? { sort: (collection as any).sort.byProperty(options.sort.field, options.sort.direction === 'asc') } : {}),
+      ...(options.sort?.length ? { sort: options.sort.slice(1).reduce((chain: any, s) => chain.byProperty(s.field, s.direction === 'asc'), (collection as any).sort.byProperty(options.sort[0].field, options.sort[0].direction === 'asc')) } : {}),
     } as any)) as any;
     const objects = (r.objects ?? []) as any[];
     return {
@@ -202,23 +224,39 @@ export class WeaviateVectorAdapter implements VectorDatabaseAdapter, VectorExplo
     };
   }
 
-  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter; vectorName?: string }): Promise<VectorSearchResult[]> {
-    const collection = (await this.getClient()).collections.use(name);
+  async searchFiltered(name: string, query: ExplorerVectorQuery): Promise<VectorSearchResult[]> {
+    const collection = await this.handle(name, query.partition);
     const r = (await collection.query.nearVector(query.vector, { limit: query.topK, filters: this.filters(collection, query.filter), returnMetadata: ['distance'], ...(query.vectorName ? { targetVector: query.vectorName } : {}) } as any)) as any;
     return ((r.objects ?? []) as any[]).map((o) => ({ id: String(o.uuid), score: 1 - (o.metadata?.distance ?? 0), metadata: trimMetadata((o.properties as Record<string, unknown>) ?? {}) }));
   }
 
   readonly keywordRanking = 'Weaviate BM25 over the searchable text properties';
 
-  async keywordSearch(name: string, query: { text: string; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
-    const collection = (await this.getClient()).collections.use(name);
+  async keywordSearch(name: string, query: ExplorerKeywordQuery): Promise<VectorSearchResult[]> {
+    const collection = await this.handle(name, query.partition);
     const r = (await collection.query.bm25(query.text, { limit: query.topK, filters: this.filters(collection, query.filter), returnMetadata: ['score'] } as any)) as any;
     return ((r.objects ?? []) as any[]).map((o) => ({ id: String(o.uuid), score: Number(o.metadata?.score ?? 0), metadata: trimMetadata((o.properties as Record<string, unknown>) ?? {}) }));
   }
 
-  async getRecord(name: string, id: string, vectorName?: string): Promise<ExplorerRecordDetail | null> {
+  readonly nativeHybridRanking = 'Weaviate hybrid - BM25 and vector search fused by Weaviate (relative score fusion), weighted by the slider';
+
+  /** Weaviate's own hybrid search: alpha 1 = vector only, 0 = BM25 only. */
+  async nativeHybrid(name: string, query: ExplorerNativeHybridQuery): Promise<VectorSearchResult[]> {
+    const collection = await this.handle(name, query.partition);
+    const r = (await collection.query.hybrid(query.text, {
+      alpha: query.alpha,
+      vector: query.vector,
+      limit: query.topK,
+      filters: this.filters(collection, query.filter),
+      returnMetadata: ['score'],
+      ...(query.vectorName ? { targetVector: query.vectorName } : {}),
+    } as any)) as any;
+    return ((r.objects ?? []) as any[]).map((o) => ({ id: String(o.uuid), score: Number(o.metadata?.score ?? 0), metadata: trimMetadata((o.properties as Record<string, unknown>) ?? {}) }));
+  }
+
+  async getRecord(name: string, id: string, { vectorName, partition }: RecordReadOptions = {}): Promise<ExplorerRecordDetail | null> {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
-    const collection = (await this.getClient()).collections.use(name);
+    const collection = await this.handle(name, partition);
     const o = (await collection.query.fetchObjectById(id, { includeVector: true } as any)) as any;
     return o ? recordDetail(String(o.uuid), (o.properties as Record<string, unknown>) ?? {}, this.firstVector(o, vectorName)) : null;
   }

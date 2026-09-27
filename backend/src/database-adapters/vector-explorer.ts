@@ -38,14 +38,46 @@ export interface ExplorerCollectionInfo {
    * for search, the map and the record view. Absent for a single vector.
    */
   vectors?: ExplorerVectorSpace[];
+  /** Tenants or namespaces, where the collection has them. */
+  partitions?: ExplorerPartitions;
+}
+
+/** Dense (floats), sparse (index → weight, e.g. SPLADE / BM25 vectors) or binary (bits). */
+export type VectorKind = 'dense' | 'sparse' | 'binary';
+
+/** A sparse vector: parallel lists of 0-based indices and their weights. */
+export interface SparseVector {
+  indices: number[];
+  values: number[];
 }
 
 /** One named vector space of a collection. */
 export interface ExplorerVectorSpace {
   name: string;
+  /** Dense: components; binary: bits; sparse: the index space, when the database states it. */
   dimension: number | null;
   metric: string | null;
+  /** Absent means dense. */
+  kind?: VectorKind;
 }
+
+/**
+ * Tenants (Weaviate multi-tenancy) or namespaces (Pinecone): separate sets of
+ * records inside one collection. Browse, search and record reads take one.
+ */
+export interface ExplorerPartitions {
+  kind: 'tenant' | 'namespace';
+  /** Up to MAX_PARTITIONS names. */
+  names: string[];
+  /** Records per name, where the database reports it. */
+  counts?: Record<string, number>;
+  /** True when every read must name one (Weaviate multi-tenant collections). */
+  required: boolean;
+  /** More exist than are listed. */
+  truncated?: boolean;
+}
+
+export const MAX_PARTITIONS = 200;
 
 export interface ExplorerRecord {
   id: string;
@@ -66,6 +98,12 @@ export interface ExplorerRecordDetail {
   vectorHead: number[] | null;
   /** L2 norm - about 1 for normalised embeddings. */
   norm: number | null;
+  /** Absent means dense. */
+  kind?: VectorKind;
+  /** A sparse vector: how many entries are set, and the heaviest 64 (index, weight). */
+  sparse?: { nonZero: number; top: Array<{ index: number; value: number }> };
+  /** A binary vector: bits set, and the first 256 bits as 0/1 text. */
+  bits?: { length: number; ones: number; head: string };
 }
 
 export interface ExplorerPage {
@@ -92,6 +130,9 @@ export interface ExplorerFilter {
 
 export const NO_FILTER: ExplorerFilter = { combine: 'and', conditions: [] };
 
+/** A listing is ordered by at most this many fields. */
+export const MAX_SORT_FIELDS = 3;
+
 /** Sort a record listing by a metadata field. */
 export interface ExplorerSort {
   field: string;
@@ -104,18 +145,58 @@ export interface BrowseOptions {
   filter: ExplorerFilter;
   /** Include each record's whole vector (for the embedding map). */
   withVectors?: boolean;
-  /** Only where the database can order a listing (supportsSort). */
-  sort?: ExplorerSort;
+  /** Only where the database can order a listing (supportsSort): up to MAX_SORT_FIELDS, most significant first. */
+  sort?: ExplorerSort[];
   /** Which named vector to return (collections with several); default the first. */
   vectorName?: string;
+  /** Tenant / namespace to read (see ExplorerPartitions). */
+  partition?: string;
+}
+
+/**
+ * A similarity search. `vector` is dense floats, or for a binary space its
+ * bits (0/1); `sparse` is set instead for a sparse space.
+ */
+export interface ExplorerVectorQuery {
+  vector: number[];
+  sparse?: SparseVector;
+  topK: number;
+  filter: ExplorerFilter;
+  /** Which named vector to search (collections with several); default the first. */
+  vectorName?: string;
+  partition?: string;
+}
+
+export interface ExplorerKeywordQuery {
+  text: string;
+  topK: number;
+  filter: ExplorerFilter;
+  partition?: string;
+}
+
+/** A hybrid search run by the database itself (Weaviate hybrid, Elasticsearch RRF retriever). */
+export interface ExplorerNativeHybridQuery {
+  text: string;
+  vector: number[];
+  /** 1 = vector only, 0 = keyword only. */
+  alpha: number;
+  topK: number;
+  filter: ExplorerFilter;
+  vectorName?: string;
+  partition?: string;
+}
+
+export interface RecordReadOptions {
+  vectorName?: string;
+  partition?: string;
 }
 
 export interface VectorExplorer {
   listCollections(): Promise<string[]>;
-  describeCollection(name: string): Promise<ExplorerCollectionInfo>;
+  /** partition: a tenant / namespace to count and sample, where the collection has them. */
+  describeCollection(name: string, partition?: string): Promise<ExplorerCollectionInfo>;
   browse(name: string, options: BrowseOptions): Promise<ExplorerPage>;
-  /** vectorName: which named vector to search (collections with several); default the first. */
-  searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter; vectorName?: string }): Promise<VectorSearchResult[]>;
+  searchFiltered(name: string, query: ExplorerVectorQuery): Promise<VectorSearchResult[]>;
   /**
    * What the design's collection name becomes in this database (Weaviate
    * capitalises class names, Pinecone uses hyphens, Oracle upper-cases).
@@ -127,11 +208,20 @@ export interface VectorExplorer {
    * equivalent. Present only where the database ranks text natively; the
    * hybrid mode fuses it with dense search in the service.
    */
-  keywordSearch?(name: string, query: { text: string; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]>;
+  keywordSearch?(name: string, query: ExplorerKeywordQuery): Promise<VectorSearchResult[]>;
   /** How this database ranks keyword search, for the UI (e.g. "Elasticsearch BM25 over text fields"). */
   readonly keywordRanking?: string;
   /** One record by id, or null when there is none. */
-  getRecord?(name: string, id: string, vectorName?: string): Promise<ExplorerRecordDetail | null>;
+  getRecord?(name: string, id: string, options?: RecordReadOptions): Promise<ExplorerRecordDetail | null>;
+  /**
+   * Hybrid search fused by the database itself. Present only where the
+   * database has it; the service otherwise fuses dense and keyword results.
+   */
+  nativeHybrid?(name: string, query: ExplorerNativeHybridQuery): Promise<VectorSearchResult[]>;
+  /** How the database fuses a native hybrid search, for the UI. */
+  readonly nativeHybridRanking?: string;
+  /** Vector kinds besides dense that searchFiltered can search. */
+  readonly searchableKinds?: VectorKind[];
   /** True where browse can order records by a field. */
   readonly supportsSort?: boolean;
 }
@@ -154,6 +244,36 @@ export function fuseResults(dense: VectorSearchResult[], keyword: VectorSearchRe
   keyword.forEach((r, i) => {
     const hit = byId.get(r.id);
     const add = (1 - a) / (k + i + 1);
+    if (hit) {
+      hit.score += add;
+      hit.keywordRank = i + 1;
+      hit.metadata = { ...r.metadata, ...hit.metadata };
+    } else byId.set(r.id, { ...r, score: add, denseRank: null, keywordRank: i + 1 });
+  });
+  return [...byId.values()].sort((x, y) => y.score - x.score || (x.denseRank ?? 1e9) - (y.denseRank ?? 1e9)).slice(0, topK);
+}
+
+/**
+ * Weighted score fusion: each list's scores are rescaled to 0-1 (min-max),
+ * then score = α·dense + (1-α)·keyword, a record missing from a list scoring
+ * 0 there. Unlike rank fusion it keeps how far apart the scores are - and so
+ * is swayed by outliers.
+ */
+export function fuseWeighted(dense: VectorSearchResult[], keyword: VectorSearchResult[], alpha: number, topK: number): FusedResult[] {
+  const a = Math.min(1, Math.max(0, alpha));
+  const scale = (list: VectorSearchResult[]) => {
+    const s = list.map((r) => r.score);
+    const lo = Math.min(...s);
+    const hi = Math.max(...s);
+    return (x: number) => (hi > lo ? (x - lo) / (hi - lo) : 1);
+  };
+  const d = scale(dense);
+  const kw = scale(keyword);
+  const byId = new Map<string, FusedResult>();
+  dense.forEach((r, i) => byId.set(r.id, { ...r, score: a * d(r.score), denseRank: i + 1, keywordRank: null }));
+  keyword.forEach((r, i) => {
+    const hit = byId.get(r.id);
+    const add = (1 - a) * kw(r.score);
     if (hit) {
       hit.score += add;
       hit.keywordRank = i + 1;

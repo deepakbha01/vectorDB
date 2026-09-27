@@ -216,14 +216,14 @@ export class MongoDbAtlasVectorAdapter implements VectorDatabaseAdapter, VectorE
     const query: Record<string, unknown> = { ...mongoFilter(options.filter) };
     let docs: any[];
     let sortedOffset: number | null = null;
-    if (options.sort) {
+    if (options.sort?.length) {
       // Sorted listings page by offset; _id breaks ties.
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(options.sort.field) || options.sort.field === path) throw new BadRequestException(`Cannot sort by '${options.sort.field}'.`);
+      for (const s of options.sort) if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(s.field) || s.field === path || s.field === '_id') throw new BadRequestException(`Cannot sort by '${s.field}'.`);
       sortedOffset = options.cursor === null ? 0 : Number(options.cursor);
       if (!Number.isInteger(sortedOffset) || sortedOffset < 0) throw new BadRequestException('Invalid page cursor.');
       docs = await collection
         .find(query as any)
-        .sort({ [options.sort.field]: options.sort.direction === 'desc' ? -1 : 1, _id: 1 })
+        .sort({ ...Object.fromEntries(options.sort.map((s) => [s.field, s.direction === 'desc' ? -1 : 1])), _id: 1 })
         .skip(sortedOffset)
         .limit(options.limit + 1)
         .toArray();

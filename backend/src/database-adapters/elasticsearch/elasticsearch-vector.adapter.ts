@@ -14,7 +14,7 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerKeywordQuery, ExplorerNativeHybridQuery, ExplorerPage, ExplorerRecordDetail, ExplorerVectorQuery, VectorExplorer } from '../vector-explorer';
 import { esFilter, normaliseIndexType, normaliseMetric, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
@@ -181,15 +181,17 @@ export class ElasticsearchVectorAdapter implements VectorDatabaseAdapter, Vector
     const { vectorField } = await this.mappingOf(name);
     const info = await this.describeCollection(name);
     const clauses = esFilter(options.filter, info.fields);
-    if (options.sort && (!info.fields.some((f) => f.name === options.sort!.field) || info.fields.find((f) => f.name === options.sort!.field)?.type === 'text')) {
-      throw new BadRequestException(`Cannot sort by '${options.sort.field}' (Elasticsearch sorts keyword, numeric and date fields, not analysed text).`);
+    for (const s of options.sort ?? []) {
+      if (!info.fields.some((f) => f.name === s.field) || info.fields.find((f) => f.name === s.field)?.type === 'text') {
+        throw new BadRequestException(`Cannot sort by '${s.field}' (Elasticsearch sorts keyword, numeric and date fields, not analysed text).`);
+      }
     }
     const r = (await this.getClient().search({
       index: name,
       from: offset,
       size: options.limit + 1,
       query: clauses.length ? { bool: { filter: clauses } } : { match_all: {} },
-      ...(options.sort ? { sort: [{ [options.sort.field]: { order: options.sort.direction, missing: '_last' } }] } : {}),
+      ...(options.sort?.length ? { sort: options.sort.map((s) => ({ [s.field]: { order: s.direction, missing: '_last' } })) } : {}),
     } as any)) as any;
     const hits = (r.hits?.hits ?? []) as any[];
     return {
@@ -201,7 +203,7 @@ export class ElasticsearchVectorAdapter implements VectorDatabaseAdapter, Vector
     };
   }
 
-  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+  async searchFiltered(name: string, query: ExplorerVectorQuery): Promise<VectorSearchResult[]> {
     const { vectorField } = await this.mappingOf(name);
     const info = await this.describeCollection(name);
     const clauses = esFilter(query.filter, info.fields);
@@ -217,7 +219,37 @@ export class ElasticsearchVectorAdapter implements VectorDatabaseAdapter, Vector
 
   readonly keywordRanking = 'Elasticsearch BM25 (multi_match) over the text fields';
 
-  async keywordSearch(name: string, query: { text: string; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+  readonly nativeHybridRanking = 'Elasticsearch RRF retriever - BM25 and kNN fused by Elasticsearch with equal weight (the dense/keyword slider does not apply; needs Elasticsearch 8.14+ with a licence that includes RRF)';
+
+  /** BM25 and kNN in one request, fused by Elasticsearch's own reciprocal rank fusion. */
+  async nativeHybrid(name: string, query: ExplorerNativeHybridQuery): Promise<VectorSearchResult[]> {
+    const { vectorField } = await this.mappingOf(name);
+    const info = await this.describeCollection(name);
+    const textFields = info.fields.filter((f) => f.type === 'text').map((f) => f.name);
+    if (!textFields.length) throw new BadRequestException(`Index '${name}' has no text fields to search by keyword.`);
+    const clauses = esFilter(query.filter, info.fields);
+    const window = Math.max(query.topK, 50);
+    const r = (await this.getClient().search({
+      index: name,
+      size: query.topK,
+      retriever: {
+        rrf: {
+          retrievers: [
+            { standard: { query: { bool: { must: [{ multi_match: { query: query.text, fields: textFields } }], ...(clauses.length ? { filter: clauses } : {}) } } } },
+            { knn: { field: vectorField ?? 'embedding', query_vector: query.vector, k: window, num_candidates: Math.max(window * 2, 100), ...(clauses.length ? { filter: { bool: { filter: clauses } } } : {}) } },
+          ],
+          rank_window_size: window,
+          rank_constant: 60,
+        },
+      },
+    } as any)) as any;
+    return ((r.hits?.hits ?? []) as any[]).map((h) => {
+      const { [vectorField ?? 'embedding']: _vec, ...metadata } = h._source ?? {};
+      return { id: String(h._id), score: h._score ?? 0, metadata: trimMetadata(metadata) };
+    });
+  }
+
+  async keywordSearch(name: string, query: ExplorerKeywordQuery): Promise<VectorSearchResult[]> {
     const { vectorField } = await this.mappingOf(name);
     const info = await this.describeCollection(name);
     const textFields = info.fields.filter((f) => f.type === 'text').map((f) => f.name);

@@ -4,13 +4,16 @@ import { apiClient, extractErrorMessage, Project } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { useFeatures } from '../api/features';
 import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from 'recharts';
-import { CheckStatus, ConnectionTestResult, ConnectionView, ExplorerCollections, ExplorerCompareResult, ExplorerDocuments, ExplorerMap, ExplorerOverview, ExplorerRecordDetail, ExplorerSearchResult, ExplorerStatus } from '../api/dataExplorer';
+import { CheckStatus, VectorKind, ConnectionTestResult, ConnectionView, ExplorerCollections, ExplorerCompareResult, ExplorerDocuments, ExplorerMap, ExplorerOverview, ExplorerRecordDetail, ExplorerSearchResult, ExplorerStatus } from '../api/dataExplorer';
 import { SCATTER, useChart } from '../components/token/charts';
 import { useTheme } from '../theme';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
 type View = 'overview' | 'documents' | 'search' | 'compare' | 'map';
+
+/** The vector space chosen in the collection bar ('' = the collection's default). */
+type VectorSpaceChoice = { name: string; kind: VectorKind; dimension: number | null };
 type FilterOp = 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'in';
 type FilterRow = { field: string; op: FilterOp; value: string };
 type FilterState = { combine: 'and' | 'or'; rows: FilterRow[] };
@@ -44,6 +47,7 @@ export function DataExplorerPage() {
   const [overview, setOverview] = useState<ExplorerOverview | null>(null);
   const [openRecord, setOpenRecord] = useState<string | null>(null);
   const [vectorName, setVectorName] = useState('');
+  const [partition, setPartition] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showConnection, setShowConnection] = useState(false);
   const [reload, setReload] = useState(0);
@@ -67,15 +71,31 @@ export function DataExplorerPage() {
   }, [id, base, reload]);
 
   useEffect(() => {
-    if (!collection) return;
-    setOverview(null);
     setOpenRecord(null);
     setVectorName('');
+    setPartition('');
+  }, [collection]);
+
+  useEffect(() => {
+    if (!collection) return;
+    setOverview(null);
     apiClient
-      .get<ExplorerOverview>(`${base}/collections/${encodeURIComponent(collection)}`)
-      .then((r) => setOverview(r.data))
+      .get<ExplorerOverview>(`${base}/collections/${encodeURIComponent(collection)}${partition ? `?partition=${encodeURIComponent(partition)}` : ''}`)
+      .then((r) => {
+        setOverview(r.data);
+        // A multi-tenant collection is read one tenant at a time: start with the first.
+        const p = r.data.info.partitions;
+        if (p?.required && !partition && p.names.length) setPartition(p.names[0]);
+      })
       .catch((e) => setError(extractErrorMessage(e, 'Could not describe the collection.')));
-  }, [collection, base]);
+  }, [collection, base, partition]);
+
+  const space: VectorSpaceChoice = (() => {
+    const spaces = overview?.info.vectors;
+    if (!spaces?.length) return { name: '', kind: 'dense', dimension: overview?.info.dimension ?? null };
+    const chosen = vectorName ? spaces.find((v) => v.name === vectorName) : spaces[0];
+    return { name: vectorName, kind: chosen?.kind ?? 'dense', dimension: chosen?.dimension ?? null };
+  })();
 
   if (!project) return <div className="main-content">Loading...</div>;
 
@@ -134,11 +154,27 @@ export function DataExplorerPage() {
                     <select value={vectorName} onChange={(e) => setVectorName(e.target.value)} style={{ fontSize: 13, padding: '4px 6px' }}>
                       {overview.info.vectors.map((v, i) => (
                         <option key={v.name} value={i === 0 ? '' : v.name}>
-                          {v.name}
-                          {v.dimension ? ` (${v.dimension}-d${v.metric ? `, ${v.metric}` : ''})` : ''}
+                          {v.name || '(unnamed)'} ({v.kind ?? 'dense'}
+                          {v.dimension ? `, ${v.dimension}${v.kind === 'binary' ? ' bits' : '-d'}` : ''}
+                          {v.metric ? `, ${v.metric}` : ''})
                         </option>
                       ))}
                     </select>
+                  </label>
+                )}
+                {overview?.info.partitions && (
+                  <label style={{ fontSize: 13, display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {overview.info.partitions.kind === 'tenant' ? 'Tenant' : 'Namespace'}
+                    <select value={partition} onChange={(e) => setPartition(e.target.value)} style={{ fontSize: 13, padding: '4px 6px' }}>
+                      {!overview.info.partitions.required && <option value="">(default namespace)</option>}
+                      {overview.info.partitions.names.map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                          {overview.info.partitions?.counts?.[n] !== undefined ? ` (${overview.info.partitions.counts[n].toLocaleString()})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {overview.info.partitions.truncated && <span style={{ color: 'var(--muted)' }}>first {overview.info.partitions.names.length} listed</span>}
                   </label>
                 )}
                 {!collections.collections.length && <span style={{ fontSize: 13, color: 'var(--muted)' }}>The database has no vector collections yet.</span>}
@@ -168,11 +204,11 @@ export function DataExplorerPage() {
                 Record contents are shown to admins and architects only.
               </div>
             )}
-            {collection && view === 'documents' && canRead && overview && <DocumentsView key={collection} base={base} collection={collection} fields={overview.info.fields.map((f) => f.name)} sortable={!!overview.capabilities?.sort} onOpen={setOpenRecord} />}
-            {collection && view === 'search' && canRead && overview && <SearchView key={collection} base={base} collection={collection} fields={overview.info.fields.map((f) => f.name)} keyword={overview.capabilities?.keyword ?? { supported: false, ranking: null }} vectorName={vectorName} onOpen={setOpenRecord} />}
-            {collection && openRecord && canRead && (view === 'documents' || view === 'search') && <RecordPanel base={base} collection={collection} id={openRecord} vectorName={vectorName} onClose={() => setOpenRecord(null)} />}
-            {collection && view === 'compare' && canRead && overview && <CompareView key={collection} base={base} collection={collection} fields={overview.info.fields.map((f) => f.name)} keyword={overview.capabilities?.keyword ?? { supported: false, ranking: null }} vectorName={vectorName} />}
-            {collection && view === 'map' && canRead && overview && <MapView key={collection} base={base} collection={collection} fields={overview.info.fields.map((f) => f.name)} vectorName={vectorName} />}
+            {collection && view === 'documents' && canRead && overview && <DocumentsView key={collection} base={base} collection={collection} fields={overview.info.fields.map((f) => f.name)} sortable={!!overview.capabilities?.sort} partition={partition} onOpen={setOpenRecord} />}
+            {collection && view === 'search' && canRead && overview && <SearchView key={collection} base={base} collection={collection} fields={overview.info.fields.map((f) => f.name)} keyword={overview.capabilities?.keyword ?? { supported: false, ranking: null }} nativeHybrid={overview.capabilities?.nativeHybrid ?? { supported: false, ranking: null }} space={space} partition={partition} onOpen={setOpenRecord} />}
+            {collection && openRecord && canRead && (view === 'documents' || view === 'search') && <RecordPanel base={base} collection={collection} id={openRecord} vectorName={vectorName} partition={partition} onClose={() => setOpenRecord(null)} />}
+            {collection && view === 'compare' && canRead && overview && <CompareView key={collection} base={base} collection={collection} fields={overview.info.fields.map((f) => f.name)} keyword={overview.capabilities?.keyword ?? { supported: false, ranking: null }} nativeHybrid={!!overview.capabilities?.nativeHybrid?.supported} vectorName={vectorName} vectorKind={space.kind} partition={partition} />}
+            {collection && view === 'map' && canRead && overview && <MapView key={collection} base={base} collection={collection} fields={overview.info.fields.map((f) => f.name)} vectorName={vectorName} vectorKind={space.kind} partition={partition} />}
           </div>
         )}
       </div>
@@ -317,32 +353,41 @@ const toFilter = (f: FilterState) => {
   return conditions.length ? { combine: f.combine, conditions } : undefined;
 };
 
-function DocumentsView({ base, collection, fields, sortable, onOpen }: { base: string; collection: string; fields: string[]; sortable: boolean; onOpen: (id: string) => void }) {
+type SortRow = { field: string; direction: 'asc' | 'desc' };
+const MAX_SORT = 3;
+
+function DocumentsView({ base, collection, fields, sortable, partition, onOpen }: { base: string; collection: string; fields: string[]; sortable: boolean; partition: string; onOpen: (id: string) => void }) {
   const [filters, setFilters] = useState<FilterState>(NO_FILTERS);
   const [applied, setApplied] = useState<ReturnType<typeof toFilter>>(undefined);
-  const [sortBy, setSortBy] = useState('');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [sort, setSort] = useState<SortRow[]>([]);
   // Cursors of the pages visited, so Previous can go back.
   const [cursors, setCursors] = useState<Array<string | null>>([null]);
   const [page, setPage] = useState<ExplorerDocuments | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cursor = cursors[cursors.length - 1];
+  const sortParam = sort.filter((s) => s.field).map((s) => `${s.field}:${s.direction}`).join(',');
+
+  useEffect(() => {
+    setCursors([null]);
+  }, [partition]);
 
   useEffect(() => {
     setError(null);
     const params = new URLSearchParams({ limit: '25' });
     if (cursor) params.set('cursor', cursor);
     if (applied) params.set('filter', JSON.stringify(applied));
-    if (sortBy) {
-      params.set('sortBy', sortBy);
-      params.set('sortDir', sortDir);
-    }
+    if (sortParam) params.set('sort', sortParam);
+    if (partition) params.set('partition', partition);
     apiClient
       .get<ExplorerDocuments>(`${base}/collections/${encodeURIComponent(collection)}/documents?${params}`)
       .then((r) => setPage(r.data))
       .catch((e) => setError(extractErrorMessage(e, 'Could not read records.')));
-  }, [base, collection, cursor, applied, sortBy, sortDir]);
+  }, [base, collection, cursor, applied, sortParam, partition]);
 
+  const setRow = (i: number, row: SortRow | null) => {
+    setSort(row ? sort.map((s, j) => (j === i ? row : s)) : sort.filter((_, j) => j !== i));
+    setCursors([null]);
+  };
   const cols = page ? [...new Set(page.rows.flatMap((r) => Object.keys(r.metadata)))] : [];
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12, overflowX: 'auto' }}>
@@ -361,41 +406,44 @@ function DocumentsView({ base, collection, fields, sortable, onOpen }: { base: s
           Apply filters
         </button>
       </div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 13 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
         {sortable ? (
           <>
-            <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              Sort by
-              <select
-                aria-label="Sort by"
-                value={sortBy}
-                onChange={(e) => {
-                  setSortBy(e.target.value);
-                  setCursors([null]);
-                }}
-                style={{ fontSize: 13, padding: '4px 6px' }}
-              >
-                <option value="">(database order)</option>
-                {fields.map((f) => (
-                  <option key={f} value={f}>
-                    {f}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {sortBy && (
-              <select
-                aria-label="Sort direction"
-                value={sortDir}
-                onChange={(e) => {
-                  setSortDir(e.target.value as 'asc' | 'desc');
-                  setCursors([null]);
-                }}
-                style={{ fontSize: 13, padding: '4px 6px' }}
-              >
-                <option value="asc">ascending</option>
-                <option value="desc">descending</option>
-              </select>
+            {sort.map((s, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ width: 64, color: 'var(--muted)' }}>{i === 0 ? 'Sort by' : 'then by'}</span>
+                <select aria-label={`Sort field ${i + 1}`} value={s.field} onChange={(e) => setRow(i, { ...s, field: e.target.value })} style={{ fontSize: 13, padding: '4px 6px' }}>
+                  {fields
+                    .filter((f) => f === s.field || !sort.some((x) => x.field === f))
+                    .map((f) => (
+                      <option key={f} value={f}>
+                        {f}
+                      </option>
+                    ))}
+                </select>
+                <select aria-label={`Sort direction ${i + 1}`} value={s.direction} onChange={(e) => setRow(i, { ...s, direction: e.target.value as 'asc' | 'desc' })} style={{ fontSize: 13, padding: '4px 6px' }}>
+                  <option value="asc">ascending</option>
+                  <option value="desc">descending</option>
+                </select>
+                <button type="button" aria-label={`Remove sort field ${i + 1}`} onClick={() => setRow(i, null)} style={{ background: 'none', border: 'none', color: 'var(--primary-text)', fontSize: 13 }}>
+                  Remove
+                </button>
+              </div>
+            ))}
+            {sort.length < MAX_SORT && fields.some((f) => !sort.some((x) => x.field === f)) && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSort([...sort, { field: fields.find((f) => !sort.some((x) => x.field === f))!, direction: 'asc' }]);
+                    setCursors([null]);
+                  }}
+                  style={{ background: 'none', border: 'none', color: 'var(--primary-text)', fontSize: 13, padding: 0 }}
+                >
+                  + {sort.length ? 'Then sort by another field' : 'Sort by a field'}
+                </button>
+                {!sort.length && <span style={{ color: 'var(--muted)' }}> (otherwise the database's own order)</span>}
+              </div>
             )}
           </>
         ) : (
@@ -427,16 +475,48 @@ function DocumentsView({ base, collection, fields, sortable, onOpen }: { base: s
 }
 
 type SearchMode = 'dense' | 'keyword' | 'hybrid';
+type Fusion = 'rrf' | 'weighted' | 'native';
+
+/** "3:0.5, 17:1.2" or {"indices": [3, 17], "values": [0.5, 1.2]} → a sparse vector; null if neither. */
+function parseSparse(raw: string): { indices: number[]; values: number[] } | null {
+  const t = raw.trim();
+  if (!t) return null;
+  if (t.startsWith('{')) {
+    try {
+      const o = JSON.parse(t) as { indices?: unknown; values?: unknown };
+      return Array.isArray(o.indices) && Array.isArray(o.values) ? { indices: o.indices.map(Number), values: o.values.map(Number) } : null;
+    } catch {
+      return null;
+    }
+  }
+  const pairs = t.split(/[\s,]+/).filter(Boolean).map((p) => p.split(':'));
+  if (pairs.some((p) => p.length !== 2 || !/^\d+$/.test(p[0]) || !Number.isFinite(Number(p[1])))) return null;
+  return { indices: pairs.map((p) => Number(p[0])), values: pairs.map((p) => Number(p[1])) };
+}
+
+/** A bit string ("0110…", spaces ignored) or a JSON array of 0/1 → bits; null if neither. */
+function parseBits(raw: string): number[] | null {
+  const t = raw.replace(/\s+/g, '');
+  if (/^[01]+$/.test(t)) return Array.from(t, (c) => (c === '1' ? 1 : 0));
+  try {
+    const a = JSON.parse(raw) as unknown;
+    return Array.isArray(a) && a.every((x) => x === 0 || x === 1) ? (a as number[]) : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Dense (text embedded with the project's model, or a raw vector), keyword
- * (ranked by the database) or hybrid (both, fused by rank). Keyword and hybrid
- * appear only where the database can rank text.
+ * (ranked by the database) or hybrid (both, fused here by rank or score, or by
+ * the database itself). A sparse or binary vector space takes its own query.
  */
-function SearchView({ base, collection, fields, keyword, vectorName, onOpen }: { base: string; collection: string; fields: string[]; keyword: { supported: boolean; ranking: string | null }; vectorName: string; onOpen: (id: string) => void }) {
+function SearchView({ base, collection, fields, keyword, nativeHybrid, space, partition, onOpen }: { base: string; collection: string; fields: string[]; keyword: { supported: boolean; ranking: string | null }; nativeHybrid: { supported: boolean; ranking: string | null }; space: VectorSpaceChoice; partition: string; onOpen: (id: string) => void }) {
   const [mode, setMode] = useState<SearchMode>('dense');
   const [input, setInput] = useState<'text' | 'vector'>('text');
   const [alpha, setAlpha] = useState(0.5);
+  const [fusion, setFusion] = useState<Fusion>('rrf');
+  const [minScore, setMinScore] = useState('');
   const [text, setText] = useState('');
   const [vectorText, setVectorText] = useState('');
   const [topK, setTopK] = useState(10);
@@ -444,30 +524,42 @@ function SearchView({ base, collection, fields, keyword, vectorName, onOpen }: {
   const [result, setResult] = useState<ExplorerSearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const usesVector = mode === 'dense' && input === 'vector';
+  const dense = space.kind === 'dense';
+  const effectiveMode: SearchMode = dense ? mode : 'dense';
+  const usesVector = !dense || (mode === 'dense' && input === 'vector');
+  const native = effectiveMode === 'hybrid' && fusion === 'native';
 
   const run = async () => {
     setError(null);
-    let vector: number[] | undefined;
-    if (usesVector) {
+    const body: Record<string, unknown> = { mode: effectiveMode, topK, filter: toFilter(filters) };
+    if (space.kind === 'sparse') {
+      const s = parseSparse(vectorText);
+      if (!s) return setError('Give the sparse vector as index:weight pairs (e.g. 3:0.5, 17:1.2) or {"indices": [...], "values": [...]}.');
+      body.sparse = s;
+    } else if (space.kind === 'binary') {
+      const b = parseBits(vectorText);
+      if (!b) return setError('Give the binary vector as bits, e.g. 0110 1001, or a JSON array of 0 and 1.');
+      body.vector = b;
+    } else if (usesVector) {
       try {
-        vector = JSON.parse(vectorText);
-        if (!Array.isArray(vector)) throw new Error();
+        const v = JSON.parse(vectorText);
+        if (!Array.isArray(v)) throw new Error();
+        body.vector = v;
       } catch {
-        setError('The vector must be a JSON array of numbers, e.g. [0.12, -0.4, …].');
-        return;
+        return setError('The vector must be a JSON array of numbers, e.g. [0.12, -0.4, …].');
       }
+    } else body.text = text;
+    if (effectiveMode === 'hybrid') Object.assign(body, { alpha, fusion });
+    if (minScore.trim() && !native) {
+      const m = Number(minScore);
+      if (!Number.isFinite(m)) return setError('The minimum score must be a number.');
+      body.minScore = m;
     }
+    if (space.name && effectiveMode !== 'keyword') body.vectorName = space.name;
+    if (partition) body.partition = partition;
     setBusy(true);
     try {
-      const { data } = await apiClient.post<ExplorerSearchResult>(`${base}/collections/${encodeURIComponent(collection)}/search`, {
-        mode,
-        ...(usesVector ? { vector } : { text }),
-        ...(mode === 'hybrid' ? { alpha } : {}),
-        topK,
-        filter: toFilter(filters),
-        ...(vectorName && mode !== 'keyword' ? { vectorName } : {}),
-      });
+      const { data } = await apiClient.post<ExplorerSearchResult>(`${base}/collections/${encodeURIComponent(collection)}/search`, body);
       setResult(data);
     } catch (e) {
       setError(extractErrorMessage(e, 'The search failed.'));
@@ -477,30 +569,48 @@ function SearchView({ base, collection, fields, keyword, vectorName, onOpen }: {
   };
 
   const hybrid = result?.mode === 'hybrid';
+  const nativeResult = result?.fusion === 'native';
   const cols = result ? [...new Set(result.results.flatMap((r) => Object.keys(r.metadata)))] : [];
   const MODES: Array<[SearchMode, string]> = [
-    ['dense', 'Dense (vector)'],
+    ['dense', space.kind === 'dense' ? 'Dense (vector)' : `${space.kind === 'sparse' ? 'Sparse' : 'Binary'} vector`],
     ['keyword', 'Keyword'],
     ['hybrid', 'Hybrid'],
+  ];
+  const FUSIONS: Array<[Fusion, string, boolean]> = [
+    ['rrf', 'Rank fusion (RRF)', true],
+    ['weighted', 'Weighted scores', true],
+    ['native', "The database's own", nativeHybrid.supported],
   ];
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12, overflowX: 'auto' }}>
       <div className="metric-label">Search - dense embeds text with the project's model, as ingestion does; keyword is ranked by the database</div>
       <div style={{ display: 'flex', gap: 16, fontSize: 13, flexWrap: 'wrap', alignItems: 'center' }}>
-        {MODES.map(([m, label]) => (
-          <label key={m} style={{ display: 'flex', gap: 6, alignItems: 'center', color: m !== 'dense' && !keyword.supported ? 'var(--muted)' : undefined }}>
-            <input type="radio" checked={mode === m} disabled={m !== 'dense' && !keyword.supported} onChange={() => setMode(m)} /> {label}
-          </label>
-        ))}
+        {MODES.map(([m, label]) => {
+          const off = m !== 'dense' && (!keyword.supported || !dense);
+          return (
+            <label key={m} style={{ display: 'flex', gap: 6, alignItems: 'center', color: off ? 'var(--muted)' : undefined }}>
+              <input type="radio" checked={effectiveMode === m} disabled={off} onChange={() => setMode(m)} /> {label}
+            </label>
+          );
+        })}
         <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           Top K
           <input type="number" min={1} max={50} value={topK} onChange={(e) => setTopK(Math.min(50, Math.max(1, Number(e.target.value) || 1)))} style={{ width: 70, fontSize: 13, padding: '4px 6px' }} />
         </label>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', color: native ? 'var(--muted)' : undefined }} title={native ? "Not available with the database's own hybrid ranking" : undefined}>
+          Min score
+          <input type="number" step="any" value={minScore} disabled={native} onChange={(e) => setMinScore(e.target.value)} placeholder="none" aria-label="Minimum score" style={{ width: 90, fontSize: 13, padding: '4px 6px' }} />
+        </label>
       </div>
       <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-        {keyword.supported ? `Keyword ranking: ${keyword.ranking}.` : 'This database does not rank keyword search here, so only dense search is available.'}
+        {!dense
+          ? `'${space.name}' is a ${space.kind} vector: search it with a ${space.kind} query. Keyword and hybrid search use the dense vector.`
+          : keyword.supported
+            ? `Keyword ranking: ${keyword.ranking}.`
+            : 'This database does not rank keyword search here, so only dense search is available.'}
+        {minScore.trim() && !native ? ` The minimum score applies to ${effectiveMode === 'hybrid' ? 'the dense candidates, before fusion' : `the ${effectiveMode} scores`}.` : ''}
       </div>
-      {mode === 'dense' && (
+      {dense && mode === 'dense' && (
         <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
           <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <input type="radio" checked={input === 'text'} onChange={() => setInput('text')} /> Text
@@ -510,17 +620,37 @@ function SearchView({ base, collection, fields, keyword, vectorName, onOpen }: {
           </label>
         </div>
       )}
-      {mode === 'hybrid' && (
-        <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 13 }}>
-          Keyword
-          <input type="range" min={0} max={1} step={0.1} value={alpha} onChange={(e) => setAlpha(Number(e.target.value))} aria-label="Dense weight" style={{ width: 220 }} />
-          Dense
-          <span style={{ color: 'var(--muted)' }}>
-            {Math.round(alpha * 100)}% dense / {Math.round((1 - alpha) * 100)}% keyword
-          </span>
-        </label>
+      {effectiveMode === 'hybrid' && (
+        <>
+          <div role="radiogroup" aria-label="Fusion" style={{ display: 'flex', gap: 16, fontSize: 13, flexWrap: 'wrap' }}>
+            {FUSIONS.map(([f, label, ok]) => (
+              <label key={f} style={{ display: 'flex', gap: 6, alignItems: 'center', color: ok ? undefined : 'var(--muted)' }}>
+                <input type="radio" checked={fusion === f} disabled={!ok} onChange={() => setFusion(f)} /> {label}
+              </label>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+            {fusion === 'rrf'
+              ? 'Fuses by rank: robust to the two lists scoring on different scales.'
+              : fusion === 'weighted'
+                ? "Rescales each list's scores to 0-1 and adds them by weight: keeps score gaps, so an outlier can dominate."
+                : (nativeHybrid.ranking ?? 'Fused by the database itself.')}
+          </div>
+          <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 13 }}>
+            Keyword
+            <input type="range" min={0} max={1} step={0.1} value={alpha} onChange={(e) => setAlpha(Number(e.target.value))} aria-label="Dense weight" style={{ width: 220 }} />
+            Dense
+            <span style={{ color: 'var(--muted)' }}>
+              {Math.round(alpha * 100)}% dense / {Math.round((1 - alpha) * 100)}% keyword
+            </span>
+          </label>
+        </>
       )}
-      {usesVector ? (
+      {space.kind === 'sparse' ? (
+        <textarea aria-label="Sparse query vector" value={vectorText} onChange={(e) => setVectorText(e.target.value)} rows={3} placeholder='index:weight pairs, e.g. 3:0.5, 17:1.2 - or {"indices": [3, 17], "values": [0.5, 1.2]}' style={{ fontSize: 13, padding: 8, fontFamily: 'var(--font-mono)' }} />
+      ) : space.kind === 'binary' ? (
+        <textarea aria-label="Binary query vector" value={vectorText} onChange={(e) => setVectorText(e.target.value)} rows={3} placeholder={`${space.dimension ?? ''} bits, e.g. 0110 1001 …`} style={{ fontSize: 13, padding: 8, fontFamily: 'var(--font-mono)' }} />
+      ) : usesVector ? (
         <textarea aria-label="Search vector" value={vectorText} onChange={(e) => setVectorText(e.target.value)} rows={3} placeholder="[0.12, -0.4, …]" style={{ fontSize: 13, padding: 8, fontFamily: 'var(--font-mono)' }} />
       ) : (
         <textarea aria-label="Search text" value={text} onChange={(e) => setText(e.target.value)} rows={3} maxLength={2000} placeholder="e.g. termination clause for contractors" style={{ fontSize: 14, padding: 8 }} />
@@ -549,15 +679,28 @@ function SearchView({ base, collection, fields, keyword, vectorName, onOpen }: {
                 {result.embedding.live ? '' : ' (offline stand-in)'}
               </span>
             )}
+            {result.candidates && (
+              <span style={{ color: 'var(--muted)' }}>
+                {' '}
+                · candidates: {result.candidates.dense} dense, {result.candidates.keyword} keyword
+              </span>
+            )}
+            {result.threshold && (
+              <span style={{ color: 'var(--muted)' }}>
+                {' '}
+                · min score {result.threshold.minScore}: {result.threshold.removed} dropped
+              </span>
+            )}
           </div>
           <StatsLine stats={result.stats} />
+          <QueryStatsLine stats={result.queryStats} />
           <Table
-            headers={['#', 'ID', hybrid ? 'Fused score' : result.mode === 'keyword' ? 'Keyword score' : 'Score', ...(hybrid ? ['Dense rank', 'Keyword rank'] : []), ...cols]}
+            headers={['#', 'ID', hybrid ? (nativeResult ? 'Database score' : 'Fused score') : result.mode === 'keyword' ? 'Keyword score' : 'Score', ...(hybrid && !nativeResult ? ['Dense rank', 'Keyword rank'] : []), ...cols]}
             rows={result.results.map((r, i) => [
               String(i + 1),
               <IdButton key="id" id={r.id} onOpen={onOpen} />,
               hybrid ? r.score.toFixed(5) : r.score.toFixed(4),
-              ...(hybrid ? [r.denseRank ?? '—', r.keywordRank ?? '—'].map(String) : []),
+              ...(hybrid && !nativeResult ? [r.denseRank ?? '—', r.keywordRank ?? '—'].map(String) : []),
               ...cols.map((c) => cell(r.metadata[c])),
             ])}
           />
@@ -573,6 +716,22 @@ function SearchView({ base, collection, fields, keyword, vectorName, onOpen }: {
   );
 }
 
+/** The query vector itself: an unusual norm or many zeros explains odd scores. */
+function QueryStatsLine({ stats }: { stats?: ExplorerSearchResult['queryStats'] }) {
+  if (!stats) return null;
+  const f = (n: number) => (Math.abs(n) >= 1000 || (n !== 0 && Math.abs(n) < 0.001) ? n.toExponential(2) : String(Math.round(n * 10000) / 10000));
+  return (
+    <div style={{ fontSize: 12, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
+      query:{' '}
+      {stats.kind === 'dense'
+        ? `${stats.dimension}-d · norm ${f(stats.norm)}${stats.normalised ? ' (unit length)' : ''} · mean ${f(stats.mean)} · variance ${f(stats.variance)}${stats.zeros ? ` · ${stats.zeros} zeros` : ''}`
+        : stats.kind === 'sparse'
+          ? `sparse · ${stats.nonZero} entries · norm ${f(stats.norm)}${stats.maxIndex !== null ? ` · highest index ${stats.maxIndex}` : ''}`
+          : `binary · ${stats.bits} bits · ${stats.ones} set`}
+    </div>
+  );
+}
+
 /**
  * The embedding map: a sample of vectors projected to 2D on the server.
  * Colours are the three hues that stay distinct on every pair (validated per
@@ -581,7 +740,7 @@ function SearchView({ base, collection, fields, keyword, vectorName, onOpen }: {
  */
 type MapMethod = 'pca' | 'umap' | 'tsne';
 
-function MapView({ base, collection, fields, vectorName }: { base: string; collection: string; fields: string[]; vectorName: string }) {
+function MapView({ base, collection, fields, vectorName, vectorKind, partition }: { base: string; collection: string; fields: string[]; vectorName: string; vectorKind: VectorKind; partition: string }) {
   const { theme } = useTheme();
   const c = useChart();
   const palette = SCATTER[theme];
@@ -602,6 +761,7 @@ function MapView({ base, collection, fields, vectorName }: { base: string; colle
       const params = new URLSearchParams({ sample: String(sample), method, dims: String(dims) });
       if (colorBy) params.set('colorBy', colorBy);
       if (vectorName) params.set('vectorName', vectorName);
+      if (partition) params.set('partition', partition);
       const f = toFilter(filters);
       if (f) params.set('filter', JSON.stringify(f));
       const { data } = await apiClient.get<ExplorerMap>(`${base}/collections/${encodeURIComponent(collection)}/map?${params}`);
@@ -621,6 +781,7 @@ function MapView({ base, collection, fields, vectorName }: { base: string; colle
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div className="metric-label">Embedding map - a sample projected to 2D or 3D on the server; this read is audited</div>
+      {vectorKind !== 'dense' && <div style={{ fontSize: 13, color: 'var(--warning)' }}>▲ The map projects dense vectors; '{vectorName}' is {vectorKind}. Choose a dense vector above.</div>}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
         <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           Sample
@@ -661,7 +822,7 @@ function MapView({ base, collection, fields, vectorName }: { base: string; colle
       </div>
       <FilterEditor fields={fields} value={filters} onChange={setFilters} />
       <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-        <button type="button" className="primary-btn" disabled={busy} onClick={draw}>
+        <button type="button" className="primary-btn" disabled={busy || vectorKind !== 'dense'} onClick={draw}>
           {busy ? 'Drawing…' : map ? 'Redraw' : 'Draw map'}
         </button>
         {map && map.points.length > 0 && (
@@ -880,16 +1041,22 @@ function StatsLine({ stats }: { stats?: ExplorerSearchResult['stats'] }) {
   const f = (n: number | null) => (n === null ? '—' : n.toFixed(4));
   return (
     <div style={{ fontSize: 12, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
-      scores: max {f(stats.max)} · median {f(stats.median)} · mean {f(stats.mean)} · min {f(stats.min)} · gap top-2 {f(stats.topGap)}
+      scores: max {f(stats.max)} · median {f(stats.median)} · mean {f(stats.mean)} · min {f(stats.min)} · std dev {f(stats.stdDev ?? null)} · gap top-2 {f(stats.topGap)}
+      {stats.topZ !== null && stats.topZ !== undefined && (
+        <span title="How far the top score stands above the rest, in standard deviations: under 1 the list is flat, above 2 the top result stands out.">
+          {' '}
+          · top stands out {stats.topZ.toFixed(1)}σ{stats.topZ >= 2 ? ' (clear best match)' : stats.topZ < 1 ? ' (flat list)' : ''}
+        </span>
+      )}
     </div>
   );
 }
 
-type Side = { mode: SearchMode; alpha: number; topK: number; filters: FilterState };
-const SIDE_DEFAULT: Side = { mode: 'dense', alpha: 0.5, topK: 10, filters: NO_FILTERS };
+type Side = { mode: SearchMode; alpha: number; topK: number; filters: FilterState; fusion: Fusion; minScore: string };
+const SIDE_DEFAULT: Side = { mode: 'dense', alpha: 0.5, topK: 10, filters: NO_FILTERS, fusion: 'rrf', minScore: '' };
 
 /** One side's settings in the comparison. */
-function SideSettings({ label, side, onChange, fields, keyword }: { label: string; side: Side; onChange: (s: Side) => void; fields: string[]; keyword: { supported: boolean } }) {
+function SideSettings({ label, side, onChange, fields, keyword, native }: { label: string; side: Side; onChange: (s: Side) => void; fields: string[]; keyword: { supported: boolean }; native: boolean }) {
   return (
     <div style={{ flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 8, border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
       <strong style={{ fontSize: 13 }}>{label}</strong>
@@ -913,6 +1080,21 @@ function SideSettings({ label, side, onChange, fields, keyword }: { label: strin
             <input type="range" min={0} max={1} step={0.1} value={side.alpha} onChange={(e) => onChange({ ...side, alpha: Number(e.target.value) })} aria-label={`${label} dense weight`} style={{ width: 120 }} />
           </label>
         )}
+        {side.mode === 'hybrid' && (
+          <select aria-label={`${label} fusion`} value={side.fusion} onChange={(e) => onChange({ ...side, fusion: e.target.value as Fusion })} style={{ fontSize: 13, padding: '4px 6px' }}>
+            <option value="rrf">Rank fusion</option>
+            <option value="weighted">Weighted scores</option>
+            <option value="native" disabled={!native}>
+              Database's own
+            </option>
+          </select>
+        )}
+        {!(side.mode === 'hybrid' && side.fusion === 'native') && (
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            Min score
+            <input type="number" step="any" value={side.minScore} onChange={(e) => onChange({ ...side, minScore: e.target.value })} placeholder="none" aria-label={`${label} minimum score`} style={{ width: 80, fontSize: 13, padding: '4px 6px' }} />
+          </label>
+        )}
       </div>
       <FilterEditor fields={fields} value={side.filters} onChange={(filters) => onChange({ ...side, filters })} />
     </div>
@@ -923,20 +1105,24 @@ function SideSettings({ label, side, onChange, fields, keyword }: { label: strin
  * The same query run two ways - dense vs hybrid, two weightings, with and
  * without a filter - side by side, with how much the result lists overlap.
  */
-function CompareView({ base, collection, fields, keyword, vectorName }: { base: string; collection: string; fields: string[]; keyword: { supported: boolean; ranking: string | null }; vectorName: string }) {
+function CompareView({ base, collection, fields, keyword, nativeHybrid, vectorName, vectorKind, partition }: { base: string; collection: string; fields: string[]; keyword: { supported: boolean; ranking: string | null }; nativeHybrid: boolean; vectorName: string; vectorKind: VectorKind; partition: string }) {
   const [text, setText] = useState('');
   const [a, setA] = useState<Side>(SIDE_DEFAULT);
   const [b, setB] = useState<Side>(keyword.supported ? { ...SIDE_DEFAULT, mode: 'hybrid' } : { ...SIDE_DEFAULT, topK: 20 });
   const [result, setResult] = useState<ExplorerCompareResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const toSide = (s: Side) => ({ mode: s.mode, topK: s.topK, ...(s.mode === 'hybrid' ? { alpha: s.alpha } : {}), filter: toFilter(s.filters), ...(vectorName && s.mode !== 'keyword' ? { vectorName } : {}) });
+  const toSide = (s: Side) => {
+    const native = s.mode === 'hybrid' && s.fusion === 'native';
+    const min = s.minScore.trim() && !native && Number.isFinite(Number(s.minScore)) ? { minScore: Number(s.minScore) } : {};
+    return { mode: s.mode, topK: s.topK, ...(s.mode === 'hybrid' ? { alpha: s.alpha, fusion: s.fusion } : {}), ...min, filter: toFilter(s.filters), ...(vectorName && s.mode !== 'keyword' ? { vectorName } : {}) };
+  };
 
   const run = async () => {
     setBusy(true);
     setError(null);
     try {
-      const { data } = await apiClient.post<ExplorerCompareResult>(`${base}/collections/${encodeURIComponent(collection)}/compare`, { text, a: toSide(a), b: toSide(b) });
+      const { data } = await apiClient.post<ExplorerCompareResult>(`${base}/collections/${encodeURIComponent(collection)}/compare`, { text, a: toSide(a), b: toSide(b), ...(partition ? { partition } : {}) });
       setResult(data);
     } catch (e) {
       setError(extractErrorMessage(e, 'The comparison failed.'));
@@ -969,13 +1155,14 @@ function CompareView({ base, collection, fields, keyword, vectorName }: { base: 
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div className="metric-label">Compare - the same query run two ways, side by side</div>
+      {vectorKind !== 'dense' && <div style={{ fontSize: 13, color: 'var(--warning)' }}>▲ Compare runs a text query, embedded as a dense vector; '{vectorName}' is {vectorKind}. Choose a dense vector above.</div>}
       <textarea aria-label="Compare text" value={text} onChange={(e) => setText(e.target.value)} rows={2} maxLength={2000} placeholder="e.g. termination clause for contractors" style={{ fontSize: 14, padding: 8 }} />
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <SideSettings label="A" side={a} onChange={setA} fields={fields} keyword={keyword} />
-        <SideSettings label="B" side={b} onChange={setB} fields={fields} keyword={keyword} />
+        <SideSettings label="A" side={a} onChange={setA} fields={fields} keyword={keyword} native={nativeHybrid} />
+        <SideSettings label="B" side={b} onChange={setB} fields={fields} keyword={keyword} native={nativeHybrid} />
       </div>
       <div>
-        <button type="button" className="primary-btn" disabled={busy || !text.trim()} onClick={run}>
+        <button type="button" className="primary-btn" disabled={busy || !text.trim() || vectorKind !== 'dense'} onClick={run}>
           {busy ? 'Comparing…' : 'Compare'}
         </button>
       </div>
@@ -1006,17 +1193,17 @@ function IdButton({ id, onOpen }: { id: string; onOpen: (id: string) => void }) 
 }
 
 /** One record in full: every field (long values up to 20,000 characters), and the head of its vector. */
-function RecordPanel({ base, collection, id, vectorName, onClose }: { base: string; collection: string; id: string; vectorName: string; onClose: () => void }) {
+function RecordPanel({ base, collection, id, vectorName, partition, onClose }: { base: string; collection: string; id: string; vectorName: string; partition: string; onClose: () => void }) {
   const [record, setRecord] = useState<ExplorerRecordDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     setRecord(null);
     setError(null);
     apiClient
-      .get<ExplorerRecordDetail>(`${base}/collections/${encodeURIComponent(collection)}/records/${encodeURIComponent(id)}${vectorName ? `?vectorName=${encodeURIComponent(vectorName)}` : ''}`)
+      .get<ExplorerRecordDetail>(`${base}/collections/${encodeURIComponent(collection)}/records/${encodeURIComponent(id)}?${new URLSearchParams({ ...(vectorName ? { vectorName } : {}), ...(partition ? { partition } : {}) })}`)
       .then((r) => setRecord(r.data))
       .catch((e) => setError(extractErrorMessage(e, 'Could not read the record.')));
-  }, [base, collection, id, vectorName]);
+  }, [base, collection, id, vectorName, partition]);
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10, borderLeft: '4px solid var(--primary-text)' }} aria-label="Record detail">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
@@ -1040,15 +1227,43 @@ function RecordPanel({ base, collection, id, vectorName, onClose }: { base: stri
               </div>,
             ])}
           />
-          <div style={{ fontSize: 13 }}>
-            <strong>Vector</strong> · {record.dimension ?? '—'} dimensions · L2 norm {record.norm ?? '—'}
-            {record.norm !== null && Math.abs(record.norm - 1) > 0.01 && <span style={{ color: 'var(--muted)' }}> (not unit length - check whether the model's vectors are normalised)</span>}
-          </div>
-          {record.vectorHead && (
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--muted)', overflowWrap: 'anywhere' }}>
-              [{record.vectorHead.join(', ')}
-              {(record.dimension ?? 0) > record.vectorHead.length ? `, … ${(record.dimension ?? 0) - record.vectorHead.length} more` : ''}]
-            </div>
+          {record.kind === 'sparse' ? (
+            <>
+              <div style={{ fontSize: 13 }}>
+                <strong>Sparse vector</strong> · {record.sparse?.nonZero ?? 0} entries set · L2 norm {record.norm ?? '—'}
+              </div>
+              {record.sparse && record.sparse.top.length > 0 && (
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--muted)', overflowWrap: 'anywhere' }}>
+                  heaviest: {record.sparse.top.map((t) => `${t.index}:${t.value}`).join(', ')}
+                  {record.sparse.nonZero > record.sparse.top.length ? `, … ${record.sparse.nonZero - record.sparse.top.length} more` : ''}
+                </div>
+              )}
+            </>
+          ) : record.kind === 'binary' ? (
+            <>
+              <div style={{ fontSize: 13 }}>
+                <strong>Binary vector</strong> · {record.bits?.length ?? '—'} bits · {record.bits?.ones ?? '—'} set
+              </div>
+              {record.bits && (
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--muted)', overflowWrap: 'anywhere' }}>
+                  {record.bits.head.replace(/(.{8})/g, '$1 ').trim()}
+                  {record.bits.length > record.bits.head.length ? ` … ${record.bits.length - record.bits.head.length} more` : ''}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 13 }}>
+                <strong>Vector</strong> · {record.dimension ?? '—'} dimensions · L2 norm {record.norm ?? '—'}
+                {record.norm !== null && Math.abs(record.norm - 1) > 0.01 && <span style={{ color: 'var(--muted)' }}> (not unit length - check whether the model's vectors are normalised)</span>}
+              </div>
+              {record.vectorHead && (
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--muted)', overflowWrap: 'anywhere' }}>
+                  [{record.vectorHead.join(', ')}
+                  {(record.dimension ?? 0) > record.vectorHead.length ? `, … ${(record.dimension ?? 0) - record.vectorHead.length} more` : ''}]
+                </div>
+              )}
+            </>
           )}
         </>
       )}

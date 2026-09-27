@@ -164,17 +164,27 @@ Pick a collection (the one your Data & Embedding design deploys is marked
   vector values. *Add a filter*: up to five conditions (=, ≠, >, ≥, <, ≤ on
   numbers, or *is one of* a list), all of which must hold (*match all*) or
   any one (*match any*). Where the database can order a listing (PostgreSQL,
-  Oracle, MongoDB, Elasticsearch, Weaviate) *Sort by* a field. Click an id to
+  Oracle, MongoDB, Elasticsearch, Weaviate) *Sort by* a field, *then by* up to
+  two more. Click an id to
   open the record in full: every field, the first 64 vector values and the
   vector's length (norm).
 - **Search** - **Dense**: type text (embedded with the project's own
   embedding model, as ingestion does) or paste a vector. **Keyword**: the
   database's own text ranking (PostgreSQL full text, Elasticsearch and
   Weaviate BM25, LanceDB and MongoDB Atlas full-text indexes). **Hybrid**:
-  both, fused by rank; the slider sets the weight on dense. Results show
-  their score (and, for hybrid, each list's rank), the score spread, and the
-  query time against the Discovery P95 target (one query - the Performance
-  phase measures percentiles).
+  both, fused by **rank** (RRF - robust to the two lists' different score
+  scales), by **weighted scores** (each list rescaled to 0-1; keeps score gaps,
+  so one outlier can dominate) or by **the database's own** hybrid search
+  (Weaviate hybrid, weighted by the slider; Elasticsearch's RRF retriever,
+  equal weight, Elasticsearch 8.14+ with a licence that includes RRF). The
+  slider sets the weight on dense. *Min score* drops weaker results (for
+  hybrid, from the dense candidates before fusion; not with the database's own
+  hybrid), so fewer than Top K may show. Results show their score (and, for
+  hybrid, each list's rank), the score spread - max, median, mean, min,
+  standard deviation, the gap between the top two and how far the top result
+  stands out (σ) - the query vector itself (length, norm, mean, variance,
+  zeros), and the query time against the Discovery P95 target (one query -
+  the Performance phase measures percentiles).
 - **Compare** - the same query run two ways side by side (dense vs hybrid,
   two weightings, with and without a filter, two Top Ks): how many results
   they share, which appear on one side only, and how far each shared record
@@ -190,10 +200,20 @@ Pick a collection (the one your Data & Embedding design deploys is marked
   as a table* lists every point. Only ids, positions and the colour-by value
   reach the browser - never the vectors.
 
-**Named vectors** (Qdrant, Weaviate): when a collection holds several vectors
-per record, a *Vector* selector appears next to the collection. Search,
-Compare, the Map and the record view then use the chosen vector (its own
-dimension is checked against the query).
+**Named vectors** (Qdrant, Weaviate, Milvus, PostgreSQL): when a collection
+holds several vectors per record, a *Vector* selector appears next to the
+collection, with each vector's kind - dense, **sparse** (index → weight, e.g.
+SPLADE or BM25 vectors) or **binary** (bits). Search, Compare, the Map and the
+record view then use the chosen vector (its own dimension is checked against
+the query). A sparse vector is searched with index:weight pairs (Qdrant,
+Milvus, pgvector `sparsevec`); a binary one with bits (Milvus, pgvector `bit`,
+by Hamming distance). The record view shows a sparse vector's heaviest
+entries and a binary vector's bits. The Map and Compare use dense vectors.
+
+**Tenants and namespaces**: a Weaviate multi-tenant collection shows a
+*Tenant* selector (every read is for one tenant; counts are per tenant), and a
+Pinecone index with namespaces shows a *Namespace* selector with each one's
+record count (the default namespace otherwise).
 
 **Connection** - *Manage connection* shows whether the project uses the
 server's `TARGET_*` settings or its own. Admins and architects can give a
