@@ -43,8 +43,12 @@ export interface ExplorerCollectionInfo {
   fields: Array<{ name: string; type: string }>;
   notes: string[];
   /** Named vectors (Qdrant, Weaviate); absent for a single vector. */
-  vectors?: Array<{ name: string; dimension: number | null; metric: string | null }>;
+  vectors?: Array<{ name: string; dimension: number | null; metric: string | null; kind?: VectorKind }>;
+  /** Tenants (Weaviate) or namespaces (Pinecone). */
+  partitions?: { kind: 'tenant' | 'namespace'; names: string[]; counts?: Record<string, number>; required: boolean; truncated?: boolean };
 }
+
+export type VectorKind = 'dense' | 'sparse' | 'binary';
 
 export type CheckStatus = 'match' | 'mismatch' | 'info' | 'unknown';
 export interface DesignCheck {
@@ -60,7 +64,7 @@ export interface DesignCheck {
 export interface ExplorerOverview {
   platform: string;
   info: ExplorerCollectionInfo;
-  capabilities?: { keyword: { supported: boolean; ranking: string | null }; sort?: boolean };
+  capabilities?: { keyword: { supported: boolean; ranking: string | null }; sort?: boolean; nativeHybrid?: { supported: boolean; ranking: string | null }; searchableKinds?: VectorKind[] };
   checks: DesignCheck[];
 }
 
@@ -86,7 +90,17 @@ export interface ExplorerSearchResult {
   topK: number;
   /** denseRank / keywordRank are set for hybrid results. */
   results: Array<{ id: string; score: number; metadata: Record<string, unknown>; denseRank?: number | null; keywordRank?: number | null }>;
-  stats?: { count: number; max: number | null; min: number | null; mean: number | null; median: number | null; topGap: number | null };
+  stats?: { count: number; max: number | null; min: number | null; mean: number | null; median: number | null; topGap: number | null; stdDev?: number | null; topZ?: number | null };
+  fusion?: 'rrf' | 'weighted' | 'native' | null;
+  vectorKind?: VectorKind;
+  partition?: string | null;
+  queryStats?:
+    | { kind: 'dense'; dimension: number; norm: number; mean: number; variance: number; zeros: number; normalised: boolean }
+    | { kind: 'sparse'; nonZero: number; norm: number; maxIndex: number | null }
+    | { kind: 'binary'; bits: number; ones: number }
+    | null;
+  threshold?: { minScore: number; removed: number; appliedTo: string } | null;
+  candidates?: { dense: number; keyword: number } | null;
   latencyMs: number;
   targetP95LatencyMs: number | null;
   withinTarget: boolean | null;
@@ -117,6 +131,9 @@ export interface ExplorerRecordDetail {
   dimension: number | null;
   vectorHead: number[] | null;
   norm: number | null;
+  kind?: VectorKind;
+  sparse?: { nonZero: number; top: Array<{ index: number; value: number }> };
+  bits?: { length: number; ones: number; head: string };
 }
 
 /** The same query run two ways. */

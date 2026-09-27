@@ -174,8 +174,8 @@ describe('DataExplorerService - sorting', () => {
     adapter.supportsSort = true;
     await expect(service.documents('p', requester, 'docs', { sortBy: 'owner' })).rejects.toThrow(/no field 'owner'/);
     const r = await service.documents('p', requester, 'docs', { sortBy: 'year', sortDir: 'desc' });
-    expect(adapter.browse).toHaveBeenLastCalledWith('docs', expect.objectContaining({ sort: { field: 'year', direction: 'desc' } }));
-    expect(r.sort).toEqual({ field: 'year', direction: 'desc' });
+    expect(adapter.browse).toHaveBeenLastCalledWith('docs', expect.objectContaining({ sort: [{ field: 'year', direction: 'desc' }] }));
+    expect(r.sort).toEqual([{ field: 'year', direction: 'desc' }]);
   });
 });
 
@@ -184,7 +184,7 @@ describe('DataExplorerService - record detail', () => {
     const { service, adapter } = setup();
     await expect(service.record('p', requester, 'docs', 'a')).rejects.toThrow(/cannot fetch a single record/);
     adapter.getRecord = jest.fn().mockResolvedValueOnce({ id: 'a', metadata: { dept: 'legal' }, dimension: 3, vectorHead: [1, 0, 0], norm: 1 }).mockResolvedValueOnce(null);
-    expect(await service.record('p', requester, 'docs', 'a')).toEqual({ collection: 'docs', vectorName: null, id: 'a', metadata: { dept: 'legal' }, dimension: 3, vectorHead: [1, 0, 0], norm: 1 });
+    expect(await service.record('p', requester, 'docs', 'a')).toEqual({ collection: 'docs', vectorName: null, partition: null, id: 'a', metadata: { dept: 'legal' }, dimension: 3, vectorHead: [1, 0, 0], norm: 1 });
     await expect(service.record('p', requester, 'docs', 'zz')).rejects.toThrow(/No record 'zz' in 'docs'/);
   });
 });
@@ -233,6 +233,116 @@ describe('DataExplorerService - named vectors and 3D maps', () => {
     adapter.describeCollection.mockResolvedValue(named);
     adapter.getRecord = jest.fn().mockResolvedValue({ id: 'a', metadata: {}, dimension: 2, vectorHead: [1, 0], norm: 1 });
     expect((await service.record('p', requester, 'docs', 'a', 'body')).vectorName).toBe('body');
-    expect(adapter.getRecord).toHaveBeenCalledWith('docs', 'a', 'body');
+    expect(adapter.getRecord).toHaveBeenCalledWith('docs', 'a', { vectorName: 'body', partition: undefined });
+  });
+});
+
+describe('DataExplorerService - sorting by several fields', () => {
+  it('parses field:direction lists, most significant first, and refuses bad ones', async () => {
+    const { service, adapter } = setup();
+    adapter.supportsSort = true;
+    const r = await service.documents('p', requester, 'docs', { sort: 'dept, year:desc' });
+    expect(r.sort).toEqual([{ field: 'dept', direction: 'asc' }, { field: 'year', direction: 'desc' }]);
+    await expect(service.documents('p', requester, 'docs', { sort: 'dept,year,dept' })).rejects.toThrow(/at most 3|once/);
+    await expect(service.documents('p', requester, 'docs', { sort: 'dept,year:desc,dept:asc' })).rejects.toThrow(/once/);
+    await expect(service.documents('p', requester, 'docs', { sort: 'a,b,c,d' })).rejects.toThrow(/at most 3/);
+    await expect(service.documents('p', requester, 'docs', { sort: 'year:up' })).rejects.toThrow(/Invalid sort/);
+    await expect(service.documents('p', requester, 'docs', { sort: 'dept,owner:desc' })).rejects.toThrow(/no field 'owner'/);
+  });
+});
+
+describe('DataExplorerService - phase 4 search', () => {
+  const spaces = { name: 'docs', recordCount: 3, countIsEstimate: false, dimension: 3, metric: 'cosine', indexes: [], fields: [{ name: 'dept', type: 'text' }], notes: [], vectors: [{ name: 'dense', dimension: 3, metric: 'cosine', kind: 'dense' }, { name: 'splade', dimension: null, metric: 'dot_product', kind: 'sparse' }, { name: 'codes', dimension: 8, metric: 'hamming', kind: 'binary' }] };
+
+  it('drops results under the minimum score and says how many', async () => {
+    const { service, adapter } = setup();
+    adapter.searchFiltered.mockResolvedValue([{ id: 'a', score: 0.9, metadata: {} }, { id: 'b', score: 0.4, metadata: {} }]);
+    const r = await service.search('p', requester, 'docs', { vector: [1, 0, 0], minScore: 0.5 });
+    expect(r.results.map((x: any) => x.id)).toEqual(['a']);
+    expect(r.threshold).toEqual({ minScore: 0.5, removed: 1, appliedTo: 'dense scores' });
+    expect(r.queryStats).toEqual(expect.objectContaining({ kind: 'dense', dimension: 3, norm: 1, normalised: true }));
+    expect(r.stats).toEqual(expect.objectContaining({ count: 1, stdDev: 0 }));
+  });
+
+  it('fuses hybrid results by rank, by weighted score, or by the database', async () => {
+    const { service, adapter } = setup();
+    adapter.searchFiltered.mockResolvedValue([{ id: 'a', score: 0.9, metadata: {} }, { id: 'b', score: 0.3, metadata: {} }]);
+    adapter.keywordSearch = jest.fn().mockResolvedValue([{ id: 'b', score: 12, metadata: {} }]);
+    const rrf = await service.search('p', requester, 'docs', { mode: 'hybrid', text: 'q' });
+    expect(rrf.fusion).toBe('rrf');
+    expect(rrf.candidates).toEqual({ dense: 2, keyword: 1 });
+    // Weighted, 50/50: a = 0.5 x 1 (top dense); b = 0.5 x 0 (bottom dense) + 0.5 x 1 (only keyword hit).
+    const weighted = await service.search('p', requester, 'docs', { mode: 'hybrid', text: 'q', fusion: 'weighted', alpha: 0.5 });
+    expect(weighted.results.map((x: any) => [x.id, x.score])).toEqual([['a', 0.5], ['b', 0.5]]);
+    await expect(service.search('p', requester, 'docs', { mode: 'hybrid', text: 'q', fusion: 'native' })).rejects.toThrow(/no hybrid search of its own/);
+    adapter.nativeHybrid = jest.fn().mockResolvedValue([{ id: 'n', score: 0.7, metadata: {} }]);
+    adapter.nativeHybridRanking = 'Weaviate hybrid';
+    const native = await service.search('p', requester, 'docs', { mode: 'hybrid', text: 'q', fusion: 'native', alpha: 0.3 });
+    expect(adapter.nativeHybrid).toHaveBeenCalledWith('docs', expect.objectContaining({ text: 'q', vector: [1, 0, 0], alpha: 0.3 }));
+    expect(native).toEqual(expect.objectContaining({ fusion: 'native', keywordRanking: 'Weaviate hybrid', candidates: null }));
+    await expect(service.search('p', requester, 'docs', { mode: 'hybrid', text: 'q', fusion: 'native', minScore: 0.1 })).rejects.toThrow(/minimum score cannot be applied/);
+    await expect(service.search('p', requester, 'docs', { vector: [1, 0, 0], fusion: 'weighted' })).rejects.toThrow(/hybrid search only/);
+  });
+
+  it('applies the minimum score to the dense candidates before hybrid fusion', async () => {
+    const { service, adapter } = setup();
+    adapter.searchFiltered.mockResolvedValue([{ id: 'a', score: 0.9, metadata: {} }, { id: 'b', score: 0.3, metadata: {} }]);
+    adapter.keywordSearch = jest.fn().mockResolvedValue([{ id: 'c', score: 5, metadata: {} }]);
+    const r = await service.search('p', requester, 'docs', { mode: 'hybrid', text: 'q', minScore: 0.5 });
+    expect(r.results.map((x: any) => x.id).sort()).toEqual(['a', 'c']);
+    expect(r.threshold).toEqual({ minScore: 0.5, removed: 1, appliedTo: 'dense candidates, before fusion' });
+  });
+
+  it('searches a sparse vector space with indices and weights, only where the database can', async () => {
+    const { service, adapter } = setup();
+    adapter.describeCollection.mockResolvedValue(spaces);
+    const sparse = { indices: [4, 17], values: [0.5, 1.2] };
+    await expect(service.search('p', requester, 'docs', { vectorName: 'splade', sparse })).rejects.toThrow(/cannot search sparse vectors/);
+    adapter.searchableKinds = ['sparse', 'binary'];
+    const r = await service.search('p', requester, 'docs', { vectorName: 'splade', sparse });
+    expect(adapter.searchFiltered).toHaveBeenLastCalledWith('docs', expect.objectContaining({ vectorName: 'splade', sparse }));
+    expect(r).toEqual(expect.objectContaining({ vectorKind: 'sparse', queryStats: { kind: 'sparse', nonZero: 2, norm: 1.3, maxIndex: 17 } }));
+    await expect(service.search('p', requester, 'docs', { vectorName: 'splade', text: 'x' })).rejects.toThrow(/give the query as a sparse vector/);
+    await expect(service.search('p', requester, 'docs', { vectorName: 'splade', sparse: { indices: [1, 1], values: [1, 2] } })).rejects.toThrow(/repeat an index/);
+    await expect(service.search('p', requester, 'docs', { vectorName: 'splade', sparse: { indices: [1], values: [1, 2] } })).rejects.toThrow(/as many values as indices/);
+    await expect(service.search('p', requester, 'docs', { mode: 'hybrid', vectorName: 'splade', text: 'x' })).rejects.toThrow(/keyword and hybrid search use the dense vector/);
+    await expect(service.search('p', requester, 'docs', { sparse })).rejects.toThrow(/needs a sparse vector space/);
+  });
+
+  it('searches a binary vector space with bits of the right length', async () => {
+    const { service, adapter } = setup();
+    adapter.describeCollection.mockResolvedValue(spaces);
+    adapter.searchableKinds = ['binary'];
+    const r = await service.search('p', requester, 'docs', { vectorName: 'codes', vector: [1, 0, 1, 1, 0, 0, 0, 1] });
+    expect(r.queryStats).toEqual({ kind: 'binary', bits: 8, ones: 4 });
+    await expect(service.search('p', requester, 'docs', { vectorName: 'codes', vector: [1, 0, 2, 1, 0, 0, 0, 1] })).rejects.toThrow(/bits: 0 and 1 only/);
+    await expect(service.search('p', requester, 'docs', { vectorName: 'codes', vector: [1, 0, 1] })).rejects.toThrow(/3 bits; the vector 'codes' holds 8/);
+  });
+
+  it('reads one tenant / namespace, checked against the collection', async () => {
+    const { service, adapter } = setup();
+    adapter.describeCollection.mockResolvedValue({ ...spaces, vectors: undefined, partitions: { kind: 'tenant', names: ['acme', 'globex'], required: true } });
+    await expect(service.search('p', requester, 'docs', { vector: [1, 0, 0] })).rejects.toThrow(/split by tenant; choose one/);
+    await expect(service.search('p', requester, 'docs', { vector: [1, 0, 0], partition: 'initech' })).rejects.toThrow(/no tenant 'initech'/);
+    const r = await service.search('p', requester, 'docs', { vector: [1, 0, 0], partition: 'acme' });
+    expect(adapter.searchFiltered).toHaveBeenLastCalledWith('docs', expect.objectContaining({ partition: 'acme' }));
+    expect(r.partition).toBe('acme');
+    const d = await service.documents('p', requester, 'docs', { partition: 'globex' });
+    expect(adapter.browse).toHaveBeenLastCalledWith('docs', expect.objectContaining({ partition: 'globex' }));
+    expect(d.partition).toBe('globex');
+    adapter.getRecord = jest.fn().mockResolvedValue({ id: 'a', metadata: {}, dimension: 3, vectorHead: [1, 0, 0], norm: 1 });
+    await service.record('p', requester, 'docs', 'a', undefined, 'acme');
+    expect(adapter.getRecord).toHaveBeenCalledWith('docs', 'a', { vectorName: undefined, partition: 'acme' });
+  });
+
+  it('refuses to map a sparse or binary vector, and reports capabilities', async () => {
+    const { service, adapter } = setup();
+    adapter.describeCollection.mockResolvedValue(spaces);
+    await expect(service.map('p', requester, 'docs', { vectorName: 'splade' })).rejects.toThrow(/projects dense vectors; 'splade' is sparse/);
+    adapter.searchableKinds = ['sparse'];
+    adapter.nativeHybrid = jest.fn();
+    adapter.nativeHybridRanking = 'native';
+    const o = await service.overview('p', requester, 'docs');
+    expect(o.capabilities).toEqual(expect.objectContaining({ nativeHybrid: { supported: true, ranking: 'native' }, searchableKinds: ['dense', 'sparse'] }));
   });
 });

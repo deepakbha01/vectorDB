@@ -43,18 +43,18 @@ function connectionSummaries(body: unknown, response: unknown): { requestSummary
   return { requestSummary: { settings: names }, responseSummary };
 }
 
-type SearchBody = { text?: unknown; vector?: unknown; vectorName?: unknown; mode?: unknown; alpha?: unknown; topK?: unknown; filter?: unknown; a?: SearchBody; b?: SearchBody };
+type SearchBody = { text?: unknown; vector?: unknown; sparse?: { indices?: unknown }; vectorName?: unknown; partition?: unknown; fusion?: unknown; minScore?: unknown; mode?: unknown; alpha?: unknown; topK?: unknown; filter?: unknown; a?: SearchBody; b?: SearchBody };
 type SearchReply = { results?: unknown[]; latencyMs?: unknown; a?: SearchReply; b?: SearchReply; overlap?: { shared?: unknown } };
 
 export function auditSummaries(url: string, body: unknown, response: unknown): { requestSummary: unknown; responseSummary: unknown } {
   if (CONNECTION.test(url)) return connectionSummaries(body, response);
   if (CONTENT_READ.test(url)) {
     const b = (body ?? {}) as SearchBody;
-    const side = (s: SearchBody | undefined) => (s ? { mode: s.mode, alpha: s.alpha, topK: s.topK, filter: s.filter, vectorName: s.vectorName } : undefined);
+    const side = (s: SearchBody | undefined) => (s ? { mode: s.mode, alpha: s.alpha, topK: s.topK, filter: s.filter, vectorName: s.vectorName, fusion: s.fusion, minScore: s.minScore } : undefined);
     const count = (r: SearchReply | undefined) => (r && typeof r === 'object' ? { results: Array.isArray(r.results) ? r.results.length : null, latencyMs: r.latencyMs ?? null } : null);
     const r = response as SearchReply | undefined;
     return {
-      requestSummary: summarizeForAudit({ text: b.text, vector: Array.isArray(b.vector) ? `${b.vector.length} dimensions` : undefined, ...side(b), a: side(b.a), b: side(b.b) }),
+      requestSummary: summarizeForAudit({ text: b.text, vector: Array.isArray(b.vector) ? `${b.vector.length} dimensions` : undefined, sparse: Array.isArray(b.sparse?.indices) ? `${b.sparse!.indices.length} entries` : undefined, partition: b.partition, ...side(b), a: side(b.a), b: side(b.b) }),
       responseSummary: r && typeof r === 'object' ? (r.a || r.b ? { a: count(r.a), b: count(r.b), shared: r.overlap?.shared ?? null } : count(r)) : null,
     };
   }

@@ -269,16 +269,21 @@ export class OracleVectorAdapter implements VectorDatabaseAdapter, VectorExplore
   async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
     const table = this.upper(name);
     const columnNames = (await this.columnsOf(table)).map((c) => c.name);
-    if (options.sort) {
+    if (options.sort?.length) {
       // Sorted listings page by offset; id breaks ties.
-      const col = options.sort.field.toUpperCase();
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(options.sort.field) || !columnNames.includes(col) || ['ID', 'EMBEDDING'].includes(col)) throw new BadRequestException(`Cannot sort by '${options.sort.field}'.`);
+      const orderBy = options.sort
+        .map((s) => {
+          const col = s.field.toUpperCase();
+          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(s.field) || !columnNames.includes(col) || ['ID', 'EMBEDDING'].includes(col)) throw new BadRequestException(`Cannot sort by '${s.field}'.`);
+          return `"${col}" ${s.direction === 'desc' ? 'DESC' : 'ASC'} NULLS LAST`;
+        })
+        .join(', ');
     const offset = options.cursor === null ? 0 : Number(options.cursor);
     if (!Number.isInteger(offset) || offset < 0) throw new BadRequestException('Invalid page cursor.');
       const w = oracleWhere(options.filter, columnNames);
       const sorted = (
         await this.query(
-          `SELECT * FROM "${table}"${w.sql ? ` WHERE ${w.sql}` : ''} ORDER BY "${col}" ${options.sort.direction === 'desc' ? 'DESC' : 'ASC'} NULLS LAST, id OFFSET :o ROWS FETCH FIRST :n ROWS ONLY`,
+          `SELECT * FROM "${table}"${w.sql ? ` WHERE ${w.sql}` : ''} ORDER BY ${orderBy}, id OFFSET :o ROWS FETCH FIRST :n ROWS ONLY`,
           { ...w.binds, o: offset, n: options.limit + 1 },
         )
       ).map(lowercaseKeys);

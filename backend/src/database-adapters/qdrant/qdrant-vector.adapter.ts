@@ -14,7 +14,7 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, ExplorerVectorQuery, RecordReadOptions, VectorExplorer, VectorKind } from '../vector-explorer';
 import { normaliseMetric, pickVector, qdrantFilter, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
@@ -131,7 +131,14 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter, VectorExplore
     const v = named ? vectors[named] : vectors;
     const hnsw = info.config?.hnsw_config ?? {};
     const notes: string[] = [];
-    if (named) notes.push(`Named vectors: ${Object.keys(vectors).join(', ')}. The figures above are for '${named}'.`);
+    // Sparse vectors live in their own config section, always named.
+    const sparse = Object.keys((info.config?.params?.sparse_vectors ?? {}) as Record<string, unknown>);
+    const spaces = [
+      ...(named ? Object.entries(vectors).map(([n, c]: [string, any]) => ({ name: n, dimension: typeof c?.size === 'number' ? c.size : null, metric: normaliseMetric(c?.distance ?? null), kind: 'dense' as VectorKind })) : [{ name: '', dimension: typeof v?.size === 'number' ? v.size : null, metric: normaliseMetric(v?.distance ?? null), kind: 'dense' as VectorKind }]),
+      ...sparse.map((n) => ({ name: n, dimension: null, metric: 'dot_product', kind: 'sparse' as VectorKind })),
+    ];
+    const many = named !== null || sparse.length > 0;
+    if (many) notes.push(`Vectors: ${spaces.map((s) => `${s.name || '(unnamed)'} (${s.kind})`).join(', ')}. The figures above are for '${named ?? '(unnamed)'}'.`);
     const quant = info.config?.quantization_config;
     const quantized = quant && (quant.product || quant.scalar || quant.binary);
     return {
@@ -144,7 +151,7 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter, VectorExplore
       indexes: [{ type: quant?.product ? 'pq' : 'hnsw', detail: `HNSW m=${hnsw.m ?? '?'}, ef_construct=${hnsw.ef_construct ?? '?'}${quantized ? `, ${Object.keys(quant).join('/')} quantization` : ''}` }],
       fields: Object.entries(info.payload_schema ?? {}).map(([field, s]: [string, any]) => ({ name: field, type: String(s?.data_type ?? 'unknown') })),
       notes,
-      ...(named ? { vectors: Object.entries(vectors).map(([n, c]: [string, any]) => ({ name: n, dimension: typeof c?.size === 'number' ? c.size : null, metric: normaliseMetric(c?.distance ?? null) })) } : {}),
+      ...(many ? { vectors: spaces } : {}),
     };
   }
 
@@ -175,13 +182,17 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter, VectorExplore
     };
   }
 
-  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter; vectorName?: string }): Promise<VectorSearchResult[]> {
-    const r = (await this.getClient().query(name, { query: query.vector, limit: query.topK, filter: qdrantFilter(query.filter), with_payload: true, ...(query.vectorName ? { using: query.vectorName } : {}) } as any)) as any;
+  readonly searchableKinds: VectorKind[] = ['sparse'];
+
+  async searchFiltered(name: string, query: ExplorerVectorQuery): Promise<VectorSearchResult[]> {
+    // A sparse query is { indices, values } against a named sparse vector.
+    const q = query.sparse ? { indices: query.sparse.indices, values: query.sparse.values } : query.vector;
+    const r = (await this.getClient().query(name, { query: q, limit: query.topK, filter: qdrantFilter(query.filter), with_payload: true, ...(query.vectorName ? { using: query.vectorName } : {}) } as any)) as any;
     return (r.points ?? []).map((p: any) => ({ id: String(p.id), score: p.score, metadata: trimMetadata((p.payload as Record<string, unknown>) ?? {}) }));
   }
 
   /** Qdrant point ids are unsigned integers or UUIDs. */
-  async getRecord(name: string, id: string, vectorName?: string): Promise<ExplorerRecordDetail | null> {
+  async getRecord(name: string, id: string, { vectorName }: RecordReadOptions = {}): Promise<ExplorerRecordDetail | null> {
     const key: string | number = /^\d+$/.test(id) ? Number(id) : id;
     const r = (await this.getClient().retrieve(name, { ids: [key], with_payload: true, with_vector: true } as any)) as any[];
     const p = r?.[0];

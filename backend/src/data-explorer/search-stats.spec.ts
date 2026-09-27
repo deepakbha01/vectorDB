@@ -1,10 +1,11 @@
-import { compareResults, scoreStats } from './search-stats';
+import { compareResults, queryStats, scoreStats } from './search-stats';
 import { auditSummaries } from '../audit/audit-summarize';
 
 describe('search statistics and A/B comparison', () => {
   it('summarises a score list (best first)', () => {
-    expect(scoreStats([{ score: 0.9 }, { score: 0.7 }, { score: 0.5 }, { score: 0.4 }])).toEqual({ count: 4, max: 0.9, min: 0.4, mean: 0.625, median: 0.6, topGap: 0.2 });
-    expect(scoreStats([])).toEqual({ count: 0, max: null, min: null, mean: null, median: null, topGap: null });
+    expect(scoreStats([{ score: 0.9 }, { score: 0.7 }, { score: 0.5 }, { score: 0.4 }])).toEqual({ count: 4, max: 0.9, min: 0.4, mean: 0.625, median: 0.6, topGap: 0.2, stdDev: 0.192029, topZ: 1.432078 });
+    expect(scoreStats([])).toEqual({ count: 0, max: null, min: null, mean: null, median: null, topGap: null, stdDev: null, topZ: null });
+    expect(scoreStats([{ score: 0.5 }, { score: 0.5 }]).topZ).toBeNull();
   });
 
   it('measures overlap and rank movement between two result lists', () => {
@@ -21,5 +22,15 @@ describe('search statistics and A/B comparison', () => {
     expect(s.responseSummary).toEqual({ a: { results: 1, latencyMs: 12 }, b: { results: 0, latencyMs: 20 }, shared: 0 });
     expect(JSON.stringify(s)).not.toContain('123-45-6789');
     expect(s.requestSummary).toEqual({ text: 'notice', a: { mode: 'dense', topK: 5 }, b: { mode: 'hybrid', alpha: 0.3, topK: 5 } });
+  });
+});
+
+describe('query vector statistics', () => {
+  it('describes a dense, sparse or binary query', () => {
+    expect(queryStats({ vector: [0.6, 0.8, 0] })).toEqual({ kind: 'dense', dimension: 3, norm: 1, mean: 0.466667, variance: 0.115556, zeros: 1, normalised: true });
+    expect(queryStats({ vector: [3, 4] })).toEqual(expect.objectContaining({ norm: 5, normalised: false }));
+    expect(queryStats({ sparse: { indices: [7, 2], values: [3, 4] } })).toEqual({ kind: 'sparse', nonZero: 2, norm: 5, maxIndex: 7 });
+    expect(queryStats({ vector: [1, 0, 1, 1], binary: true })).toEqual({ kind: 'binary', bits: 4, ones: 3 });
+    expect(queryStats({ vector: null })).toBeNull();
   });
 });

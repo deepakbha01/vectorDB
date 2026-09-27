@@ -98,7 +98,7 @@ d('Data Explorer - PostgreSQL target', () => {
       const out: string[] = [];
       let cursor: string | null = null;
       do {
-        const p = await adapter.browse(TABLE, { limit: 2, cursor, filter: eqf({}), sort: { field: 'year', direction } });
+        const p = await adapter.browse(TABLE, { limit: 2, cursor, filter: eqf({}), sort: [{ field: 'year', direction }] });
         out.push(...p.records.map((r) => `${r.metadata.year}:${r.id}`));
         cursor = p.nextCursor;
       } while (cursor);
@@ -106,7 +106,10 @@ d('Data Explorer - PostgreSQL target', () => {
     };
     expect(await all('asc')).toEqual(['2022:d', '2022:e', '2023:b', '2024:a', '2024:c']);
     expect(await all('desc')).toEqual(['2024:a', '2024:c', '2023:b', '2022:d', '2022:e']);
-    await expect(adapter.browse(TABLE, { limit: 2, cursor: null, filter: eqf({}), sort: { field: 'embedding', direction: 'asc' } })).rejects.toThrow(/Cannot sort by/);
+    await expect(adapter.browse(TABLE, { limit: 2, cursor: null, filter: eqf({}), sort: [{ field: 'embedding', direction: 'asc' }] })).rejects.toThrow(/Cannot sort by/);
+    // Several fields: department A-Z, then newest first within it.
+    const multi = await adapter.browse(TABLE, { limit: 10, cursor: null, filter: eqf({}), sort: [{ field: 'dept', direction: 'asc' }, { field: 'year', direction: 'desc' }] });
+    expect(multi.records.map((r) => r.id)).toEqual(['d', 'c', 'a', 'b', 'e']);
   });
 
   it('searches by keyword with Postgres full-text ranking (no extension needed), with filters', async () => {

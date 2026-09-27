@@ -11,7 +11,7 @@ import {
 import { IndexTuningParameter } from '../../schema-generator/schema-generator.types';
 import { IndexType } from '../../index-recommendation-engine/enums/index-type.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerPage, ExplorerRecordDetail, ExplorerVectorQuery, MAX_PARTITIONS, RecordReadOptions, VectorExplorer } from '../vector-explorer';
 import { fieldsFromSample, normaliseMetric, pineconeFilter, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
@@ -129,8 +129,14 @@ export class PineconeVectorAdapter implements VectorDatabaseAdapter, VectorExplo
   }
 
   /** One page of ids from Pinecone's list endpoint, then their values and metadata. Serverless indexes only. */
-  private async page(name: string, limit: number, token: string | null): Promise<{ records: Array<{ id: string; values?: number[]; metadata?: Record<string, unknown> }>; next: string | null }> {
+  /** The index, scoped to one namespace when given (the default namespace otherwise). */
+  private indexFor(name: string, namespace?: string): any {
     const index = this.getClient().index(name) as any;
+    return namespace ? index.namespace(namespace) : index;
+  }
+
+  private async page(name: string, limit: number, token: string | null, namespace?: string): Promise<{ records: Array<{ id: string; values?: number[]; metadata?: Record<string, unknown> }>; next: string | null }> {
+    const index = this.indexFor(name, namespace);
     const listed = await index.listPaginated({ limit, ...(token ? { paginationToken: token } : {}) });
     const ids = ((listed.vectors ?? []) as Array<{ id: string }>).map((v) => v.id);
     if (!ids.length) return { records: [], next: null };
@@ -150,6 +156,10 @@ export class PineconeVectorAdapter implements VectorDatabaseAdapter, VectorExplo
       notes.push('This index cannot list its records (pod-based indexes cannot); browsing is unavailable, search still works.');
     }
     const kind = d.spec?.serverless ? 'serverless' : d.spec?.pod ? 'pod-based' : 'managed';
+    // Named namespaces ("" is the default one, used when none is chosen).
+    const spaces = Object.entries((stats.namespaces ?? {}) as Record<string, { recordCount?: number }>).filter(([ns]) => ns !== '');
+    const names = spaces.map(([ns]) => ns).sort();
+    if (names.length) notes.push(`Namespaces: ${names.length}${names.length > MAX_PARTITIONS ? ` (the first ${MAX_PARTITIONS} are listed)` : ''}; without one chosen, the default namespace is read.`);
     return {
       name,
       recordCount: typeof stats.totalRecordCount === 'number' ? stats.totalRecordCount : null,
@@ -159,28 +169,38 @@ export class PineconeVectorAdapter implements VectorDatabaseAdapter, VectorExplo
       indexes: [{ type: 'managed', detail: `${kind} index; Pinecone chooses and tunes the ANN index` }],
       fields: fieldsFromSample(sample),
       notes,
+      ...(names.length
+        ? {
+            partitions: {
+              kind: 'namespace' as const,
+              names: names.slice(0, MAX_PARTITIONS),
+              counts: Object.fromEntries(spaces.filter(([ns]) => names.slice(0, MAX_PARTITIONS).includes(ns)).map(([ns, s]) => [ns, Number(s.recordCount ?? 0)])),
+              required: false,
+              ...(names.length > MAX_PARTITIONS ? { truncated: true } : {}),
+            },
+          }
+        : {}),
     };
   }
 
   /** Pinecone lists records by id only - it cannot filter a listing, so filters apply to search. */
   async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
     if (options.filter.conditions.length) throw new BadRequestException('Pinecone cannot filter a record listing; use Search to filter.');
-    const p = await this.page(name, options.limit, options.cursor);
+    const p = await this.page(name, options.limit, options.cursor, options.partition);
     return {
       records: p.records.map((r) => ({ id: r.id, metadata: trimMetadata(r.metadata ?? {}), ...vectorFields(r.values, options.withVectors) })),
       nextCursor: p.next,
     };
   }
 
-  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
-    const r = (await this.getClient()
-      .index(name)
+  async searchFiltered(name: string, query: ExplorerVectorQuery): Promise<VectorSearchResult[]> {
+    const r = (await this.indexFor(name, query.partition)
       .query({ vector: query.vector, topK: query.topK, includeMetadata: true, filter: pineconeFilter(query.filter) } as any)) as any;
     return ((r.matches ?? []) as any[]).map((m) => ({ id: m.id, score: m.score ?? 0, metadata: trimMetadata((m.metadata as Record<string, unknown>) ?? {}) }));
   }
 
-  async getRecord(name: string, id: string): Promise<ExplorerRecordDetail | null> {
-    const f = (await (this.getClient().index(name) as any).fetch({ ids: [id] })) as any;
+  async getRecord(name: string, id: string, { partition }: RecordReadOptions = {}): Promise<ExplorerRecordDetail | null> {
+    const f = (await this.indexFor(name, partition).fetch({ ids: [id] })) as any;
     const rec = f.records?.[id];
     return rec ? recordDetail(String(rec.id), rec.metadata ?? {}, rec.values) : null;
   }

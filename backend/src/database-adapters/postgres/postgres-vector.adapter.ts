@@ -14,7 +14,7 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
-import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
+import { BrowseOptions, ExplorerCollectionInfo, ExplorerKeywordQuery, ExplorerPage, ExplorerRecordDetail, ExplorerVectorQuery, RecordReadOptions, VectorExplorer, VectorKind } from '../vector-explorer';
 import { normaliseIndexType, normaliseMetric, pgWhere, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 
 /**
@@ -313,17 +313,47 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplo
     return r.rows;
   }
 
+  /** pgvector column types, and the kind of vector each holds. */
+  private static readonly VECTOR_TYPES: Record<string, VectorKind> = { vector: 'dense', halfvec: 'dense', sparsevec: 'sparse', bit: 'binary' };
+
+  /** Vector columns besides `embedding` (e.g. a sparsevec for keyword weights, a bit column for binary codes). */
+  private extraVectorColumns(columns: Array<{ name: string; type: string }>): Array<{ name: string; type: string; kind: VectorKind }> {
+    return columns.filter((c) => c.name !== 'embedding' && PostgresVectorAdapter.VECTOR_TYPES[c.type]).map((c) => ({ ...c, kind: PostgresVectorAdapter.VECTOR_TYPES[c.type] }));
+  }
+
+  /**
+   * A row as id, metadata (no vector columns) and the vector asked for (default
+   * `embedding`). `scored`: the query added a computed score column, taken out of
+   * the metadata; a listing has none, so a real column named score stays.
+   */
+  private splitRow(row: Record<string, unknown>, extra: string[], vectorName?: string, scored = false): { id: string; metadata: Record<string, unknown>; vec: unknown; score: unknown } {
+    const { id, embedding, created_at, ...rest } = row;
+    const vec = vectorName ? rest[vectorName] : embedding;
+    const score = scored ? rest.score : undefined;
+    if (scored) delete rest.score;
+    for (const c of extra) delete rest[c];
+    return { id: String(id), metadata: rest, vec, score };
+  }
+
+  /** The declared size of a pgvector column (dimensions, or bits for bit(n)). */
+  private async typmod(table: string, column: string): Promise<number | null> {
+    const d = await this.getPool().query(`SELECT atttypmod AS dim FROM pg_attribute WHERE attrelid = quote_ident($1)::regclass AND attname = $2`, [table, column]);
+    return d.rows[0]?.dim > 0 ? Number(d.rows[0].dim) : null;
+  }
+
+  readonly searchableKinds: VectorKind[] = ['sparse', 'binary'];
+
   async describeCollection(name: string): Promise<ExplorerCollectionInfo> {
     const table = sanitizeSqlIdentifier(name, 'collectionOrTableName');
     const pool = this.getPool();
     const columns = await this.columnsOf(table);
+    const extra = this.extraVectorColumns(columns);
     const embedding = columns.find((c) => c.name === 'embedding');
     const notes: string[] = [];
     let dimension: number | null = null;
     if (embedding?.type === 'vector') {
       // pgvector keeps the declared dimension as the column's type modifier.
-      const d = await pool.query(`SELECT atttypmod AS dim FROM pg_attribute WHERE attrelid = quote_ident($1)::regclass AND attname = 'embedding'`, [table]);
-      dimension = d.rows[0]?.dim > 0 ? Number(d.rows[0].dim) : null;
+      dimension = await this.typmod(table, 'embedding');
     } else {
       notes.push('No pgvector on this server: vectors are a plain array column and search scans every row.');
       const d = await pool.query(`SELECT array_length(embedding, 1) AS dim FROM "${table}" LIMIT 1`);
@@ -345,15 +375,24 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplo
     // The metric lives in the index's operator class; without an index, search uses cosine (<=>).
     const ops = idx.rows.map((r: { indexdef: string }) => /(vector_\w+_ops)/.exec(r.indexdef)?.[1]).find(Boolean);
     if (!indexes.length) notes.push('No ANN index: search is exact (a full scan) using cosine distance.');
+    const metric = normaliseMetric(ops ?? null);
+    const vectors = extra.length
+      ? [
+          { name: 'embedding', dimension, metric, kind: 'dense' as VectorKind },
+          ...(await Promise.all(extra.map(async (c) => ({ name: c.name, dimension: await this.typmod(table, c.name), metric: c.kind === 'binary' ? 'hamming' : 'cosine', kind: c.kind })))),
+        ]
+      : undefined;
+    if (vectors) notes.push(`Vector columns: ${vectors.map((v) => `${v.name} (${v.kind})`).join(', ')}. The figures above are for 'embedding'.`);
     return {
       name: table,
       recordCount,
       countIsEstimate,
       dimension,
-      metric: normaliseMetric(ops ?? null),
+      metric,
       indexes,
-      fields: columns.filter((c) => !['id', 'embedding', 'created_at'].includes(c.name)),
+      fields: columns.filter((c) => !['id', 'embedding', 'created_at'].includes(c.name) && !extra.some((x) => x.name === c.name)),
       notes,
+      ...(vectors ? { vectors } : {}),
     };
   }
 
@@ -361,8 +400,10 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplo
 
   async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
     const table = sanitizeSqlIdentifier(name, 'collectionOrTableName');
-    const columns = (await this.columnsOf(table)).map((c) => c.name);
-    if (options.sort) return this.browseSorted(table, columns, options);
+    const typed = await this.columnsOf(table);
+    const columns = typed.map((c) => c.name);
+    const extra = this.extraVectorColumns(typed).map((c) => c.name);
+    if (options.sort?.length) return this.browseSorted(table, columns, extra, options);
     const where = pgWhere(options.filter, columns, options.cursor === null ? 1 : 2);
     const conditions = [options.cursor === null ? null : `id::text > $1`, where.sql || null].filter(Boolean);
     const params = [...(options.cursor === null ? [] : [options.cursor]), ...where.params, options.limit + 1];
@@ -373,38 +414,42 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplo
     const rows = r.rows.slice(0, options.limit);
     return {
       records: rows.map((row) => {
-        const { id, embedding, created_at, ...metadata } = row;
-        return { id: String(id), metadata: trimMetadata(metadata), ...vectorFields(embedding, options.withVectors) };
+        const { id, metadata, vec } = this.splitRow(row, extra, options.vectorName);
+        return { id, metadata: trimMetadata(metadata), ...vectorFields(vec, options.withVectors) };
       }),
       nextCursor: r.rows.length > options.limit ? String(rows[rows.length - 1].id) : null,
     };
   }
 
   /** Sorted listings page by offset (the cursor is the offset); id breaks ties so pages never overlap. */
-  private async browseSorted(table: string, columns: string[], options: BrowseOptions): Promise<ExplorerPage> {
+  private async browseSorted(table: string, columns: string[], extra: string[], options: BrowseOptions): Promise<ExplorerPage> {
     const sort = options.sort!;
-    if (!columns.includes(sort.field) || ['id', 'embedding'].includes(sort.field)) throw new BadRequestException(`Cannot sort by '${sort.field}'.`);
+    for (const s of sort) if (!columns.includes(s.field) || ['id', 'embedding', ...extra].includes(s.field)) throw new BadRequestException(`Cannot sort by '${s.field}'.`);
+    const orderBy = sort.map((s) => `"${s.field}" ${s.direction === 'desc' ? 'DESC' : 'ASC'} NULLS LAST`).join(', ');
     const offset = options.cursor === null ? 0 : Number(options.cursor);
     if (!Number.isInteger(offset) || offset < 0) throw new BadRequestException('Invalid page cursor.');
     const where = pgWhere(options.filter, columns, 1);
     const params = [...where.params, options.limit + 1, offset];
     const r = await this.getPool().query(
-      `SELECT * FROM "${table}"${where.sql ? ` WHERE ${where.sql}` : ''} ORDER BY "${sort.field}" ${sort.direction === 'desc' ? 'DESC' : 'ASC'} NULLS LAST, id::text LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      `SELECT * FROM "${table}"${where.sql ? ` WHERE ${where.sql}` : ''} ORDER BY ${orderBy}, id::text LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,
     );
     const rows = r.rows.slice(0, options.limit);
     return {
       records: rows.map((row) => {
-        const { id, embedding, created_at, ...metadata } = row;
-        return { id: String(id), metadata: trimMetadata(metadata), ...vectorFields(embedding, options.withVectors) };
+        const { id, metadata, vec } = this.splitRow(row, extra, options.vectorName);
+        return { id, metadata: trimMetadata(metadata), ...vectorFields(vec, options.withVectors) };
       }),
       nextCursor: r.rows.length > options.limit ? String(offset + options.limit) : null,
     };
   }
 
-  async searchFiltered(name: string, query: { vector: number[]; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+  async searchFiltered(name: string, query: ExplorerVectorQuery): Promise<VectorSearchResult[]> {
     const table = sanitizeSqlIdentifier(name, 'collectionOrTableName');
-    const columns = (await this.columnsOf(table)).map((c) => c.name);
+    const typed = await this.columnsOf(table);
+    const columns = typed.map((c) => c.name);
+    const extras = this.extraVectorColumns(typed);
+    if (query.vectorName && query.vectorName !== 'embedding') return this.searchColumn(table, typed, extras, query);
     if (!(await this.hasPgvector())) {
       const w = pgWhere(query.filter, columns, 1);
       const all = await this.getPool().query(`SELECT * FROM "${table}"${w.sql ? ` WHERE ${w.sql}` : ''}`, w.params);
@@ -423,8 +468,49 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplo
       [JSON.stringify(query.vector), query.topK, ...where.params],
     );
     return r.rows.map((row) => {
-      const { id, embedding, score, created_at, ...metadata } = row;
-      return { id: String(id), score: Number(score), metadata: trimMetadata(metadata) };
+      const { id, metadata, score } = this.splitRow(row, extras.map((c) => c.name), undefined, true);
+      return { id, score: Number(score), metadata: trimMetadata(metadata) };
+    });
+  }
+
+  /**
+   * Search another vector column: dense (vector / halfvec) and sparse
+   * (sparsevec) by cosine, binary (bit) by Hamming distance, scored
+   * 1 - distance / bits. Column names come from the table itself.
+   */
+  private async searchColumn(table: string, typed: Array<{ name: string; type: string }>, extras: Array<{ name: string; type: string; kind: VectorKind }>, query: ExplorerVectorQuery): Promise<VectorSearchResult[]> {
+    const col = extras.find((c) => c.name === query.vectorName);
+    if (!col) throw new BadRequestException(`Table '${table}' has no vector column '${query.vectorName}'.`);
+    const size = await this.typmod(table, col.name);
+    let literal: string;
+    let distance: string;
+    let score: string;
+    if (col.kind === 'sparse') {
+      if (!query.sparse) throw new BadRequestException(`'${col.name}' is a sparse vector column; search it with a sparse vector.`);
+      const dim = size ?? Math.max(0, ...query.sparse.indices) + 1;
+      if (query.sparse.indices.some((i) => !Number.isInteger(i) || i < 0 || i >= dim)) throw new BadRequestException(`Sparse indices must be 0 to ${dim - 1}.`);
+      // pgvector sparsevec text is 1-based.
+      literal = `{${query.sparse.indices.map((i, k) => `${i + 1}:${query.sparse!.values[k]}`).join(',')}}/${dim}`;
+      distance = `"${col.name}" <=> $1::sparsevec`;
+      score = `1 - (${distance})`;
+    } else if (col.kind === 'binary') {
+      if (size !== null && query.vector.length !== size) throw new BadRequestException(`'${col.name}' holds ${size} bits; the query has ${query.vector.length}.`);
+      literal = query.vector.map((b) => (b ? '1' : '0')).join('');
+      distance = `"${col.name}" <~> $1::bit(${literal.length})`;
+      score = `1 - (${distance})::float / ${literal.length}`;
+    } else {
+      literal = JSON.stringify(query.vector);
+      distance = `"${col.name}" <=> $1::${col.type === 'halfvec' ? 'halfvec' : 'vector'}`;
+      score = `1 - (${distance})`;
+    }
+    const where = pgWhere(query.filter, typed.map((c) => c.name), 3);
+    const r = await this.getPool().query(
+      `SELECT *, ${score} AS score FROM "${table}" WHERE "${col.name}" IS NOT NULL${where.sql ? ` AND ${where.sql}` : ''} ORDER BY ${distance} LIMIT $2`,
+      [literal, query.topK, ...where.params],
+    );
+    return r.rows.map((row) => {
+      const { id, metadata, score: s } = this.splitRow(row, extras.map((c) => c.name), undefined, true);
+      return { id, score: Number(s), metadata: trimMetadata(metadata) };
     });
   }
 
@@ -435,7 +521,7 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplo
    * needed (without a GIN index it scans the table). The "simple" dictionary
    * matches whole words in any language, without stemming.
    */
-  async keywordSearch(name: string, query: { text: string; topK: number; filter: ExplorerFilter }): Promise<VectorSearchResult[]> {
+  async keywordSearch(name: string, query: ExplorerKeywordQuery): Promise<VectorSearchResult[]> {
     const table = sanitizeSqlIdentifier(name, 'collectionOrTableName');
     const columns = await this.columnsOf(table);
     const text = columns.filter((c) => ['text', 'varchar', 'bpchar'].includes(c.type) && c.name !== 'id').map((c) => c.name);
@@ -446,17 +532,21 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplo
       `SELECT *, ts_rank(${doc}, plainto_tsquery('simple', $1)) AS score FROM "${table}" WHERE ${doc} @@ plainto_tsquery('simple', $1)${where.sql ? ` AND ${where.sql}` : ''} ORDER BY score DESC, id LIMIT $2`,
       [query.text, query.topK, ...where.params],
     );
+    const extra = this.extraVectorColumns(columns).map((c) => c.name);
     return r.rows.map((row) => {
-      const { id, embedding, score, created_at, ...metadata } = row;
-      return { id: String(id), score: Number(score), metadata: trimMetadata(metadata) };
+      const { id, metadata, score } = this.splitRow(row, extra, undefined, true);
+      return { id, score: Number(score), metadata: trimMetadata(metadata) };
     });
   }
 
-  async getRecord(name: string, id: string): Promise<ExplorerRecordDetail | null> {
+  async getRecord(name: string, id: string, options: RecordReadOptions = {}): Promise<ExplorerRecordDetail | null> {
     const table = sanitizeSqlIdentifier(name, 'collectionOrTableName');
+    const extras = this.extraVectorColumns(await this.columnsOf(table));
+    const col = options.vectorName && options.vectorName !== 'embedding' ? extras.find((c) => c.name === options.vectorName) : undefined;
+    if (options.vectorName && options.vectorName !== 'embedding' && !col) throw new BadRequestException(`Table '${table}' has no vector column '${options.vectorName}'.`);
     const r = await this.getPool().query(`SELECT * FROM "${table}" WHERE id::text = $1`, [id]);
     if (!r.rows[0]) return null;
-    const { id: rid, embedding, created_at, ...metadata } = r.rows[0];
-    return recordDetail(String(rid), metadata, embedding);
+    const { id: rid, metadata, vec } = this.splitRow(r.rows[0], extras.map((c) => c.name), col?.name);
+    return recordDetail(rid, metadata, vec, col?.kind ?? 'dense');
   }
 }

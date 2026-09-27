@@ -95,7 +95,7 @@ describe('Qdrant explorer - named vectors', () => {
 
   it('lists every named vector space', async () => {
     const info = await q.describeCollection('a');
-    expect(info.vectors).toEqual([{ name: 'title', dimension: 4, metric: 'cosine' }, { name: 'body', dimension: 2, metric: 'dot_product' }]);
+    expect(info.vectors).toEqual([{ name: 'title', dimension: 4, metric: 'cosine', kind: 'dense' }, { name: 'body', dimension: 2, metric: 'dot_product', kind: 'dense' }]);
     expect(info.dimension).toBe(4);
   });
 
@@ -105,6 +105,6 @@ describe('Qdrant explorer - named vectors', () => {
     expect((await q.browse('a', { limit: 1, cursor: null, filter: eqf({}), withVectors: true })).records[0].vector).toEqual([1, 0, 0, 0]);
     await q.searchFiltered('a', { vector: [1, 0], topK: 3, filter: eqf({}), vectorName: 'body' });
     expect(client.query).toHaveBeenLastCalledWith('a', expect.objectContaining({ using: 'body' }));
-    expect((await q.getRecord('a', '1', 'body'))!.norm).toBeCloseTo(1, 6);
+    expect((await q.getRecord('a', '1', { vectorName: 'body' }))!.norm).toBeCloseTo(1, 6);
   });
 });

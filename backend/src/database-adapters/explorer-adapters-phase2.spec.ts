@@ -273,9 +273,9 @@ describe('sorted listings (phase 3)', () => {
       search: jest.fn().mockResolvedValue({ hits: { hits: [] } }),
     };
     const e = set(new ElasticsearchVectorAdapter(cfg, gen), 'client', client);
-    await e.browse('docs', { limit: 5, cursor: '10', filter: eqf({}), sort: { field: 'year', direction: 'desc' } });
+    await e.browse('docs', { limit: 5, cursor: '10', filter: eqf({}), sort: [{ field: 'year', direction: 'desc' }] });
     expect(client.search).toHaveBeenLastCalledWith(expect.objectContaining({ from: 10, sort: [{ year: { order: 'desc', missing: '_last' } }] }));
-    await expect(e.browse('docs', { limit: 5, cursor: null, filter: eqf({}), sort: { field: 'body', direction: 'asc' } })).rejects.toThrow(/not analysed text/);
+    await expect(e.browse('docs', { limit: 5, cursor: null, filter: eqf({}), sort: [{ field: 'body', direction: 'asc' }] })).rejects.toThrow(/not analysed text/);
   });
 
   it('MongoDB sorts by the field, then _id, paging by offset', async () => {
@@ -283,7 +283,7 @@ describe('sorted listings (phase 3)', () => {
     const cursor = { sort: (s: any) => ((calls.sort = s), cursor), skip: (n: number) => ((calls.skip = n), cursor), limit: () => cursor, toArray: async () => [{ _id: 'a', year: 2024 }] };
     const collection = { listSearchIndexes: () => ({ toArray: async () => [] }), find: () => cursor };
     const m = set(new MongoDbAtlasVectorAdapter(cfg, gen), 'db', { collection: () => collection });
-    const page = await m.browse('kb', { limit: 5, cursor: '15', filter: eqf({}), sort: { field: 'year', direction: 'desc' } });
+    const page = await m.browse('kb', { limit: 5, cursor: '15', filter: eqf({}), sort: [{ field: 'year', direction: 'desc' }] });
     expect(calls).toEqual({ sort: { year: -1, _id: 1 }, skip: 15 });
     expect(page.nextCursor).toBeNull();
   });
@@ -292,7 +292,7 @@ describe('sorted listings (phase 3)', () => {
     const fetchObjects = jest.fn().mockResolvedValue({ objects: [] });
     const collection = { filter: { byProperty: jest.fn() }, sort: { byProperty: (f: string, asc: boolean) => ({ f, asc }) }, query: { fetchObjects } };
     const w = set(new WeaviateVectorAdapter(cfg, gen), 'client', { collections: { use: () => collection } });
-    await w.browse('Docs', { limit: 5, cursor: null, filter: eqf({}), sort: { field: 'year', direction: 'asc' } });
+    await w.browse('Docs', { limit: 5, cursor: null, filter: eqf({}), sort: [{ field: 'year', direction: 'asc' }] });
     expect(fetchObjects).toHaveBeenCalledWith(expect.objectContaining({ sort: { f: 'year', asc: true } }));
   });
 });
@@ -346,5 +346,185 @@ describe('Weaviate named vectors', () => {
     expect(page.records[0].vector).toEqual([0.5, 0.5]);
     await w.searchFiltered('Docs', { vector: [1, 0], topK: 2, filter: eqf({}), vectorName: 'body' });
     expect(nearVector).toHaveBeenCalledWith([1, 0], expect.objectContaining({ targetVector: 'body' }));
+  });
+});
+
+describe('sorting by several fields (phase 4)', () => {
+  it('Elasticsearch, MongoDB and Weaviate apply every field in order', async () => {
+    const client = {
+      indices: { getMapping: jest.fn().mockResolvedValue({ docs: { mappings: { properties: { embedding: { type: 'dense_vector', dims: 2 }, year: { type: 'integer' }, dept: { type: 'keyword' } } } } }) },
+      count: jest.fn().mockResolvedValue({ count: 1 }),
+      search: jest.fn().mockResolvedValue({ hits: { hits: [] } }),
+    };
+    const e = set(new ElasticsearchVectorAdapter(cfg, gen), 'client', client);
+    await e.browse('docs', { limit: 5, cursor: null, filter: eqf({}), sort: [{ field: 'dept', direction: 'asc' }, { field: 'year', direction: 'desc' }] });
+    expect(client.search).toHaveBeenLastCalledWith(expect.objectContaining({ sort: [{ dept: { order: 'asc', missing: '_last' } }, { year: { order: 'desc', missing: '_last' } }] }));
+
+    const calls: any = {};
+    const cursor = { sort: (s: any) => ((calls.sort = s), cursor), skip: () => cursor, limit: () => cursor, toArray: async () => [] };
+    const m = set(new MongoDbAtlasVectorAdapter(cfg, gen), 'db', { collection: () => ({ listSearchIndexes: () => ({ toArray: async () => [] }), find: () => cursor }) });
+    await m.browse('kb', { limit: 5, cursor: null, filter: eqf({}), sort: [{ field: 'dept', direction: 'asc' }, { field: 'year', direction: 'desc' }] });
+    expect(Object.entries(calls.sort)).toEqual([['dept', 1], ['year', -1], ['_id', 1]]);
+
+    const chain: Array<[string, boolean]> = [];
+    const sorter: any = { byProperty: (f: string, asc: boolean) => (chain.push([f, asc]), sorter) };
+    const fetchObjects = jest.fn().mockResolvedValue({ objects: [] });
+    const w = set(new WeaviateVectorAdapter(cfg, gen), 'client', { collections: { use: () => ({ filter: { byProperty: jest.fn() }, sort: sorter, query: { fetchObjects } }) } });
+    await w.browse('Docs', { limit: 5, cursor: null, filter: eqf({}), sort: [{ field: 'dept', direction: 'asc' }, { field: 'year', direction: 'desc' }] });
+    expect(chain).toEqual([['dept', true], ['year', false]]);
+  });
+});
+
+describe('phase 4 - sparse and binary vectors', () => {
+  it('Qdrant lists sparse vectors and searches them as { indices, values } with using', async () => {
+    const query = jest.fn().mockResolvedValue({ points: [{ id: 1, score: 3.2, payload: {} }] });
+    const retrieve = jest.fn().mockResolvedValue([{ id: 1, payload: {}, vector: { '': [0.6, 0.8], splade: { indices: [4, 2], values: [0.9, 0.1] } } }]);
+    const q = set(new QdrantVectorAdapter(cfg, gen), 'client', {
+      getCollection: jest.fn().mockResolvedValue({ points_count: 1, config: { params: { vectors: { size: 2, distance: 'Cosine' }, sparse_vectors: { splade: {} } }, hnsw_config: {} }, payload_schema: {} }),
+      query,
+      retrieve,
+    });
+    const info = await q.describeCollection('docs');
+    expect(info.vectors).toEqual([{ name: '', dimension: 2, metric: 'cosine', kind: 'dense' }, { name: 'splade', dimension: null, metric: 'dot_product', kind: 'sparse' }]);
+    expect(q.searchableKinds).toEqual(['sparse']);
+    await q.searchFiltered('docs', { vector: [], sparse: { indices: [4], values: [1] }, topK: 3, filter: eqf({}), vectorName: 'splade' });
+    expect(query).toHaveBeenLastCalledWith('docs', expect.objectContaining({ query: { indices: [4], values: [1] }, using: 'splade' }));
+    const rec = await q.getRecord('docs', '1', { vectorName: 'splade' });
+    expect(rec).toEqual(expect.objectContaining({ kind: 'sparse', sparse: { nonZero: 2, top: [{ index: 4, value: 0.9 }, { index: 2, value: 0.1 }] } }));
+  });
+
+  it('Milvus lists every vector field and searches sparse as index → weight, binary as bytes, on the chosen field', async () => {
+    const search = jest.fn().mockResolvedValue({ results: [{ id: 'a', score: 0.5, dept: 'legal', dense: [1, 0], splade: { 3: 0.2 } }] });
+    const client = {
+      describeCollection: jest.fn().mockResolvedValue({
+        schema: {
+          fields: [
+            { name: 'id', data_type: 'VarChar', is_primary_key: true },
+            { name: 'dense', data_type: 'FloatVector', type_params: [{ key: 'dim', value: '2' }] },
+            { name: 'splade', data_type: 'SparseFloatVector' },
+            { name: 'codes', data_type: 'BinaryVector', type_params: [{ key: 'dim', value: '16' }] },
+            { name: 'dept', data_type: 'VarChar' },
+          ],
+        },
+      }),
+      getCollectionStatistics: jest.fn().mockResolvedValue({ stats: [{ key: 'row_count', value: '1' }] }),
+      describeIndex: jest.fn().mockResolvedValue({ index_descriptions: [
+        { field_name: 'dense', params: [{ key: 'index_type', value: 'HNSW' }, { key: 'metric_type', value: 'COSINE' }] },
+        { field_name: 'splade', params: [{ key: 'index_type', value: 'SPARSE_INVERTED_INDEX' }, { key: 'metric_type', value: 'IP' }] },
+      ] }),
+      getLoadState: jest.fn().mockResolvedValue({ state: 'LoadStateLoaded' }),
+      query: jest.fn().mockResolvedValue({ data: [{ id: 'a', dept: 'legal', codes: [0b10000000, 0b00000001] }] }),
+      search,
+    };
+    const m = set(new MilvusVectorAdapter(cfg, gen), 'client', client);
+    const info = await m.describeCollection('docs');
+    expect(info.fields).toEqual([{ name: 'dept', type: 'VarChar' }]);
+    expect(info.vectors).toEqual([
+      { name: 'dense', dimension: 2, metric: 'cosine', kind: 'dense' },
+      { name: 'splade', dimension: null, metric: 'dot_product', kind: 'sparse' },
+      { name: 'codes', dimension: 16, metric: null, kind: 'binary' },
+    ]);
+    const hits = await m.searchFiltered('docs', { vector: [], sparse: { indices: [3, 9], values: [0.2, 0.4] }, topK: 2, filter: eqf({}), vectorName: 'splade' });
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ anns_field: 'splade', data: [{ 3: 0.2, 9: 0.4 }] }));
+    // Vector fields never show up as metadata.
+    expect(hits[0].metadata).toEqual({ dept: 'legal' });
+    await m.searchFiltered('docs', { vector: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], topK: 2, filter: eqf({}), vectorName: 'codes' });
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ anns_field: 'codes', data: [[0b10000000, 0b00000001]] }));
+    await expect(m.searchFiltered('docs', { vector: [1, 0, 1], topK: 2, filter: eqf({}), vectorName: 'codes' })).rejects.toThrow(/holds 16 bits/);
+    await expect(m.searchFiltered('docs', { vector: [1], topK: 2, filter: eqf({}), vectorName: 'splade' })).rejects.toThrow(/search it with a sparse vector/);
+    await m.searchFiltered('docs', { vector: [1, 0], topK: 2, filter: eqf({}) });
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ anns_field: 'dense', data: [[1, 0]] }));
+    const rec = await m.getRecord('docs', 'a', { vectorName: 'codes' });
+    expect(rec).toEqual(expect.objectContaining({ kind: 'binary', dimension: 16, bits: { length: 16, ones: 2, head: '1000000000000001' } }));
+    await expect(m.getRecord('docs', 'a', { vectorName: 'nope' })).rejects.toThrow(/no vector field 'nope'/);
+  });
+
+  it('pgvector treats sparsevec and bit columns as vectors, searched by cosine and Hamming distance', async () => {
+    const queries: Array<{ sql: string; params?: unknown[] }> = [];
+    const pool = {
+      query: jest.fn(async (sql: string, params?: unknown[]) => {
+        queries.push({ sql, params });
+        if (sql.includes('information_schema.columns')) return { rows: [{ name: 'id', type: 'text' }, { name: 'embedding', type: 'vector' }, { name: 'splade', type: 'sparsevec' }, { name: 'codes', type: 'bit' }, { name: 'dept', type: 'text' }] };
+        if (sql.includes('atttypmod')) return { rows: [{ dim: params?.[1] === 'codes' ? 8 : params?.[1] === 'splade' ? 1000 : 3 }] };
+        if (sql.includes('pg_extension')) return { rows: [{ ok: 1 }] };
+        return { rows: [{ id: 'a', embedding: '[1,0,0]', splade: '{5:0.5}/1000', codes: '10110000', dept: 'legal', score: 0.75 }] };
+      }),
+    };
+    const p = set(new PostgresVectorAdapter(cfg, gen), 'pool', pool);
+    (p as any).hasPgvector = async () => true;
+    const sparseHits = await p.searchFiltered('docs', { vector: [], sparse: { indices: [4, 9], values: [0.5, 0.25] }, topK: 3, filter: eqf({}), vectorName: 'splade' });
+    const last = queries[queries.length - 1];
+    expect(last.sql).toContain('"splade" <=> $1::sparsevec');
+    expect(last.params?.[0]).toBe('{5:0.5,10:0.25}/1000');
+    expect(sparseHits).toEqual([{ id: 'a', score: 0.75, metadata: { dept: 'legal' } }]);
+    await p.searchFiltered('docs', { vector: [1, 0, 1, 1, 0, 0, 0, 0], topK: 3, filter: eqf({}), vectorName: 'codes' });
+    expect(queries[queries.length - 1].sql).toContain('"codes" <~> $1::bit(8)');
+    expect(queries[queries.length - 1].params?.[0]).toBe('10110000');
+    await expect(p.searchFiltered('docs', { vector: [1, 0], topK: 3, filter: eqf({}), vectorName: 'codes' })).rejects.toThrow(/holds 8 bits/);
+    await expect(p.searchFiltered('docs', { vector: [], sparse: { indices: [1000], values: [1] }, topK: 3, filter: eqf({}), vectorName: 'splade' })).rejects.toThrow(/0 to 999/);
+    const rec = await p.getRecord('docs', 'a', { vectorName: 'splade' });
+    expect(rec).toEqual(expect.objectContaining({ kind: 'sparse', metadata: { dept: 'legal', score: 0.75 }, sparse: { nonZero: 1, top: [{ index: 4, value: 0.5 }] } }));
+    // Listings keep vector columns out of the metadata.
+    const page = await p.browse('docs', { limit: 5, cursor: null, filter: eqf({}) });
+    expect(page.records[0].metadata).toEqual({ dept: 'legal', score: 0.75 });
+  });
+});
+
+describe('phase 4 - tenants, namespaces and native hybrid', () => {
+  it('Weaviate lists tenants, reads one tenant at a time, and runs its own hybrid search', async () => {
+    const hybrid = jest.fn().mockResolvedValue({ objects: [{ uuid: 'u1', properties: { dept: 'legal' }, metadata: { score: 0.8 } }] });
+    const tenantHandle = {
+      filter: { byProperty: jest.fn() },
+      aggregate: { overAll: jest.fn().mockResolvedValue({ totalCount: 3 }) },
+      query: { fetchObjects: jest.fn().mockResolvedValue({ objects: [] }), hybrid },
+    };
+    const withTenant = jest.fn(() => tenantHandle);
+    const base = {
+      config: { get: jest.fn().mockResolvedValue({ properties: [], vectorizers: { default: { indexType: 'hnsw', indexConfig: { distance: 'cosine' } } }, multiTenancy: { enabled: true } }) },
+      tenants: { get: jest.fn().mockResolvedValue({ globex: { name: 'globex' }, acme: { name: 'acme' } }) },
+      withTenant,
+    };
+    const w = set(new WeaviateVectorAdapter(cfg, gen), 'client', { collections: { use: () => base } });
+    const info = await w.describeCollection('Docs', 'globex');
+    expect(info.partitions).toEqual({ kind: 'tenant', names: ['acme', 'globex'], required: true });
+    expect(info.recordCount).toBe(3);
+    expect(withTenant).toHaveBeenLastCalledWith('globex');
+    await w.browse('Docs', { limit: 5, cursor: null, filter: eqf({}), partition: 'acme' });
+    expect(withTenant).toHaveBeenLastCalledWith('acme');
+    const r = await w.nativeHybrid('Docs', { text: 'contract', vector: [1, 0], alpha: 0.25, topK: 4, filter: eqf({}), partition: 'acme', vectorName: 'body' });
+    expect(hybrid).toHaveBeenCalledWith('contract', expect.objectContaining({ alpha: 0.25, vector: [1, 0], limit: 4, targetVector: 'body' }));
+    expect(r).toEqual([{ id: 'u1', score: 0.8, metadata: { dept: 'legal' } }]);
+  });
+
+  it('Pinecone lists namespaces with their counts and reads one', async () => {
+    const nsQuery = jest.fn().mockResolvedValue({ matches: [] });
+    const nsFetch = jest.fn().mockResolvedValue({ records: {} });
+    const namespace = jest.fn(() => ({ query: nsQuery, fetch: nsFetch, listPaginated: jest.fn().mockResolvedValue({ vectors: [] }) }));
+    const index = { describeIndexStats: jest.fn().mockResolvedValue({ totalRecordCount: 30, namespaces: { '': { recordCount: 10 }, tenant_b: { recordCount: 5 }, tenant_a: { recordCount: 15 } } }), listPaginated: jest.fn().mockResolvedValue({ vectors: [] }), namespace };
+    const p = set(new PineconeVectorAdapter(cfg), 'client', { describeIndex: jest.fn().mockResolvedValue({ dimension: 2, metric: 'cosine', spec: { serverless: {} } }), index: () => index });
+    const info = await p.describeCollection('kb');
+    expect(info.partitions).toEqual({ kind: 'namespace', names: ['tenant_a', 'tenant_b'], counts: { tenant_b: 5, tenant_a: 15 }, required: false });
+    await p.searchFiltered('kb', { vector: [1, 0], topK: 2, filter: eqf({}), partition: 'tenant_a' });
+    expect(namespace).toHaveBeenLastCalledWith('tenant_a');
+    expect(nsQuery).toHaveBeenCalled();
+    await p.getRecord('kb', 'x', { partition: 'tenant_b' });
+    expect(namespace).toHaveBeenLastCalledWith('tenant_b');
+  });
+
+  it('Elasticsearch runs BM25 and kNN in one RRF retriever', async () => {
+    const search = jest.fn().mockResolvedValue({ hits: { hits: [{ _id: 'd1', _score: 0.03, _source: { body: 'x', embedding: [1, 0] } }] } });
+    const e = set(new ElasticsearchVectorAdapter(cfg, gen), 'client', {
+      indices: { getMapping: jest.fn().mockResolvedValue({ docs: { mappings: { properties: { embedding: { type: 'dense_vector', dims: 2 }, body: { type: 'text' }, dept: { type: 'keyword' } } } } }) },
+      count: jest.fn().mockResolvedValue({ count: 1 }),
+      search,
+    });
+    const r = await e.nativeHybrid('docs', { text: 'termination', vector: [1, 0], alpha: 0.5, topK: 5, filter: eqf({ dept: 'legal' }) });
+    const body = search.mock.calls[0][0];
+    expect(body.size).toBe(5);
+    expect(body.retriever.rrf.rank_window_size).toBe(50);
+    expect(body.retriever.rrf.retrievers[0].standard.query.bool.must[0].multi_match).toEqual({ query: 'termination', fields: ['body'] });
+    expect(body.retriever.rrf.retrievers[1].knn).toEqual(expect.objectContaining({ field: 'embedding', query_vector: [1, 0], k: 50 }));
+    expect(body.retriever.rrf.retrievers[1].knn.filter).toBeDefined();
+    expect(r).toEqual([{ id: 'd1', score: 0.03, metadata: { body: 'x' } }]);
   });
 });
