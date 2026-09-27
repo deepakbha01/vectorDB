@@ -1,5 +1,5 @@
 /**
- * The DR tier a design implies, from Discovery - shared by Cost & FinOps
+ * The DR tier a design implies, from Discovery - shared by the Cost Recommendation
  * (what DR costs) and the Operations model (how long recovery takes), so the
  * two can never disagree.
  */

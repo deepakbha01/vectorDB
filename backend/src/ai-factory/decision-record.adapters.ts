@@ -545,8 +545,8 @@ export function fromPerformanceAssessment(d: AiPerformanceAssessment): DecisionR
   };
 }
 
-// ------------------------------------------------------------ Cost & FinOps
-/** Spec §13 Cost & FinOps Assessment in the standard format: the chosen design's cost, with cheaper allowed options as alternatives. */
+// ------------------------------------------------------------ Cost Recommendation
+/** Spec §13 Cost Recommendation in the standard format: the chosen design's cost, with cheaper allowed options as alternatives. */
 export function fromFinopsAssessment(d: AiFinopsAssessment): DecisionRecord {
   const r = d.result;
   const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
@@ -561,7 +561,7 @@ export function fromFinopsAssessment(d: AiFinopsAssessment): DecisionRecord {
   const cheaper = options.filter((o) => o.eligibility !== 'not_eligible' && o.monthlyUsd !== null && chosenMonthly !== null && o.monthlyUsd < chosenMonthly && o.id !== 'hybrid').sort((a, b) => a.monthlyUsd! - b.monthlyUsd!);
   return {
     phase: 'finops',
-    title: 'Cost and FinOps',
+    title: 'Cost Recommendation',
     source: { deliverableId: d.id, version: d.version, createdAt: d.createdAt },
     status: r.validation.status === 'fail' ? 'not_feasible' : 'conditional',
     recommendation: r.chosen?.monthlyUsd ? { id: 'chosen', label: `${r.chosen.label}: ~${money(r.chosen.monthlyUsd)} / month (estimate)` } : null,

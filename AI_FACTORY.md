@@ -64,7 +64,7 @@ its own page in the sidebar's *Inference track*.
 | 09 | RAG / Agent | RAG / agent architecture | `rag-agent` | 6 |
 | 10 | Security | Security & Governance | `security-governance` | 7 |
 | 11 | Performance | Performance & Benchmark, Optimization | `performance`, `optimization` | 8 |
-| 12 | Cost | Cost & FinOps | `finops` | 9 |
+| 12 | Cost | Cost Recommendation | `finops` | 9 |
 | 13 | Operations | Operations Model, Capacity plan | `operations-model`, `capacity` | 10 |
 | 14 | Final Recommendation | Final recommendation | `final-recommendation` | 11 |
 
@@ -253,7 +253,7 @@ already misses is flagged early). Small samples, results older than the
 design and assumed targets make a pass conditional. A benchmark plan lists
 what to measure next. Config: `config/performance.yaml`.
 
-### Cost & FinOps (Wave 9, spec §13) - step 12
+### Cost Recommendation (Wave 9, spec §13) - step 12
 
 Operating cost of the recommended architecture from the sizing in earlier
 phases and a directional rate card (`config/finops.yaml`, with a review
@@ -267,7 +267,7 @@ the cheapest allowed option; targets that cannot host a component are *not
 feasible*, not priced. Every figure is labelled; nothing is a quote.
 
 With Token Observability enabled, the page also shows a read-only "token cost
-- estimated vs actual" panel; the FinOps assessment itself is unchanged.
+- estimated vs actual" panel; the Cost Recommendation itself is unchanged.
 
 ### AI Operations Model (Wave 10, spec §14) - step 13
 
@@ -287,7 +287,7 @@ Each of the 13 spec areas is marked *from the design*, *defined here* or a
 *gap*. Verdict: **operable with conditions / requires further assessment /
 not operable as designed** - never unconditional, since availability and
 recovery are estimates until DR is rehearsed and availability measured. The
-DR tier rule is shared with Cost & FinOps so the two never disagree. Config:
+DR tier rule is shared with the Cost Recommendation so the two never disagree. Config:
 `config/operations.yaml`.
 
 ### Final Recommendation (Wave 11, spec §15-§18, §25, §26) - step 14

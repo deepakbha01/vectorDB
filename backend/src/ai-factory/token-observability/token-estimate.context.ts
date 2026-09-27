@@ -22,7 +22,7 @@ export interface EstimateInputs {
 
 export interface EstimateCatalogues {
   ragAgent: RagAgentCatalogue;
-  /** finops.yaml embedding.avgQueryTokens - the same query size FinOps prices. */
+  /** finops.yaml embedding.avgQueryTokens - the same query size the Cost Recommendation prices. */
   avgQueryTokens: number;
   charsPerToken: number;
 }
@@ -66,7 +66,7 @@ export function resolveEstimateContext(x: EstimateInputs, c: EstimateCatalogues)
   if (inf) {
     const tier = inf.inputsUsed.managedApiTier;
     const rec = inf.result.recommendedGpuOption;
-    // Same serving call as Cost & FinOps: self-hosted unless there is no GPU option or the assessment chose managed.
+    // Same serving call as the Cost Recommendation: self-hosted unless there is no GPU option or the assessment chose managed.
     const selfHosted = rec && inf.result.decision !== 'managed_api' ? { monthlyUsd: rec.monthlyTotalUsd, label: `${rec.totalGpusAtPeak} × ${rec.gpuLabel}` } : null;
     const primary = x.modelSelection?.result.primary?.label;
     llm = {

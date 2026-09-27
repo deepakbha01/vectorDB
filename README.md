@@ -379,8 +379,8 @@ claiming a demonstration project is production-ready without qualification.
 Behind `AI_FACTORY_ENABLED`, a guided end-to-end AI architecture assessment
 built on top of the VectorDB workflow without changing it: AI Workload
 Profile, Model Selection, Inference Architecture, Infrastructure Design, RAG /
-Agent Architecture, Security & Governance, Performance & Benchmark, Cost &
-FinOps, Operations Model and a Final Recommendation with a production-readiness
+Agent Architecture, Security & Governance, Performance & Benchmark, Cost
+Recommendation, Operations Model and a Final Recommendation with a production-readiness
 gate and ADR - every choice eligibility-first, every figure labelled. See
 [AI_FACTORY.md](AI_FACTORY.md).
 

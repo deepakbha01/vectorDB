@@ -130,9 +130,9 @@ describe('alternatives (spec §17)', () => {
 describe('buildFinalRecommendation', () => {
   it('produces the spec §15 architecture chain and the 22-section ADR', () => {
     const r = buildFinalRecommendation(inputs());
-    expect(r.architecture.map((c) => c.step)).toEqual(['Use case', 'Data sources', 'Ingestion', 'Chunking', 'Embedding', 'VectorDB', 'Index', 'Reranker', 'LLM / SLM', 'Inference serving', 'AI application', 'Security', 'Monitoring', 'FinOps']);
+    expect(r.architecture.map((c) => c.step)).toEqual(['Use case', 'Data sources', 'Ingestion', 'Chunking', 'Embedding', 'VectorDB', 'Index', 'Reranker', 'LLM / SLM', 'Inference serving', 'AI application', 'Security', 'Monitoring', 'Cost']);
     expect(r.architecture.find((c) => c.step === 'VectorDB')!.component).toBe('postgres_pgvector');
-    expect(r.architecture.find((c) => c.step === 'FinOps')!.component).toBe('~$21,885 / month (estimate)');
+    expect(r.architecture.find((c) => c.step === 'Cost')!.component).toBe('~$21,885 / month (estimate)');
     expect(r.adr.map((s) => s.number)).toEqual(Array.from({ length: 22 }, (_, i) => i + 1));
     expect(r.adr[0].title).toBe('Executive summary');
     expect(r.adr[21].title).toBe('Implementation roadmap');
@@ -145,7 +145,7 @@ describe('buildFinalRecommendation', () => {
   it('marks missing and out-of-date parts instead of inventing them', () => {
     const r = buildFinalRecommendation(inputs({ lineage: lineage({ index_design: { latest: null, status: 'not_started' }, finops: { status: 'stale' } }) }));
     expect(r.adr.find((s) => s.title === 'Index recommendation')).toMatchObject({ status: 'missing', lines: ['Not assessed yet - complete index design.'] });
-    expect(r.architecture.find((c) => c.step === 'FinOps')!.status).toBe('stale');
+    expect(r.architecture.find((c) => c.step === 'Cost')!.status).toBe('stale');
   });
 
   it('keeps the executive summary honest about confidence', () => {
@@ -155,7 +155,7 @@ describe('buildFinalRecommendation', () => {
     const failing = inputs({ state: state({ cost: { validation: 'fail' } }) });
     const r = buildFinalRecommendation(failing);
     expect(r.executiveSummary.confidence).toBe('low');
-    expect(r.executiveSummary.keyRisks[0]).toBe('Cost validation: Cost & FinOps: fail.');
+    expect(r.executiveSummary.keyRisks[0]).toBe('Cost validation: Cost Recommendation: fail.');
   });
 
   it('builds the implementation plan from the phases that own each step', () => {
@@ -177,7 +177,7 @@ describe('token evidence in the cost stage (Token Observability, phase 8)', () =
 
   it('changes nothing while Token Observability is off', () => {
     const off = inputs({ state: state({ ...passing, tokenObservability: token({ estimatedShareOfBudget: 5 }) }) });
-    expect(stageOf(off, 'cost')).toMatchObject({ status: 'pass', phases: ['finops'], reasons: ['Cost & FinOps: pass.'] });
+    expect(stageOf(off, 'cost')).toMatchObject({ status: 'pass', phases: ['finops'], reasons: ['Cost Recommendation: pass.'] });
     expect(readinessGate(off).status).toBe('production_ready');
     expect(buildFinalRecommendation(off).adr.find((a) => a.number === 16)!.lines.join(' ')).not.toMatch(/Token consumption/);
   });
@@ -185,7 +185,7 @@ describe('token evidence in the cost stage (Token Observability, phase 8)', () =
   it('passes on an estimate within budget that was measured in load tests', () => {
     const c = stageOf(on(token()), 'cost');
     expect(c).toMatchObject({ status: 'pass', phases: ['finops', 'token_observability'] });
-    expect(c.reasons).toEqual(['Cost & FinOps: pass.', 'Token estimate v2: ~7,050 tokens / request, ~$12,000 / month.']);
+    expect(c.reasons).toEqual(['Cost Recommendation: pass.', 'Token estimate v2: ~7,050 tokens / request, ~$12,000 / month.']);
   });
 
   it('asks for the estimate when it has not been made', () => {

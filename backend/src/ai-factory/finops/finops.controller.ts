@@ -9,7 +9,7 @@ import { UserRole } from '../../users/user.entity';
 import { AiFactoryEnabledGuard } from '../ai-factory-enabled.guard';
 import { FinopsAssessmentService } from './finops.service';
 
-/** Cost & FinOps Assessment (spec §13). Hidden unless AI_FACTORY_ENABLED is on. */
+/** Cost Recommendation (spec §13). Hidden unless AI_FACTORY_ENABLED is on. */
 @ApiTags('ai-factory')
 @ApiBearerAuth()
 @UseGuards(AiFactoryEnabledGuard, JwtAuthGuard, RolesGuard)

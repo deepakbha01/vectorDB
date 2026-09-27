@@ -1,4 +1,4 @@
-/** Cost & FinOps (AI Factory Wave 9) - mirrors backend/src/ai-factory/finops/*. */
+/** Cost Recommendation (AI Factory Wave 9) - mirrors backend/src/ai-factory/finops/*. */
 import { EvidenceType } from './aiFactory';
 
 export type CostCategory = 'inference' | 'vector_db' | 'embedding' | 'infrastructure' | 'operations';
