@@ -12,6 +12,7 @@ const mockClientInstance = {
 
 jest.mock('@elastic/elasticsearch', () => ({
   Client: jest.fn().mockImplementation(() => mockClientInstance),
+  SniffingTransport: class {},
 }));
 
 function configService(values: Record<string, any> = {}) {

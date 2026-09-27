@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Client } from '@elastic/elasticsearch';
+import { Client, SniffingTransport } from '@elastic/elasticsearch';
 import {
   SchemaDefinition,
   VectorDatabaseAdapter,
@@ -16,6 +16,22 @@ import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
 import { BrowseOptions, ExplorerCollectionInfo, ExplorerKeywordQuery, ExplorerNativeHybridQuery, ExplorerPage, ExplorerRecordDetail, ExplorerVectorQuery, VectorExplorer } from '../vector-explorer';
 import { esFilter, normaliseIndexType, normaliseMetric, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
+
+/**
+ * The 9.x client asks for the 9.x REST API (`application/vnd.elasticsearch+json;
+ * compatible-with=9`), which an 8.x cluster refuses on search and bulk
+ * requests. Plain JSON is accepted by 8.x and 9.x alike, so this transport
+ * sends that instead.
+ */
+/** Returned when a cluster's licence refuses Elasticsearch's own RRF hybrid search. */
+const RRF_LICENCE =
+  "This cluster's Elasticsearch licence does not include RRF (it needs Platinum, Enterprise or a trial), so it cannot fuse hybrid search itself. Use rank or weighted fusion instead - they run here.";
+
+export class PlainJsonTransport extends SniffingTransport {
+  constructor(options: ConstructorParameters<typeof SniffingTransport>[0]) {
+    super({ ...options, vendoredHeaders: { jsonContentType: 'application/json', ndjsonContentType: 'application/x-ndjson', accept: 'application/json, text/plain' } });
+  }
+}
 
 /**
  * Connects to the customer's target Elasticsearch/OpenSearch cluster
@@ -45,6 +61,7 @@ export class ElasticsearchVectorAdapter implements VectorDatabaseAdapter, Vector
       this.client = new Client({
         node,
         auth: apiKey ? { apiKey } : username && password ? { username, password } : undefined,
+        Transport: PlainJsonTransport,
       });
     }
     return this.client;
@@ -229,20 +246,28 @@ export class ElasticsearchVectorAdapter implements VectorDatabaseAdapter, Vector
     if (!textFields.length) throw new BadRequestException(`Index '${name}' has no text fields to search by keyword.`);
     const clauses = esFilter(query.filter, info.fields);
     const window = Math.max(query.topK, 50);
-    const r = (await this.getClient().search({
-      index: name,
-      size: query.topK,
-      retriever: {
-        rrf: {
-          retrievers: [
-            { standard: { query: { bool: { must: [{ multi_match: { query: query.text, fields: textFields } }], ...(clauses.length ? { filter: clauses } : {}) } } } },
-            { knn: { field: vectorField ?? 'embedding', query_vector: query.vector, k: window, num_candidates: Math.max(window * 2, 100), ...(clauses.length ? { filter: { bool: { filter: clauses } } } : {}) } },
-          ],
-          rank_window_size: window,
-          rank_constant: 60,
+    const r = (await this.getClient()
+      .search({
+        index: name,
+        size: query.topK,
+        retriever: {
+          rrf: {
+            retrievers: [
+              { standard: { query: { bool: { must: [{ multi_match: { query: query.text, fields: textFields } }], ...(clauses.length ? { filter: clauses } : {}) } } } },
+              { knn: { field: vectorField ?? 'embedding', query_vector: query.vector, k: window, num_candidates: Math.max(window * 2, 100), ...(clauses.length ? { filter: { bool: { filter: clauses } } } : {}) } },
+            ],
+            rank_window_size: window,
+            rank_constant: 60,
+          },
         },
-      },
-    } as any)) as any;
+      } as any)
+      .catch((e: unknown) => {
+        // RRF is a paid feature on self-managed clusters: a Basic licence refuses it.
+        if (/non-compliant for \[Reciprocal Rank Fusion/i.test(String((e as Error)?.message))) {
+          throw new BadRequestException(RRF_LICENCE);
+        }
+        throw e;
+      })) as any;
     return ((r.hits?.hits ?? []) as any[]).map((h) => {
       const { [vectorField ?? 'embedding']: _vec, ...metadata } = h._source ?? {};
       return { id: String(h._id), score: h._score ?? 0, metadata: trimMetadata(metadata) };

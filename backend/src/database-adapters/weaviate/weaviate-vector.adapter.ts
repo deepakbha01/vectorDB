@@ -157,6 +157,18 @@ export class WeaviateVectorAdapter implements VectorDatabaseAdapter, VectorExplo
   }
 
   /**
+   * The vector to use: the one asked for, else - where the collection has
+   * named vectors - its first, the vector describeCollection reports.
+   * Weaviate needs targetVector spelled out when a collection has several.
+   */
+  private async vectorFor(name: string, requested?: string): Promise<string | undefined> {
+    if (requested) return requested;
+    const config = (await (await this.getClient()).collections.use(name).config.get()) as any;
+    const names = Object.keys(config?.vectorizers ?? {});
+    return names.length > 1 || (names[0] && names[0] !== 'default') ? names[0] : undefined;
+  }
+
+  /**
    * The collection handle, for one tenant where the collection is
    * multi-tenant (every read there must name a tenant).
    */
@@ -183,7 +195,7 @@ export class WeaviateVectorAdapter implements VectorDatabaseAdapter, VectorExplo
     const [vecName, vec] = spaces[0] ?? [null, null];
     const total = tenant || !tenants ? ((await collection.aggregate.overAll()) as any) : {};
     const sample = tenant || !tenants ? ((await collection.query.fetchObjects({ limit: 1, includeVector: true } as any)) as any) : {};
-    const first = this.firstVector(sample.objects?.[0]) as ArrayLike<number> | undefined;
+    const first = this.firstVector(sample.objects?.[0], vecName ?? undefined) as ArrayLike<number> | undefined;
     const notes: string[] = [];
     const named = spaces.length > 1 || (vecName !== null && vecName !== 'default');
     if (named) notes.push(`Named vectors: ${spaces.map(([n]) => n).join(', ')}. The figures above are for '${vecName}'.`);
@@ -218,15 +230,18 @@ export class WeaviateVectorAdapter implements VectorDatabaseAdapter, VectorExplo
       ...(options.sort?.length ? { sort: options.sort.slice(1).reduce((chain: any, s) => chain.byProperty(s.field, s.direction === 'asc'), (collection as any).sort.byProperty(options.sort[0].field, options.sort[0].direction === 'asc')) } : {}),
     } as any)) as any;
     const objects = (r.objects ?? []) as any[];
+    // Whole vectors (the map) must come from the same vector search and the overview use.
+    const vectorName = options.withVectors ? await this.vectorFor(name, options.vectorName) : options.vectorName;
     return {
-      records: objects.slice(0, options.limit).map((o) => ({ id: String(o.uuid), metadata: trimMetadata((o.properties as Record<string, unknown>) ?? {}), ...vectorFields(this.firstVector(o, options.vectorName), options.withVectors) })),
+      records: objects.slice(0, options.limit).map((o) => ({ id: String(o.uuid), metadata: trimMetadata((o.properties as Record<string, unknown>) ?? {}), ...vectorFields(this.firstVector(o, vectorName), options.withVectors) })),
       nextCursor: objects.length > options.limit ? String(offset + options.limit) : null,
     };
   }
 
   async searchFiltered(name: string, query: ExplorerVectorQuery): Promise<VectorSearchResult[]> {
     const collection = await this.handle(name, query.partition);
-    const r = (await collection.query.nearVector(query.vector, { limit: query.topK, filters: this.filters(collection, query.filter), returnMetadata: ['distance'], ...(query.vectorName ? { targetVector: query.vectorName } : {}) } as any)) as any;
+    const targetVector = await this.vectorFor(name, query.vectorName);
+    const r = (await collection.query.nearVector(query.vector, { limit: query.topK, filters: this.filters(collection, query.filter), returnMetadata: ['distance'], ...(targetVector ? { targetVector } : {}) } as any)) as any;
     return ((r.objects ?? []) as any[]).map((o) => ({ id: String(o.uuid), score: 1 - (o.metadata?.distance ?? 0), metadata: trimMetadata((o.properties as Record<string, unknown>) ?? {}) }));
   }
 
@@ -243,13 +258,14 @@ export class WeaviateVectorAdapter implements VectorDatabaseAdapter, VectorExplo
   /** Weaviate's own hybrid search: alpha 1 = vector only, 0 = BM25 only. */
   async nativeHybrid(name: string, query: ExplorerNativeHybridQuery): Promise<VectorSearchResult[]> {
     const collection = await this.handle(name, query.partition);
+    const targetVector = await this.vectorFor(name, query.vectorName);
     const r = (await collection.query.hybrid(query.text, {
       alpha: query.alpha,
       vector: query.vector,
       limit: query.topK,
       filters: this.filters(collection, query.filter),
       returnMetadata: ['score'],
-      ...(query.vectorName ? { targetVector: query.vectorName } : {}),
+      ...(targetVector ? { targetVector } : {}),
     } as any)) as any;
     return ((r.objects ?? []) as any[]).map((o) => ({ id: String(o.uuid), score: Number(o.metadata?.score ?? 0), metadata: trimMetadata((o.properties as Record<string, unknown>) ?? {}) }));
   }
@@ -258,6 +274,6 @@ export class WeaviateVectorAdapter implements VectorDatabaseAdapter, VectorExplo
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
     const collection = await this.handle(name, partition);
     const o = (await collection.query.fetchObjectById(id, { includeVector: true } as any)) as any;
-    return o ? recordDetail(String(o.uuid), (o.properties as Record<string, unknown>) ?? {}, this.firstVector(o, vectorName)) : null;
+    return o ? recordDetail(String(o.uuid), (o.properties as Record<string, unknown>) ?? {}, this.firstVector(o, await this.vectorFor(name, vectorName))) : null;
   }
 }
