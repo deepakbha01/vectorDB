@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { apiClient, DashboardSummary, extractErrorMessage } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { TopBar } from '../components/TopBar';
+import { Watermark } from '../components/Brand';
 
 function metric(label: string, value: string | number | null, unit = '') {
   return (
@@ -62,6 +63,7 @@ export function DashboardPage() {
 
   return (
     <div className="main-content">
+      <Watermark />
       <TopBar title="Dashboard" />
 
       <div style={{ marginBottom: 20 }}>

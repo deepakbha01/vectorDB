@@ -23,7 +23,7 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Vector Database Assessment & Optimization Platform')
+    .setTitle('AVENTRA - Vector Database Assessment & Optimization API')
     .setDescription('Discovery -> Design -> Implementation -> Operations API')
     .setVersion('0.1.0')
     .addBearerAuth()
