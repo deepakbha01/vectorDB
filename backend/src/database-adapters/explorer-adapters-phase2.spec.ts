@@ -2,7 +2,7 @@ import { ChromaVectorAdapter } from './chroma/chroma-vector.adapter';
 import { parseFilterInput as eqf } from './explorer-helpers';
 import { PineconeVectorAdapter } from './pinecone/pinecone-vector.adapter';
 import { WeaviateVectorAdapter } from './weaviate/weaviate-vector.adapter';
-import { ElasticsearchVectorAdapter } from './elasticsearch/elasticsearch-vector.adapter';
+import { ElasticsearchVectorAdapter, PlainJsonTransport } from './elasticsearch/elasticsearch-vector.adapter';
 import { RedisVectorAdapter } from './redis/redis-vector.adapter';
 import { MongoDbAtlasVectorAdapter } from './mongodb/mongodb-atlas-vector.adapter';
 import { OracleVectorAdapter } from './oracle/oracle-vector.adapter';
@@ -300,7 +300,7 @@ describe('sorted listings (phase 3)', () => {
 describe('record detail (phase 3)', () => {
   it('Qdrant retrieves numeric ids as numbers and UUIDs as text', async () => {
     const retrieve = jest.fn().mockResolvedValue([{ id: 7, payload: { dept: 'legal' }, vector: [3, 4] }]);
-    const q = set(new QdrantVectorAdapter(cfg, gen), 'client', { retrieve });
+    const q = set(new QdrantVectorAdapter(cfg, gen), 'client', { retrieve, getCollection: jest.fn().mockResolvedValue({ config: { params: { vectors: { size: 2, distance: 'Cosine' } } } }) });
     expect(await q.getRecord('a', '7')).toEqual({ id: '7', metadata: { dept: 'legal' }, dimension: 2, vectorHead: [3, 4], norm: 5 });
     expect(retrieve).toHaveBeenLastCalledWith('a', expect.objectContaining({ ids: [7] }));
     retrieve.mockResolvedValueOnce([]);
@@ -526,5 +526,59 @@ describe('phase 4 - tenants, namespaces and native hybrid', () => {
     expect(body.retriever.rrf.retrievers[1].knn).toEqual(expect.objectContaining({ field: 'embedding', query_vector: [1, 0], k: 50 }));
     expect(body.retriever.rrf.retrievers[1].knn.filter).toBeDefined();
     expect(r).toEqual([{ id: 'd1', score: 0.03, metadata: { body: 'x' } }]);
+  });
+});
+
+describe('named vectors with none chosen (found on a real Qdrant)', () => {
+  it('Qdrant names the first named vector in search and record reads; an unnamed vector needs no name', async () => {
+    const query = jest.fn().mockResolvedValue({ points: [] });
+    const retrieve = jest.fn().mockResolvedValue([{ id: 1, payload: {}, vector: { splade: { indices: [1], values: [1] }, body: [0.6, 0.8], title: [1, 0, 0] } }]);
+    const named = set(new QdrantVectorAdapter(cfg, gen), 'client', {
+      getCollection: jest.fn().mockResolvedValue({ config: { params: { vectors: { body: { size: 2, distance: 'Dot' }, title: { size: 3, distance: 'Cosine' } }, sparse_vectors: { splade: {} } } } }),
+      query,
+      retrieve,
+    });
+    await named.searchFiltered('docs', { vector: [0, 1], topK: 2, filter: eqf({}) });
+    expect(query).toHaveBeenLastCalledWith('docs', expect.objectContaining({ using: 'body' }));
+    expect((await named.getRecord('docs', '1'))?.vectorHead).toEqual([0.6, 0.8]);
+    const unnamed = set(new QdrantVectorAdapter(cfg, gen), 'client', { getCollection: jest.fn().mockResolvedValue({ config: { params: { vectors: { size: 2, distance: 'Cosine' } } } }), query });
+    await unnamed.searchFiltered('docs', { vector: [0, 1], topK: 2, filter: eqf({}) });
+    expect(query.mock.calls[query.mock.calls.length - 1][1].using).toBeUndefined();
+  });
+
+  it('Weaviate targets the first named vector when a collection has several', async () => {
+    const nearVector = jest.fn().mockResolvedValue({ objects: [] });
+    const fetchObjectById = jest.fn().mockResolvedValue({ uuid: '5c0e1b34-1d2a-4b1c-9a55-0f5e6f7a8b9c', properties: {}, vectors: { body: [0.6, 0.8], title: [1, 0, 0] } });
+    const collection = {
+      filter: { byProperty: jest.fn() },
+      config: { get: jest.fn().mockResolvedValue({ properties: [], vectorizers: { title: { indexType: 'hnsw' }, body: { indexType: 'hnsw' } } }) },
+      query: { nearVector, fetchObjectById, hybrid: jest.fn().mockResolvedValue({ objects: [] }) },
+    };
+    const w = set(new WeaviateVectorAdapter(cfg, gen), 'client', { collections: { use: () => collection } });
+    await w.searchFiltered('Docs', { vector: [1, 0, 0], topK: 2, filter: eqf({}) });
+    expect(nearVector).toHaveBeenCalledWith([1, 0, 0], expect.objectContaining({ targetVector: 'title' }));
+    await w.nativeHybrid('Docs', { text: 'x', vector: [1, 0, 0], alpha: 0.5, topK: 2, filter: eqf({}) });
+    expect(collection.query.hybrid).toHaveBeenCalledWith('x', expect.objectContaining({ targetVector: 'title' }));
+    expect((await w.getRecord('Docs', '5c0e1b34-1d2a-4b1c-9a55-0f5e6f7a8b9c'))?.vectorHead).toEqual([1, 0, 0]);
+    // A collection with one unnamed ("default") vector needs no target.
+    collection.config.get.mockResolvedValue({ properties: [], vectorizers: { default: { indexType: 'hnsw' } } });
+    await w.searchFiltered('Docs', { vector: [1, 0, 0], topK: 2, filter: eqf({}) });
+    expect(nearVector.mock.calls[nearVector.mock.calls.length - 1][1].targetVector).toBeUndefined();
+  });
+});
+
+describe('Elasticsearch against 8.x clusters (found on a real 8.19 cluster)', () => {
+  it('sends plain JSON, which 8.x and 9.x both accept, not the 9.x-only compatibility headers', () => {
+    const e = new ElasticsearchVectorAdapter({ get: (k: string) => (k === 'TARGET_ELASTICSEARCH_NODE' ? 'http://127.0.0.1:9200' : undefined) } as any, gen);
+    expect((e as any).getClient().transport).toBeInstanceOf(PlainJsonTransport);
+  });
+
+  it('explains a licence without RRF instead of passing on the security error', async () => {
+    const e = set(new ElasticsearchVectorAdapter(cfg, gen), 'client', {
+      indices: { getMapping: jest.fn().mockResolvedValue({ docs: { mappings: { properties: { embedding: { type: 'dense_vector', dims: 2 }, body: { type: 'text' } } } } }) },
+      count: jest.fn().mockResolvedValue({ count: 1 }),
+      search: jest.fn().mockRejectedValue(new Error('security_exception: current license is non-compliant for [Reciprocal Rank Fusion (RRF)]')),
+    });
+    await expect(e.nativeHybrid('docs', { text: 'x', vector: [1, 0], alpha: 0.5, topK: 3, filter: eqf({}) })).rejects.toThrow(/licence does not include RRF.*rank or weighted fusion/);
   });
 });

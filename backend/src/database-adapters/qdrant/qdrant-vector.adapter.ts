@@ -155,6 +155,19 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter, VectorExplore
     };
   }
 
+  /**
+   * The vector to use: the one asked for, else - where the collection has
+   * named vectors - its first dense one, the vector describeCollection
+   * reports. Qdrant needs the name spelled out for a collection with named
+   * vectors; an unnamed dense vector needs none (undefined).
+   */
+  private async vectorFor(name: string, requested?: string): Promise<string | undefined> {
+    if (requested) return requested;
+    const info = (await this.getClient().getCollection(name)) as any;
+    const vectors = info.config?.params?.vectors ?? {};
+    return typeof vectors.size === 'number' ? undefined : Object.keys(vectors)[0];
+  }
+
   async browse(name: string, options: BrowseOptions): Promise<ExplorerPage> {
     let offset: unknown;
     if (options.cursor !== null) {
@@ -172,9 +185,10 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter, VectorExplore
       with_payload: true,
       with_vector: true,
     } as any)) as any;
+    const vectorName = await this.vectorFor(name, options.vectorName);
     return {
       records: (r.points ?? []).map((p: any) => {
-        const vec = pickVector(p.vector, options.vectorName);
+        const vec = pickVector(p.vector, vectorName);
         return { id: String(p.id), metadata: trimMetadata((p.payload as Record<string, unknown>) ?? {}), ...vectorFields(vec, options.withVectors) };
       }),
       // The next point id (number or UUID), kept as JSON so its type survives the round trip.
@@ -187,7 +201,8 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter, VectorExplore
   async searchFiltered(name: string, query: ExplorerVectorQuery): Promise<VectorSearchResult[]> {
     // A sparse query is { indices, values } against a named sparse vector.
     const q = query.sparse ? { indices: query.sparse.indices, values: query.sparse.values } : query.vector;
-    const r = (await this.getClient().query(name, { query: q, limit: query.topK, filter: qdrantFilter(query.filter), with_payload: true, ...(query.vectorName ? { using: query.vectorName } : {}) } as any)) as any;
+    const using = await this.vectorFor(name, query.vectorName);
+    const r = (await this.getClient().query(name, { query: q, limit: query.topK, filter: qdrantFilter(query.filter), with_payload: true, ...(using ? { using } : {}) } as any)) as any;
     return (r.points ?? []).map((p: any) => ({ id: String(p.id), score: p.score, metadata: trimMetadata((p.payload as Record<string, unknown>) ?? {}) }));
   }
 
@@ -197,7 +212,7 @@ export class QdrantVectorAdapter implements VectorDatabaseAdapter, VectorExplore
     const r = (await this.getClient().retrieve(name, { ids: [key], with_payload: true, with_vector: true } as any)) as any[];
     const p = r?.[0];
     if (!p) return null;
-    const vec = pickVector(p.vector, vectorName);
+    const vec = pickVector(p.vector, await this.vectorFor(name, vectorName));
     return recordDetail(String(p.id), (p.payload as Record<string, unknown>) ?? {}, vec);
   }
 }
