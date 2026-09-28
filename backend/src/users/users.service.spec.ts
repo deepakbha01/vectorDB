@@ -48,6 +48,15 @@ describe('UsersService', () => {
 
     expect(ok?.email).toBe('viewer@example.com');
     expect(bad).toBeNull();
+    // passwordHash is `select: false`, so the login lookup must ask for it explicitly.
+    expect(repo.findOne).toHaveBeenLastCalledWith(expect.objectContaining({ where: { email: 'viewer@example.com' }, select: expect.objectContaining({ passwordHash: true }) }));
+  });
+
+  it('never serializes the password hash, even when it was loaded', () => {
+    const user = Object.assign(new User(), { id: 'u1', email: 'a@example.com', passwordHash: '$2b$12$secret', role: UserRole.ADMIN });
+    const json = JSON.parse(JSON.stringify({ project: { owner: user } }));
+    expect(json.project.owner).toEqual({ id: 'u1', email: 'a@example.com', role: UserRole.ADMIN });
+    expect(JSON.stringify(user)).not.toContain('secret');
   });
 
   it('findAll lists users ordered by creation date', async () => {
