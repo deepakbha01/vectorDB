@@ -42,6 +42,40 @@ inserted/updated after the initial load. The engine picks HNSW, IVF-Flat, or
 PQ and computes real tuned parameters (M/efConstruction/efSearch, or
 nlist/nprobe), with impact estimates and scaling considerations.
 
+### Vector DB Selection: how the cost fit is calculated
+
+Each candidate platform is scored 0-1 on seven criteria, and cost fit is one
+of them (10% of the total by default, `scoringWeights.cost` in
+`config/thresholds.yaml`). It is **directional**: how costly the platform is
+to stand up and run relative to the others, from what you already operate
+and your scale. It is not a price. Dollar figures for the chosen design come
+from the AI Factory's Cost Recommendation, priced from its rate card.
+
+| Cost model | Cost fit |
+| --- | --- |
+| Reuse existing PostgreSQL (pgvector) | 0.95 |
+| New PostgreSQL | 0.60 |
+| Reuse existing Oracle, or another SQL platform you run | 0.90 |
+| New Oracle, or another new SQL platform | 0.40 |
+| Embedded in the application (Chroma, LanceDB) | 0.85, or 0.95 if already used |
+| Managed SaaS (Pinecone, MongoDB Atlas) | 0.45 new account, 0.70 existing |
+| Self-hosted on Kubernetes (Milvus, Qdrant, Weaviate, Elasticsearch, Redis) | min(1, start + 0.30 × scale) |
+
+For self-hosted platforms the starting point is 0.75 if you already run
+that platform, 0.60 if you have Kubernetes to reuse, and 0.25 if a cluster
+has to be stood up. The scale term reflects that a dedicated cluster costs
+about the same whatever it holds, so its cost per vector falls as the corpus
+grows: it rises from 0 at 5 million vectors to 1 at 20 million
+(`vectorCount.embeddedMax` and `dedicatedRecommendedMin`). For example,
+12.5 million vectors on existing Kubernetes gives min(1, 0.60 + 0.30 × 0.50)
+= 0.75.
+
+On the Vector DB Selection page, *Show technical details*, then open *Why
+<platform> scored this way*: each platform shows its cost model, why it
+applies, the terms added up, the formula with your numbers, and what cost
+adds to its total. Selections saved before this was added show the score
+only; re-run the selection to see the breakdown.
+
 ## 5. Phase 4 - Implementation
 
 **Generate Deployment Plan** combines Phases 2 and 3 into one real SQL/

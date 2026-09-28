@@ -1821,6 +1821,20 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
   "operationalComplexity": "medium",
   "options": [
     {
+      "costBreakdown": {
+        "basis": "Oracle is already run here: the vectors go into the existing estate - no new licence, server or team.",
+        "formula": "0.90 (fixed for this model; no scale term)",
+        "model": "Reuse existing Oracle",
+        "score": 0.9,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.9,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.09,
+      },
       "criteriaScores": {
         "cost": 0.9,
         "existingPlatform": 1,
@@ -1839,13 +1853,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 1 (existingOracle=true, existingPostgres=false, existingKubernetes=false, already running Oracle Database (Vector)=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.9.",
+        "Cost fit scored 0.9 (Reuse existing Oracle: 0.90 (fixed for this model; no scale term); adds 0.090 to the total at a 10% weight).",
       ],
       "label": "Oracle Database (Vector)",
       "platformId": "oracle",
       "totalScore": 0.95,
     },
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -1864,13 +1892,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=true, existingPostgres=false, existingKubernetes=false, already running Chroma=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "Chroma",
       "platformId": "chroma",
       "totalScore": 0.905,
     },
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -1889,13 +1931,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=true, existingPostgres=false, existingKubernetes=false, already running LanceDB=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "LanceDB",
       "platformId": "lancedb",
       "totalScore": 0.905,
     },
     {
+      "costBreakdown": {
+        "basis": "No PostgreSQL to reuse: new (open-source, licence-free) servers to run.",
+        "formula": "0.60 (fixed for this model; no scale term)",
+        "model": "New PostgreSQL deployment",
+        "score": 0.6,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.6,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.06,
+      },
       "criteriaScores": {
         "cost": 0.6,
         "existingPlatform": 0.5,
@@ -1914,13 +1970,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.5 (existingOracle=true, existingPostgres=false, existingKubernetes=false, already running PostgreSQL + pgvector=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.6.",
+        "Cost fit scored 0.6 (New PostgreSQL deployment: 0.60 (fixed for this model; no scale term); adds 0.060 to the total at a 10% weight).",
       ],
       "label": "PostgreSQL + pgvector",
       "platformId": "postgres_pgvector",
       "totalScore": 0.875,
     },
     {
+      "costBreakdown": {
+        "basis": "Nothing to reuse: a new instance, with its licences and administration.",
+        "formula": "0.40 (fixed for this model; no scale term)",
+        "model": "New instance",
+        "score": 0.4,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.4,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.04,
+      },
       "criteriaScores": {
         "cost": 0.4,
         "existingPlatform": 0.5,
@@ -1939,13 +2009,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.5 (existingOracle=true, existingPostgres=false, existingKubernetes=false, already running Actian Vector=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.4.",
+        "Cost fit scored 0.4 (New instance: 0.40 (fixed for this model; no scale term); adds 0.040 to the total at a 10% weight).",
       ],
       "label": "Actian Vector",
       "platformId": "actian",
       "totalScore": 0.825,
     },
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -1964,13 +2048,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=true, existingPostgres=false, existingKubernetes=false, already running Pinecone=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "Pinecone",
       "platformId": "pinecone",
       "totalScore": 0.465,
     },
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -1989,13 +2087,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=true, existingPostgres=false, existingKubernetes=false, already running MongoDB Atlas Vector Search=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "MongoDB Atlas Vector Search",
       "platformId": "mongodb_atlas",
       "totalScore": 0.465,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (3,000,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -2014,13 +2130,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=true, existingPostgres=false, existingKubernetes=false, already running Qdrant=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Qdrant",
       "platformId": "qdrant",
       "totalScore": 0.415,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (3,000,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -2039,13 +2173,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=true, existingPostgres=false, existingKubernetes=false, already running Weaviate=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Weaviate",
       "platformId": "weaviate",
       "totalScore": 0.415,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (3,000,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -2064,13 +2216,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=true, existingPostgres=false, existingKubernetes=false, already running Redis=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Redis",
       "platformId": "redis",
       "totalScore": 0.415,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (3,000,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -2089,13 +2259,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=true, existingPostgres=false, existingKubernetes=false, already running Elasticsearch / OpenSearch=false).",
         "Operational simplicity ('high' complexity) scored 0.3 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Elasticsearch / OpenSearch",
       "platformId": "elasticsearch",
       "totalScore": 0.375,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (3,000,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.2,
@@ -2114,7 +2302,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.2 (existingOracle=true, existingPostgres=false, existingKubernetes=false, already running Milvus (Kubernetes)=false).",
         "Operational simplicity ('high' complexity) scored 0.18 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Milvus (Kubernetes)",
       "platformId": "milvus",
@@ -2322,6 +2510,20 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
   "operationalComplexity": "low",
   "options": [
     {
+      "costBreakdown": {
+        "basis": "PostgreSQL is already run here: pgvector is a free extension on the existing servers.",
+        "formula": "0.95 (fixed for this model; no scale term)",
+        "model": "Reuse existing PostgreSQL",
+        "score": 0.95,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.95,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.095,
+      },
       "criteriaScores": {
         "cost": 0.95,
         "existingPlatform": 1,
@@ -2340,13 +2542,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 1 (existingOracle=false, existingPostgres=true, existingKubernetes=false, already running PostgreSQL + pgvector=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.95.",
+        "Cost fit scored 0.95 (Reuse existing PostgreSQL: 0.95 (fixed for this model; no scale term); adds 0.095 to the total at a 10% weight).",
       ],
       "label": "PostgreSQL + pgvector",
       "platformId": "postgres_pgvector",
       "totalScore": 0.985,
     },
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -2365,13 +2581,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=true, existingKubernetes=false, already running Chroma=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "Chroma",
       "platformId": "chroma",
       "totalScore": 0.905,
     },
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -2390,13 +2620,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=true, existingKubernetes=false, already running LanceDB=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "LanceDB",
       "platformId": "lancedb",
       "totalScore": 0.905,
     },
     {
+      "costBreakdown": {
+        "basis": "Nothing to reuse: a new instance, with its licences and administration.",
+        "formula": "0.40 (fixed for this model; no scale term)",
+        "model": "New instance",
+        "score": 0.4,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.4,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.04,
+      },
       "criteriaScores": {
         "cost": 0.4,
         "existingPlatform": 0.5,
@@ -2415,13 +2659,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=true, existingKubernetes=false, already running Actian Vector=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.4.",
+        "Cost fit scored 0.4 (New instance: 0.40 (fixed for this model; no scale term); adds 0.040 to the total at a 10% weight).",
       ],
       "label": "Actian Vector",
       "platformId": "actian",
       "totalScore": 0.825,
     },
     {
+      "costBreakdown": {
+        "basis": "No Oracle estate to reuse: a new instance means new licences, servers and administration.",
+        "formula": "0.40 (fixed for this model; no scale term)",
+        "model": "New Oracle deployment",
+        "score": 0.4,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.4,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.04,
+      },
       "criteriaScores": {
         "cost": 0.4,
         "existingPlatform": 0.4,
@@ -2440,13 +2698,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.4 (existingOracle=false, existingPostgres=true, existingKubernetes=false, already running Oracle Database (Vector)=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.4.",
+        "Cost fit scored 0.4 (New Oracle deployment: 0.40 (fixed for this model; no scale term); adds 0.040 to the total at a 10% weight).",
       ],
       "label": "Oracle Database (Vector)",
       "platformId": "oracle",
       "totalScore": 0.81,
     },
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -2465,13 +2737,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=true, existingKubernetes=false, already running Pinecone=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "Pinecone",
       "platformId": "pinecone",
       "totalScore": 0.505,
     },
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -2490,13 +2776,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=true, existingKubernetes=false, already running MongoDB Atlas Vector Search=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "MongoDB Atlas Vector Search",
       "platformId": "mongodb_atlas",
       "totalScore": 0.505,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (500,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -2515,13 +2819,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=true, existingKubernetes=false, already running Qdrant=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Qdrant",
       "platformId": "qdrant",
       "totalScore": 0.455,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (500,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -2540,13 +2862,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=true, existingKubernetes=false, already running Weaviate=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Weaviate",
       "platformId": "weaviate",
       "totalScore": 0.455,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (500,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -2565,13 +2905,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=true, existingKubernetes=false, already running Redis=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Redis",
       "platformId": "redis",
       "totalScore": 0.455,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (500,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -2590,13 +2948,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=true, existingKubernetes=false, already running Elasticsearch / OpenSearch=false).",
         "Operational simplicity ('high' complexity) scored 0.3 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Elasticsearch / OpenSearch",
       "platformId": "elasticsearch",
       "totalScore": 0.415,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (500,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.2,
@@ -2615,7 +2991,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.2 (existingOracle=false, existingPostgres=true, existingKubernetes=false, already running Milvus (Kubernetes)=false).",
         "Operational simplicity ('high' complexity) scored 0.18 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Milvus (Kubernetes)",
       "platformId": "milvus",
@@ -2833,6 +3209,20 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
   "operationalComplexity": "low",
   "options": [
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -2856,13 +3246,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Chroma=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "Chroma",
       "platformId": "chroma",
       "totalScore": 0.905,
     },
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -2886,13 +3290,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running LanceDB=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "LanceDB",
       "platformId": "lancedb",
       "totalScore": 0.905,
     },
     {
+      "costBreakdown": {
+        "basis": "No PostgreSQL to reuse: new (open-source, licence-free) servers to run.",
+        "formula": "0.60 (fixed for this model; no scale term)",
+        "model": "New PostgreSQL deployment",
+        "score": 0.6,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.6,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.06,
+      },
       "criteriaScores": {
         "cost": 0.6,
         "existingPlatform": 0.5,
@@ -2911,13 +3329,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running PostgreSQL + pgvector=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.6.",
+        "Cost fit scored 0.6 (New PostgreSQL deployment: 0.60 (fixed for this model; no scale term); adds 0.060 to the total at a 10% weight).",
       ],
       "label": "PostgreSQL + pgvector",
       "platformId": "postgres_pgvector",
       "totalScore": 0.875,
     },
     {
+      "costBreakdown": {
+        "basis": "Nothing to reuse: a new instance, with its licences and administration.",
+        "formula": "0.40 (fixed for this model; no scale term)",
+        "model": "New instance",
+        "score": 0.4,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.4,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.04,
+      },
       "criteriaScores": {
         "cost": 0.4,
         "existingPlatform": 0.5,
@@ -2936,13 +3368,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Actian Vector=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.4.",
+        "Cost fit scored 0.4 (New instance: 0.40 (fixed for this model; no scale term); adds 0.040 to the total at a 10% weight).",
       ],
       "label": "Actian Vector",
       "platformId": "actian",
       "totalScore": 0.825,
     },
     {
+      "costBreakdown": {
+        "basis": "No Oracle estate to reuse: a new instance means new licences, servers and administration.",
+        "formula": "0.40 (fixed for this model; no scale term)",
+        "model": "New Oracle deployment",
+        "score": 0.4,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.4,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.04,
+      },
       "criteriaScores": {
         "cost": 0.4,
         "existingPlatform": 0.4,
@@ -2961,13 +3407,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.4 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Oracle Database (Vector)=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.4.",
+        "Cost fit scored 0.4 (New Oracle deployment: 0.40 (fixed for this model; no scale term); adds 0.040 to the total at a 10% weight).",
       ],
       "label": "Oracle Database (Vector)",
       "platformId": "oracle",
       "totalScore": 0.81,
     },
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -2986,13 +3446,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Pinecone=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "Pinecone",
       "platformId": "pinecone",
       "totalScore": 0.505,
     },
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -3011,13 +3485,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running MongoDB Atlas Vector Search=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "MongoDB Atlas Vector Search",
       "platformId": "mongodb_atlas",
       "totalScore": 0.505,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (500,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -3036,13 +3528,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Qdrant=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Qdrant",
       "platformId": "qdrant",
       "totalScore": 0.455,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (500,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -3061,13 +3571,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Weaviate=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Weaviate",
       "platformId": "weaviate",
       "totalScore": 0.455,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (500,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -3086,13 +3614,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Redis=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Redis",
       "platformId": "redis",
       "totalScore": 0.455,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (500,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -3111,13 +3657,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Elasticsearch / OpenSearch=false).",
         "Operational simplicity ('high' complexity) scored 0.3 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Elasticsearch / OpenSearch",
       "platformId": "elasticsearch",
       "totalScore": 0.415,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (500,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.2,
@@ -3136,7 +3700,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.2 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Milvus (Kubernetes)=false).",
         "Operational simplicity ('high' complexity) scored 0.18 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Milvus (Kubernetes)",
       "platformId": "milvus",
@@ -3344,6 +3908,24 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
   "operationalComplexity": "medium",
   "options": [
     {
+      "costBreakdown": {
+        "basis": "Self-hosted on the existing Kubernetes cluster: new workloads, but no new cluster to stand up. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.60 + 0.30 × 1.00) = 0.90",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.9,
+        "steps": [
+          {
+            "label": "Starting point: existing Kubernetes",
+            "value": 0.6,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (200,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.09,
+      },
       "criteriaScores": {
         "cost": 0.9,
         "existingPlatform": 0.7,
@@ -3362,13 +3944,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.97 scored 1.",
         "Existing-platform fit scored 0.7 (existingOracle=false, existingPostgres=false, existingKubernetes=true, already running Qdrant=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'platform_team' operational capability.",
-        "Cost fit scored 0.9.",
+        "Cost fit scored 0.9 (Self-hosted on Kubernetes: min(1, 0.60 + 0.30 × 1.00) = 0.90; adds 0.090 to the total at a 10% weight).",
       ],
       "label": "Qdrant",
       "platformId": "qdrant",
       "totalScore": 0.8925,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted on the existing Kubernetes cluster: new workloads, but no new cluster to stand up. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.60 + 0.30 × 1.00) = 0.90",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.9,
+        "steps": [
+          {
+            "label": "Starting point: existing Kubernetes",
+            "value": 0.6,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (200,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.09,
+      },
       "criteriaScores": {
         "cost": 0.9,
         "existingPlatform": 0.7,
@@ -3387,13 +3987,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.97 scored 1.",
         "Existing-platform fit scored 0.7 (existingOracle=false, existingPostgres=false, existingKubernetes=true, already running Weaviate=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'platform_team' operational capability.",
-        "Cost fit scored 0.9.",
+        "Cost fit scored 0.9 (Self-hosted on Kubernetes: min(1, 0.60 + 0.30 × 1.00) = 0.90; adds 0.090 to the total at a 10% weight).",
       ],
       "label": "Weaviate",
       "platformId": "weaviate",
       "totalScore": 0.8925,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted on the existing Kubernetes cluster: new workloads, but no new cluster to stand up. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.60 + 0.30 × 1.00) = 0.90",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.9,
+        "steps": [
+          {
+            "label": "Starting point: existing Kubernetes",
+            "value": 0.6,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (200,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.09,
+      },
       "criteriaScores": {
         "cost": 0.9,
         "existingPlatform": 0.7,
@@ -3412,13 +4030,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.97 scored 1.",
         "Existing-platform fit scored 0.7 (existingOracle=false, existingPostgres=false, existingKubernetes=true, already running Redis=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'platform_team' operational capability.",
-        "Cost fit scored 0.9.",
+        "Cost fit scored 0.9 (Self-hosted on Kubernetes: min(1, 0.60 + 0.30 × 1.00) = 0.90; adds 0.090 to the total at a 10% weight).",
       ],
       "label": "Redis",
       "platformId": "redis",
       "totalScore": 0.8925,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted on the existing Kubernetes cluster: new workloads, but no new cluster to stand up. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.60 + 0.30 × 1.00) = 0.90",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.9,
+        "steps": [
+          {
+            "label": "Starting point: existing Kubernetes",
+            "value": 0.6,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (200,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.09,
+      },
       "criteriaScores": {
         "cost": 0.9,
         "existingPlatform": 0.8,
@@ -3437,13 +4073,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.97 scored 1.",
         "Existing-platform fit scored 0.8 (existingOracle=false, existingPostgres=false, existingKubernetes=true, already running Milvus (Kubernetes)=false).",
         "Operational simplicity ('high' complexity) scored 0.46 given a 'platform_team' operational capability.",
-        "Cost fit scored 0.9.",
+        "Cost fit scored 0.9 (Self-hosted on Kubernetes: min(1, 0.60 + 0.30 × 1.00) = 0.90; adds 0.090 to the total at a 10% weight).",
       ],
       "label": "Milvus (Kubernetes)",
       "platformId": "milvus",
       "totalScore": 0.8835,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted on the existing Kubernetes cluster: new workloads, but no new cluster to stand up. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.60 + 0.30 × 1.00) = 0.90",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.9,
+        "steps": [
+          {
+            "label": "Starting point: existing Kubernetes",
+            "value": 0.6,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (200,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.09,
+      },
       "criteriaScores": {
         "cost": 0.9,
         "existingPlatform": 0.7,
@@ -3462,13 +4116,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.97 scored 1.",
         "Existing-platform fit scored 0.7 (existingOracle=false, existingPostgres=false, existingKubernetes=true, already running Elasticsearch / OpenSearch=false).",
         "Operational simplicity ('high' complexity) scored 0.46 given a 'platform_team' operational capability.",
-        "Cost fit scored 0.9.",
+        "Cost fit scored 0.9 (Self-hosted on Kubernetes: min(1, 0.60 + 0.30 × 1.00) = 0.90; adds 0.090 to the total at a 10% weight).",
       ],
       "label": "Elasticsearch / OpenSearch",
       "platformId": "elasticsearch",
       "totalScore": 0.8685,
     },
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -3487,13 +4155,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.97 scored 1.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=true, already running Pinecone=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'platform_team' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "Pinecone",
       "platformId": "pinecone",
       "totalScore": 0.8475,
     },
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -3512,13 +4194,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.97 scored 1.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=true, already running MongoDB Atlas Vector Search=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'platform_team' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "MongoDB Atlas Vector Search",
       "platformId": "mongodb_atlas",
       "totalScore": 0.8475,
     },
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -3537,13 +4233,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.97 scored 1.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=true, already running Chroma=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'platform_team' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "Chroma",
       "platformId": "chroma",
       "totalScore": 0.4875,
     },
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -3562,13 +4272,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.97 scored 1.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=true, already running LanceDB=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'platform_team' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "LanceDB",
       "platformId": "lancedb",
       "totalScore": 0.4875,
     },
     {
+      "costBreakdown": {
+        "basis": "No PostgreSQL to reuse: new (open-source, licence-free) servers to run.",
+        "formula": "0.60 (fixed for this model; no scale term)",
+        "model": "New PostgreSQL deployment",
+        "score": 0.6,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.6,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.06,
+      },
       "criteriaScores": {
         "cost": 0.6,
         "existingPlatform": 0.5,
@@ -3587,13 +4311,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.97 scored 0.85.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=true, already running PostgreSQL + pgvector=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'platform_team' operational capability.",
-        "Cost fit scored 0.6.",
+        "Cost fit scored 0.6 (New PostgreSQL deployment: 0.60 (fixed for this model; no scale term); adds 0.060 to the total at a 10% weight).",
       ],
       "label": "PostgreSQL + pgvector",
       "platformId": "postgres_pgvector",
       "totalScore": 0.395,
     },
     {
+      "costBreakdown": {
+        "basis": "Nothing to reuse: a new instance, with its licences and administration.",
+        "formula": "0.40 (fixed for this model; no scale term)",
+        "model": "New instance",
+        "score": 0.4,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.4,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.04,
+      },
       "criteriaScores": {
         "cost": 0.4,
         "existingPlatform": 0.5,
@@ -3612,13 +4350,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.97 scored 0.85.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=true, already running Actian Vector=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'platform_team' operational capability.",
-        "Cost fit scored 0.4.",
+        "Cost fit scored 0.4 (New instance: 0.40 (fixed for this model; no scale term); adds 0.040 to the total at a 10% weight).",
       ],
       "label": "Actian Vector",
       "platformId": "actian",
       "totalScore": 0.345,
     },
     {
+      "costBreakdown": {
+        "basis": "No Oracle estate to reuse: a new instance means new licences, servers and administration.",
+        "formula": "0.40 (fixed for this model; no scale term)",
+        "model": "New Oracle deployment",
+        "score": 0.4,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.4,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.04,
+      },
       "criteriaScores": {
         "cost": 0.4,
         "existingPlatform": 0.4,
@@ -3637,7 +4389,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.97 scored 0.85.",
         "Existing-platform fit scored 0.4 (existingOracle=false, existingPostgres=false, existingKubernetes=true, already running Oracle Database (Vector)=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'platform_team' operational capability.",
-        "Cost fit scored 0.4.",
+        "Cost fit scored 0.4 (New Oracle deployment: 0.40 (fixed for this model; no scale term); adds 0.040 to the total at a 10% weight).",
       ],
       "label": "Oracle Database (Vector)",
       "platformId": "oracle",
@@ -3860,6 +4612,20 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
   "operationalComplexity": "low",
   "options": [
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -3878,13 +4644,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Pinecone=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'none' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "Pinecone",
       "platformId": "pinecone",
       "totalScore": 0.865,
     },
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -3903,13 +4683,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running MongoDB Atlas Vector Search=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'none' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "MongoDB Atlas Vector Search",
       "platformId": "mongodb_atlas",
       "totalScore": 0.865,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 1.00) = 0.55",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.55,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (30,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.055,
+      },
       "criteriaScores": {
         "cost": 0.55,
         "existingPlatform": 0.5,
@@ -3928,13 +4726,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Qdrant=false).",
         "Operational simplicity ('medium' complexity) scored 0.595 given a 'none' operational capability.",
-        "Cost fit scored 0.55.",
+        "Cost fit scored 0.55 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 1.00) = 0.55; adds 0.055 to the total at a 10% weight).",
       ],
       "label": "Qdrant",
       "platformId": "qdrant",
       "totalScore": 0.8345,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 1.00) = 0.55",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.55,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (30,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.055,
+      },
       "criteriaScores": {
         "cost": 0.55,
         "existingPlatform": 0.5,
@@ -3953,13 +4769,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Weaviate=false).",
         "Operational simplicity ('medium' complexity) scored 0.595 given a 'none' operational capability.",
-        "Cost fit scored 0.55.",
+        "Cost fit scored 0.55 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 1.00) = 0.55; adds 0.055 to the total at a 10% weight).",
       ],
       "label": "Weaviate",
       "platformId": "weaviate",
       "totalScore": 0.8345,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 1.00) = 0.55",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.55,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (30,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.055,
+      },
       "criteriaScores": {
         "cost": 0.55,
         "existingPlatform": 0.5,
@@ -3978,13 +4812,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Redis=false).",
         "Operational simplicity ('medium' complexity) scored 0.595 given a 'none' operational capability.",
-        "Cost fit scored 0.55.",
+        "Cost fit scored 0.55 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 1.00) = 0.55; adds 0.055 to the total at a 10% weight).",
       ],
       "label": "Redis",
       "platformId": "redis",
       "totalScore": 0.8345,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 1.00) = 0.55",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.55,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (30,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.055,
+      },
       "criteriaScores": {
         "cost": 0.55,
         "existingPlatform": 0.5,
@@ -4003,13 +4855,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Elasticsearch / OpenSearch=false).",
         "Operational simplicity ('high' complexity) scored 0.2 given a 'none' operational capability.",
-        "Cost fit scored 0.55.",
+        "Cost fit scored 0.55 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 1.00) = 0.55; adds 0.055 to the total at a 10% weight).",
       ],
       "label": "Elasticsearch / OpenSearch",
       "platformId": "elasticsearch",
       "totalScore": 0.795,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 1.00) = 0.55",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.55,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (30,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.055,
+      },
       "criteriaScores": {
         "cost": 0.55,
         "existingPlatform": 0.2,
@@ -4028,13 +4898,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.2 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Milvus (Kubernetes)=false).",
         "Operational simplicity ('high' complexity) scored 0.12 given a 'none' operational capability.",
-        "Cost fit scored 0.55.",
+        "Cost fit scored 0.55 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 1.00) = 0.55; adds 0.055 to the total at a 10% weight).",
       ],
       "label": "Milvus (Kubernetes)",
       "platformId": "milvus",
       "totalScore": 0.742,
     },
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -4053,13 +4937,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Chroma=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'none' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "Chroma",
       "platformId": "chroma",
       "totalScore": 0.505,
     },
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -4078,13 +4976,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running LanceDB=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'none' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "LanceDB",
       "platformId": "lancedb",
       "totalScore": 0.505,
     },
     {
+      "costBreakdown": {
+        "basis": "No PostgreSQL to reuse: new (open-source, licence-free) servers to run.",
+        "formula": "0.60 (fixed for this model; no scale term)",
+        "model": "New PostgreSQL deployment",
+        "score": 0.6,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.6,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.06,
+      },
       "criteriaScores": {
         "cost": 0.6,
         "existingPlatform": 0.5,
@@ -4103,13 +5015,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running PostgreSQL + pgvector=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'none' operational capability.",
-        "Cost fit scored 0.6.",
+        "Cost fit scored 0.6 (New PostgreSQL deployment: 0.60 (fixed for this model; no scale term); adds 0.060 to the total at a 10% weight).",
       ],
       "label": "PostgreSQL + pgvector",
       "platformId": "postgres_pgvector",
       "totalScore": 0.475,
     },
     {
+      "costBreakdown": {
+        "basis": "Nothing to reuse: a new instance, with its licences and administration.",
+        "formula": "0.40 (fixed for this model; no scale term)",
+        "model": "New instance",
+        "score": 0.4,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.4,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.04,
+      },
       "criteriaScores": {
         "cost": 0.4,
         "existingPlatform": 0.5,
@@ -4128,13 +5054,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Actian Vector=false).",
         "Operational simplicity ('medium' complexity) scored 0.595 given a 'none' operational capability.",
-        "Cost fit scored 0.4.",
+        "Cost fit scored 0.4 (New instance: 0.40 (fixed for this model; no scale term); adds 0.040 to the total at a 10% weight).",
       ],
       "label": "Actian Vector",
       "platformId": "actian",
       "totalScore": 0.4145,
     },
     {
+      "costBreakdown": {
+        "basis": "No Oracle estate to reuse: a new instance means new licences, servers and administration.",
+        "formula": "0.40 (fixed for this model; no scale term)",
+        "model": "New Oracle deployment",
+        "score": 0.4,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.4,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.04,
+      },
       "criteriaScores": {
         "cost": 0.4,
         "existingPlatform": 0.4,
@@ -4153,7 +5093,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.4 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Oracle Database (Vector)=false).",
         "Operational simplicity ('medium' complexity) scored 0.595 given a 'none' operational capability.",
-        "Cost fit scored 0.4.",
+        "Cost fit scored 0.4 (New Oracle deployment: 0.40 (fixed for this model; no scale term); adds 0.040 to the total at a 10% weight).",
       ],
       "label": "Oracle Database (Vector)",
       "platformId": "oracle",
@@ -4403,6 +5343,20 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
   "operationalComplexity": "low",
   "options": [
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -4424,13 +5378,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Pinecone=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "Pinecone",
       "platformId": "pinecone",
       "totalScore": 0.865,
     },
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -4452,13 +5420,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running MongoDB Atlas Vector Search=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "MongoDB Atlas Vector Search",
       "platformId": "mongodb_atlas",
       "totalScore": 0.865,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 1.00) = 0.55",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.55,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (20,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.055,
+      },
       "criteriaScores": {
         "cost": 0.55,
         "existingPlatform": 0.5,
@@ -4480,13 +5466,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Qdrant=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.55.",
+        "Cost fit scored 0.55 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 1.00) = 0.55; adds 0.055 to the total at a 10% weight).",
       ],
       "label": "Qdrant",
       "platformId": "qdrant",
       "totalScore": 0.845,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 1.00) = 0.55",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.55,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (20,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.055,
+      },
       "criteriaScores": {
         "cost": 0.55,
         "existingPlatform": 0.5,
@@ -4508,13 +5512,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Weaviate=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.55.",
+        "Cost fit scored 0.55 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 1.00) = 0.55; adds 0.055 to the total at a 10% weight).",
       ],
       "label": "Weaviate",
       "platformId": "weaviate",
       "totalScore": 0.845,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 1.00) = 0.55",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.55,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (20,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.055,
+      },
       "criteriaScores": {
         "cost": 0.55,
         "existingPlatform": 0.5,
@@ -4536,13 +5558,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Redis=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.55.",
+        "Cost fit scored 0.55 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 1.00) = 0.55; adds 0.055 to the total at a 10% weight).",
       ],
       "label": "Redis",
       "platformId": "redis",
       "totalScore": 0.845,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 1.00) = 0.55",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.55,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (20,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.055,
+      },
       "criteriaScores": {
         "cost": 0.55,
         "existingPlatform": 0.5,
@@ -4564,13 +5604,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Elasticsearch / OpenSearch=false).",
         "Operational simplicity ('high' complexity) scored 0.3 given a 'part_time' operational capability.",
-        "Cost fit scored 0.55.",
+        "Cost fit scored 0.55 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 1.00) = 0.55; adds 0.055 to the total at a 10% weight).",
       ],
       "label": "Elasticsearch / OpenSearch",
       "platformId": "elasticsearch",
       "totalScore": 0.805,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 1.00) = 0.55",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.55,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (20,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.055,
+      },
       "criteriaScores": {
         "cost": 0.55,
         "existingPlatform": 0.2,
@@ -4592,13 +5650,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.2 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Milvus (Kubernetes)=false).",
         "Operational simplicity ('high' complexity) scored 0.18 given a 'part_time' operational capability.",
-        "Cost fit scored 0.55.",
+        "Cost fit scored 0.55 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 1.00) = 0.55; adds 0.055 to the total at a 10% weight).",
       ],
       "label": "Milvus (Kubernetes)",
       "platformId": "milvus",
       "totalScore": 0.748,
     },
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -4620,13 +5692,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Chroma=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "Chroma",
       "platformId": "chroma",
       "totalScore": 0.505,
     },
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -4648,13 +5734,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running LanceDB=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "LanceDB",
       "platformId": "lancedb",
       "totalScore": 0.505,
     },
     {
+      "costBreakdown": {
+        "basis": "No PostgreSQL to reuse: new (open-source, licence-free) servers to run.",
+        "formula": "0.60 (fixed for this model; no scale term)",
+        "model": "New PostgreSQL deployment",
+        "score": 0.6,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.6,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.06,
+      },
       "criteriaScores": {
         "cost": 0.6,
         "existingPlatform": 0.5,
@@ -4676,13 +5776,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running PostgreSQL + pgvector=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.6.",
+        "Cost fit scored 0.6 (New PostgreSQL deployment: 0.60 (fixed for this model; no scale term); adds 0.060 to the total at a 10% weight).",
       ],
       "label": "PostgreSQL + pgvector",
       "platformId": "postgres_pgvector",
       "totalScore": 0.475,
     },
     {
+      "costBreakdown": {
+        "basis": "Nothing to reuse: a new instance, with its licences and administration.",
+        "formula": "0.40 (fixed for this model; no scale term)",
+        "model": "New instance",
+        "score": 0.4,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.4,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.04,
+      },
       "criteriaScores": {
         "cost": 0.4,
         "existingPlatform": 0.5,
@@ -4704,13 +5818,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Actian Vector=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.4.",
+        "Cost fit scored 0.4 (New instance: 0.40 (fixed for this model; no scale term); adds 0.040 to the total at a 10% weight).",
       ],
       "label": "Actian Vector",
       "platformId": "actian",
       "totalScore": 0.425,
     },
     {
+      "costBreakdown": {
+        "basis": "No Oracle estate to reuse: a new instance means new licences, servers and administration.",
+        "formula": "0.40 (fixed for this model; no scale term)",
+        "model": "New Oracle deployment",
+        "score": 0.4,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.4,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.04,
+      },
       "criteriaScores": {
         "cost": 0.4,
         "existingPlatform": 0.4,
@@ -4732,7 +5860,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.4 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Oracle Database (Vector)=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.4.",
+        "Cost fit scored 0.4 (New Oracle deployment: 0.40 (fixed for this model; no scale term); adds 0.040 to the total at a 10% weight).",
       ],
       "label": "Oracle Database (Vector)",
       "platformId": "oracle",
@@ -4954,6 +6082,20 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
   "operationalComplexity": "low",
   "options": [
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -4972,13 +6114,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Chroma=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "Chroma",
       "platformId": "chroma",
       "totalScore": 0.905,
     },
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -4997,13 +6153,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running LanceDB=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "LanceDB",
       "platformId": "lancedb",
       "totalScore": 0.905,
     },
     {
+      "costBreakdown": {
+        "basis": "No PostgreSQL to reuse: new (open-source, licence-free) servers to run.",
+        "formula": "0.60 (fixed for this model; no scale term)",
+        "model": "New PostgreSQL deployment",
+        "score": 0.6,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.6,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.06,
+      },
       "criteriaScores": {
         "cost": 0.6,
         "existingPlatform": 0.5,
@@ -5022,13 +6192,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running PostgreSQL + pgvector=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.6.",
+        "Cost fit scored 0.6 (New PostgreSQL deployment: 0.60 (fixed for this model; no scale term); adds 0.060 to the total at a 10% weight).",
       ],
       "label": "PostgreSQL + pgvector",
       "platformId": "postgres_pgvector",
       "totalScore": 0.875,
     },
     {
+      "costBreakdown": {
+        "basis": "Nothing to reuse: a new instance, with its licences and administration.",
+        "formula": "0.40 (fixed for this model; no scale term)",
+        "model": "New instance",
+        "score": 0.4,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.4,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.04,
+      },
       "criteriaScores": {
         "cost": 0.4,
         "existingPlatform": 0.5,
@@ -5047,13 +6231,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Actian Vector=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.4.",
+        "Cost fit scored 0.4 (New instance: 0.40 (fixed for this model; no scale term); adds 0.040 to the total at a 10% weight).",
       ],
       "label": "Actian Vector",
       "platformId": "actian",
       "totalScore": 0.825,
     },
     {
+      "costBreakdown": {
+        "basis": "No Oracle estate to reuse: a new instance means new licences, servers and administration.",
+        "formula": "0.40 (fixed for this model; no scale term)",
+        "model": "New Oracle deployment",
+        "score": 0.4,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.4,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.04,
+      },
       "criteriaScores": {
         "cost": 0.4,
         "existingPlatform": 0.4,
@@ -5072,13 +6270,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.4 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Oracle Database (Vector)=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.4.",
+        "Cost fit scored 0.4 (New Oracle deployment: 0.40 (fixed for this model; no scale term); adds 0.040 to the total at a 10% weight).",
       ],
       "label": "Oracle Database (Vector)",
       "platformId": "oracle",
       "totalScore": 0.81,
     },
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -5097,13 +6309,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Pinecone=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "Pinecone",
       "platformId": "pinecone",
       "totalScore": 0.505,
     },
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -5122,13 +6348,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running MongoDB Atlas Vector Search=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "MongoDB Atlas Vector Search",
       "platformId": "mongodb_atlas",
       "totalScore": 0.505,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (500,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -5147,13 +6391,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Qdrant=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Qdrant",
       "platformId": "qdrant",
       "totalScore": 0.455,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (500,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -5172,13 +6434,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Weaviate=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Weaviate",
       "platformId": "weaviate",
       "totalScore": 0.455,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (500,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -5197,13 +6477,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Redis=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Redis",
       "platformId": "redis",
       "totalScore": 0.455,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (500,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.5,
@@ -5222,13 +6520,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Elasticsearch / OpenSearch=false).",
         "Operational simplicity ('high' complexity) scored 0.3 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Elasticsearch / OpenSearch",
       "platformId": "elasticsearch",
       "totalScore": 0.415,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 0.00) = 0.25",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.25,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 0.00 (500,000 vectors)",
+            "value": 0,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.025,
+      },
       "criteriaScores": {
         "cost": 0.25,
         "existingPlatform": 0.2,
@@ -5247,7 +6563,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.2 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Milvus (Kubernetes)=false).",
         "Operational simplicity ('high' complexity) scored 0.18 given a 'part_time' operational capability.",
-        "Cost fit scored 0.25.",
+        "Cost fit scored 0.25 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 0.00) = 0.25; adds 0.025 to the total at a 10% weight).",
       ],
       "label": "Milvus (Kubernetes)",
       "platformId": "milvus",
@@ -5465,6 +6781,20 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
   "operationalComplexity": "low",
   "options": [
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -5483,13 +6813,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Pinecone=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "Pinecone",
       "platformId": "pinecone",
       "totalScore": 0.865,
     },
     {
+      "costBreakdown": {
+        "basis": "A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.",
+        "formula": "0.45 (fixed for this model; no scale term)",
+        "model": "Managed SaaS - new account",
+        "score": 0.45,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.45,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.045,
+      },
       "criteriaScores": {
         "cost": 0.45,
         "existingPlatform": 0.5,
@@ -5508,13 +6852,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running MongoDB Atlas Vector Search=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.45.",
+        "Cost fit scored 0.45 (Managed SaaS - new account: 0.45 (fixed for this model; no scale term); adds 0.045 to the total at a 10% weight).",
       ],
       "label": "MongoDB Atlas Vector Search",
       "platformId": "mongodb_atlas",
       "totalScore": 0.865,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 1.00) = 0.55",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.55,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (50,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.055,
+      },
       "criteriaScores": {
         "cost": 0.55,
         "existingPlatform": 0.5,
@@ -5533,13 +6895,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Qdrant=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.55.",
+        "Cost fit scored 0.55 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 1.00) = 0.55; adds 0.055 to the total at a 10% weight).",
       ],
       "label": "Qdrant",
       "platformId": "qdrant",
       "totalScore": 0.845,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 1.00) = 0.55",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.55,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (50,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.055,
+      },
       "criteriaScores": {
         "cost": 0.55,
         "existingPlatform": 0.5,
@@ -5558,13 +6938,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Weaviate=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.55.",
+        "Cost fit scored 0.55 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 1.00) = 0.55; adds 0.055 to the total at a 10% weight).",
       ],
       "label": "Weaviate",
       "platformId": "weaviate",
       "totalScore": 0.845,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 1.00) = 0.55",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.55,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (50,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.055,
+      },
       "criteriaScores": {
         "cost": 0.55,
         "existingPlatform": 0.5,
@@ -5583,13 +6981,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Redis=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.55.",
+        "Cost fit scored 0.55 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 1.00) = 0.55; adds 0.055 to the total at a 10% weight).",
       ],
       "label": "Redis",
       "platformId": "redis",
       "totalScore": 0.845,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 1.00) = 0.55",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.55,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (50,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.055,
+      },
       "criteriaScores": {
         "cost": 0.55,
         "existingPlatform": 0.5,
@@ -5608,13 +7024,31 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Elasticsearch / OpenSearch=false).",
         "Operational simplicity ('high' complexity) scored 0.3 given a 'part_time' operational capability.",
-        "Cost fit scored 0.55.",
+        "Cost fit scored 0.55 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 1.00) = 0.55; adds 0.055 to the total at a 10% weight).",
       ],
       "label": "Elasticsearch / OpenSearch",
       "platformId": "elasticsearch",
       "totalScore": 0.805,
     },
     {
+      "costBreakdown": {
+        "basis": "Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first. A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: the scale term rises from 0 at 5,000,000 vectors to its full 0.30 at 20,000,000.",
+        "formula": "min(1, 0.25 + 0.30 × 1.00) = 0.55",
+        "model": "Self-hosted on Kubernetes",
+        "score": 0.55,
+        "steps": [
+          {
+            "label": "Starting point: new cluster needed",
+            "value": 0.25,
+          },
+          {
+            "label": "Scale term: 0.30 × 1.00 (50,000,000 vectors)",
+            "value": 0.3,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.055,
+      },
       "criteriaScores": {
         "cost": 0.55,
         "existingPlatform": 0.2,
@@ -5633,13 +7067,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.2 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Milvus (Kubernetes)=false).",
         "Operational simplicity ('high' complexity) scored 0.18 given a 'part_time' operational capability.",
-        "Cost fit scored 0.55.",
+        "Cost fit scored 0.55 (Self-hosted on Kubernetes: min(1, 0.25 + 0.30 × 1.00) = 0.55; adds 0.055 to the total at a 10% weight).",
       ],
       "label": "Milvus (Kubernetes)",
       "platformId": "milvus",
       "totalScore": 0.748,
     },
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -5658,13 +7106,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Chroma=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "Chroma",
       "platformId": "chroma",
       "totalScore": 0.505,
     },
     {
+      "costBreakdown": {
+        "basis": "Runs inside the application process: no separate server to provision or pay for.",
+        "formula": "0.85 (fixed for this model; no scale term)",
+        "model": "Embedded in the application",
+        "score": 0.85,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.85,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.085,
+      },
       "criteriaScores": {
         "cost": 0.85,
         "existingPlatform": 0.5,
@@ -5683,13 +7145,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.95.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running LanceDB=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.85.",
+        "Cost fit scored 0.85 (Embedded in the application: 0.85 (fixed for this model; no scale term); adds 0.085 to the total at a 10% weight).",
       ],
       "label": "LanceDB",
       "platformId": "lancedb",
       "totalScore": 0.505,
     },
     {
+      "costBreakdown": {
+        "basis": "No PostgreSQL to reuse: new (open-source, licence-free) servers to run.",
+        "formula": "0.60 (fixed for this model; no scale term)",
+        "model": "New PostgreSQL deployment",
+        "score": 0.6,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.6,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.06,
+      },
       "criteriaScores": {
         "cost": 0.6,
         "existingPlatform": 0.5,
@@ -5708,13 +7184,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running PostgreSQL + pgvector=false).",
         "Operational simplicity ('low' complexity) scored 1 given a 'part_time' operational capability.",
-        "Cost fit scored 0.6.",
+        "Cost fit scored 0.6 (New PostgreSQL deployment: 0.60 (fixed for this model; no scale term); adds 0.060 to the total at a 10% weight).",
       ],
       "label": "PostgreSQL + pgvector",
       "platformId": "postgres_pgvector",
       "totalScore": 0.475,
     },
     {
+      "costBreakdown": {
+        "basis": "Nothing to reuse: a new instance, with its licences and administration.",
+        "formula": "0.40 (fixed for this model; no scale term)",
+        "model": "New instance",
+        "score": 0.4,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.4,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.04,
+      },
       "criteriaScores": {
         "cost": 0.4,
         "existingPlatform": 0.5,
@@ -5733,13 +7223,27 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.5 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Actian Vector=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.4.",
+        "Cost fit scored 0.4 (New instance: 0.40 (fixed for this model; no scale term); adds 0.040 to the total at a 10% weight).",
       ],
       "label": "Actian Vector",
       "platformId": "actian",
       "totalScore": 0.425,
     },
     {
+      "costBreakdown": {
+        "basis": "No Oracle estate to reuse: a new instance means new licences, servers and administration.",
+        "formula": "0.40 (fixed for this model; no scale term)",
+        "model": "New Oracle deployment",
+        "score": 0.4,
+        "steps": [
+          {
+            "label": "Starting point for this model",
+            "value": 0.4,
+          },
+        ],
+        "weight": 0.1,
+        "weightedContribution": 0.04,
+      },
       "criteriaScores": {
         "cost": 0.4,
         "existingPlatform": 0.4,
@@ -5758,7 +7262,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
         "Recall target 0.9 scored 0.9.",
         "Existing-platform fit scored 0.4 (existingOracle=false, existingPostgres=false, existingKubernetes=false, already running Oracle Database (Vector)=false).",
         "Operational simplicity ('medium' complexity) scored 0.7 given a 'part_time' operational capability.",
-        "Cost fit scored 0.4.",
+        "Cost fit scored 0.4 (New Oracle deployment: 0.40 (fixed for this model; no scale term); adds 0.040 to the total at a 10% weight).",
       ],
       "label": "Oracle Database (Vector)",
       "platformId": "oracle",

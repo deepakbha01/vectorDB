@@ -13,6 +13,8 @@ export interface ReportTable {
   title?: string;
   headers: string[];
   rows: string[][];
+  /** Small italic note printed under the table, e.g. what a * marker means. */
+  footnote?: string;
 }
 
 export interface ReportList {

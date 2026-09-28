@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, Index, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Project } from '../projects/project.entity';
 import { DiscoveryAssessment } from '../discovery/discovery-assessment.entity';
 import { VectorPlatform } from '../projects/enums/platform.enum';
@@ -32,8 +32,9 @@ export class ArchitectureDecisionRecord {
   @Index()
   project: Project;
 
-  @OneToOne(() => DiscoveryAssessment, { onDelete: 'CASCADE' })
-  @JoinColumn()
+  // Many-to-one: re-running the selection on an unchanged assessment adds a record
+  // (the history of runs is kept); it was one-to-one, which made every re-run fail.
+  @ManyToOne(() => DiscoveryAssessment, { onDelete: 'CASCADE' })
   assessment: DiscoveryAssessment;
 
   @Column()

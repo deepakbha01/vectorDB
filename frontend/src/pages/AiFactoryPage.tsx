@@ -200,7 +200,8 @@ function StepDetail({ step, overview, projectId, decisions, onNext }: { step: St
         )}
         {step.key === 'use_case' && (
           <p style={{ fontSize: 13, color: 'var(--muted)', margin: '8px 0 0' }}>
-            Captured when the project was created. A dedicated AI Workload Profile (criticality, users, workload type, data types) arrives in Wave 2.
+            Captured when the project was created. To change it, use{' '}
+            <Link to={`/projects/${projectId}/discovery`}>Edit on the Discovery page</Link>.
           </p>
         )}
       </div>
