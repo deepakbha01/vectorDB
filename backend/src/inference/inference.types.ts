@@ -96,7 +96,7 @@ export interface InferenceEngineInput {
   allowThirdPartyApi: boolean;
   containsPii: boolean;
   dataResidencyRequirement?: string;
-  monthlyBudgetUsd?: number;
+  monthlyBudgetUsd?: number | null;
   monthlyGrowthPercent: number;
   opsCapability: InferenceOpsCapability;
 }

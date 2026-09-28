@@ -221,6 +221,9 @@ describe('InferenceEngineService', () => {
       );
       const text = result.risks.join(' | ');
       expect(text).toMatch(/exceeds the \$100 budget/);
+      // A null budget is "no budget" - `cost > null` would otherwise compare against 0 and always flag.
+      const noBudget = engine.assess(baseInput(cfg, { requestsPerDay: 20_000_000, monthlyBudgetUsd: null })).risks.join(' | ');
+      expect(noBudget).not.toMatch(/budget/);
       expect(text).toMatch(/MLOps/);
       expect(text).toMatch(/licence/i);
       expect(text).toMatch(/exceeds Llama 3.1 8B Instruct's 131,072/);

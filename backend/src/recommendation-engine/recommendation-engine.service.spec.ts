@@ -422,6 +422,13 @@ describe('RecommendationEngineService', () => {
       expect(result.budgetFeasibility).toBeNull();
     });
 
+    it('treats a null budget (what a Discovery assessment without one stores) as no budget - never "$null"', () => {
+      const result = service.evaluate(baseInput({ monthlyBudgetUsd: null }));
+      expect(result.budgetFeasibility).toBeNull();
+      expect(result.openValidations.join(' ')).not.toContain('$null');
+      expect(result.openValidations.some((v) => v.includes('stated budget'))).toBe(false);
+    });
+
     it('never claims budget fit from the cost score alone - status is "not_yet_estimated" until a real quote exists', () => {
       const result = service.evaluate(baseInput({ monthlyBudgetUsd: 1000 }));
       expect(result.budgetFeasibility).not.toBeNull();
