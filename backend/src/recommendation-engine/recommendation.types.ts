@@ -73,11 +73,35 @@ export interface CriteriaScores {
  */
 export type EligibilityStatus = 'eligible' | 'unverified' | 'ineligible';
 
+/**
+ * How a platform's cost-fit score was reached - the rule that applied, the
+ * inputs it read and the arithmetic - so the score can be checked by hand.
+ * The score is directional (relative cost of standing up and running the
+ * platform), not a price; dollar figures come from the Cost Recommendation.
+ */
+export interface CostBreakdown {
+  /** The 0-1 cost-fit score (the same number as criteriaScores.cost). */
+  score: number;
+  /** The cost model that applied, e.g. "Self-hosted on Kubernetes". */
+  model: string;
+  /** Why that model's starting point applies to this project. */
+  basis: string;
+  /** The terms added up, in order. */
+  steps: Array<{ label: string; value: number }>;
+  /** The calculation with this project's numbers, e.g. "min(1, 0.60 + 0.30 × 0.43) = 0.73". */
+  formula: string;
+  /** The cost criterion's weight in the total score. */
+  weight: number;
+  /** score × weight: what cost adds to the platform's total. */
+  weightedContribution: number;
+}
+
 export interface ScoredOption {
   platformId: VectorPlatform;
   label: string;
   totalScore: number;
   criteriaScores: CriteriaScores;
+  costBreakdown: CostBreakdown;
   evidence: string[];
   eligibilityStatus: EligibilityStatus;
   eligibilityNotes: string[];

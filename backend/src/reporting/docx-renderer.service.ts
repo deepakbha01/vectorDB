@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Document, HeadingLevel, Packer, Paragraph, Table, TableCell, TableRow, TextRun } from 'docx';
+import { Document, HeadingLevel, Packer, Paragraph, ShadingType, Table, TableCell, TableRow, TextRun, WidthType } from 'docx';
 import { ReportDocument } from './report-document.types';
 
 @Injectable()
@@ -36,9 +36,13 @@ export class DocxRendererService {
         }
         children.push(
           new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
             rows: [
               new TableRow({
-                children: table.headers.map((h) => new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: h, bold: true })] })] })),
+                tableHeader: true,
+                children: table.headers.map(
+                  (h) => new TableCell({ shading: { type: ShadingType.CLEAR, fill: 'E8EDF3', color: 'auto' }, children: [new Paragraph({ children: [new TextRun({ text: h, bold: true })] })] }),
+                ),
               }),
               ...table.rows.map(
                 (row) => new TableRow({ children: row.map((cell) => new TableCell({ children: [new Paragraph(cell)] })) }),
@@ -46,6 +50,9 @@ export class DocxRendererService {
             ],
           }),
         );
+        if (table.footnote) {
+          children.push(new Paragraph({ spacing: { before: 80 }, children: [new TextRun({ text: table.footnote, italics: true, size: 15, color: '4A5563' })] }));
+        }
       }
     }
 

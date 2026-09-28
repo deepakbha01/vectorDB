@@ -121,6 +121,6 @@ import { InferenceModule } from '../inference/inference.module';
   ],
   providers: [AiFactoryConfigService, AiFactoryService, AiFactoryEnabledGuard, WorkloadProfileService, ModelSelectionService, InferenceArchitectureService, InfrastructureDesignService, RagAgentDesignService, SecurityAssessmentService, PerformanceAssessmentService, FinopsAssessmentService, OperationsModelService, FinalRecommendationService, TokenObservabilityEnabledGuard, TokenObservabilityService, PricingService, UsageService, SimulationService, IngestKeyService, IngestKeyGuard, AlertService, AlertSchedulerService, UsageReadAuditInterceptor, TokenRetentionService],
   controllers: [AiFactoryController, WorkloadProfileController, ModelSelectionController, InferenceArchitectureController, InfrastructureDesignController, RagAgentDesignController, SecurityAssessmentController, PerformanceAssessmentController, FinopsAssessmentController, OperationsModelController, FinalRecommendationController, TokenObservabilityController, ObservabilityIngestController],
-  exports: [AiFactoryConfigService],
+  exports: [AiFactoryConfigService, FinalRecommendationService, FinopsAssessmentService],
 })
 export class AiFactoryModule {}
