@@ -21,11 +21,12 @@ export class Project {
   @Column()
   name: string;
 
-  @Column({ nullable: true })
-  businessUseCase?: string;
+  // `type` is explicit: a `string | null` property gives TypeORM no column type to infer.
+  @Column({ type: 'varchar', nullable: true })
+  businessUseCase?: string | null;
 
-  @Column({ nullable: true })
-  industry?: string;
+  @Column({ type: 'varchar', nullable: true })
+  industry?: string | null;
 
   /** AI Factory Pattern Library entry id (backend/config/patterns.yaml) this project started from, if any. Always optional - a pattern only seeds defaults, never a hard requirement. */
   @Column({ nullable: true })

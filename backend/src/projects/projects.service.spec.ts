@@ -88,6 +88,29 @@ describe('ProjectsService', () => {
     await expect(service.findOne('project-1', stranger)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  describe('updateUseCase', () => {
+    const project = () => ({ id: 'p1', name: 'RAG Assistant', businessUseCase: 'Old text', industry: 'Retail', owner: { id: owner.id } });
+
+    it('lets the owner edit the use case, trimmed, and keeps the industry when it is left out', async () => {
+      repo.findOne.mockResolvedValue(project());
+      const saved = await service.updateUseCase('p1', owner, '  New use case  ');
+      expect(saved).toMatchObject({ businessUseCase: 'New use case', industry: 'Retail' });
+    });
+
+    it('updates the industry when given, and clears either field when blank', async () => {
+      repo.findOne.mockResolvedValue(project());
+      expect(await service.updateUseCase('p1', owner, 'Text', 'Financial Services')).toMatchObject({ industry: 'Financial Services' });
+      repo.findOne.mockResolvedValue(project());
+      expect(await service.updateUseCase('p1', owner, '   ', '')).toMatchObject({ businessUseCase: null, industry: null });
+    });
+
+    it("refuses someone else's project and saves nothing", async () => {
+      repo.findOne.mockResolvedValue(project());
+      await expect(service.updateUseCase('p1', stranger, 'Hijack')).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+  });
+
   describe('remove', () => {
     const project = { id: 'p1', name: 'RAG Assistant', owner: { id: owner.id } };
 

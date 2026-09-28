@@ -115,6 +115,21 @@ export class ProjectsService {
     return saved;
   }
 
+  /**
+   * Edits the business use case (and optionally the industry) after the
+   * project was created. Blank clears the field; `industry` left out keeps its
+   * current value. The AI Factory Use Case step and Workload Profile read
+   * these, so they pick up the change.
+   */
+  async updateUseCase(id: string, requester: AuthenticatedUser, businessUseCase: string, industry?: string): Promise<Project> {
+    const project = await this.findOne(id, requester);
+    project.businessUseCase = businessUseCase.trim() || null;
+    if (industry !== undefined) project.industry = industry.trim() || null;
+    const saved = await this.projects.save(project);
+    this.logger.log(`user=${requester.email} action=update_use_case projectId=${id} length=${saved.businessUseCase?.length ?? 0}`);
+    return saved;
+  }
+
   async updatePhaseStatus(id: string, requester: AuthenticatedUser, phase: ProjectPhase, status: PhaseStatus): Promise<Project> {
     const project = await this.findOne(id, requester);
     project.phaseStatuses = { ...project.phaseStatuses, [phase]: status };

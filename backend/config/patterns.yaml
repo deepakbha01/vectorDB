@@ -16,6 +16,11 @@
 # replaces a saved user override. Token counts, utilization, retry and cache
 # rates are deliberately absent: they depend on the design, not the pattern.
 
+# `suggestion` drives the New Project page's input recommendation: when the
+# application name contains one of `keywords`, the pattern, its industry and
+# `useCase` ({name} = the application name) are offered as editable defaults.
+# The pattern with the most keyword matches wins (see use-case-suggestion.ts).
+
 patterns:
   - id: enterprise-document-rag
     name: "Enterprise Document RAG"
@@ -23,6 +28,9 @@ patterns:
       Retrieval-augmented generation over a general enterprise document corpus
       (policies, wikis, contracts, reports) for internal Q&A and copilots.
     industry: "Cross-industry / Enterprise IT"
+    suggestion:
+      keywords: ["document", "policy", "policies", "wiki", "knowledge", "intranet", "copilot", "contract", "q&a", "qa", "enterprise search", "hr", "legal", "procurement"]
+      useCase: "{name} lets employees ask questions in natural language over the organization's internal documents (policies, wikis, contracts and reports) and get grounded answers with links to the source, replacing manual searching across repositories."
     typicalDataTypes: ["Unstructured text", "PDF", "Office documents", "Wiki/HTML"]
     typicalIngestionRate: "Low-to-moderate, batch-oriented with periodic re-sync"
     typicalVectorVolume: "100K - 5M vectors"
@@ -61,6 +69,9 @@ patterns:
       RAG over clinical notes, care guidelines, and patient-facing knowledge
       bases, with PHI-grade security and auditability.
     industry: "Healthcare / Life Sciences"
+    suggestion:
+      keywords: ["health", "healthcare", "clinical", "clinic", "patient", "hospital", "medical", "care", "pharma", "drug", "nurse", "physician", "diagnos", "ehr", "life science"]
+      useCase: "{name} gives clinicians and care teams fast, grounded answers from clinical notes, care guidelines and medical knowledge bases, with patient data protected to PHI standards and every access audited."
     typicalDataTypes: ["Clinical notes", "Care guidelines", "PDF forms"]
     typicalIngestionRate: "Low-to-moderate, tightly controlled ingestion pipelines"
     typicalVectorVolume: "500K - 3M vectors"
@@ -101,6 +112,9 @@ patterns:
       RAG over regulatory filings, statements, and research documents for
       analyst copilots, with long retention and audit requirements.
     industry: "Financial Services"
+    suggestion:
+      keywords: ["finance", "financial", "bank", "banking", "invest", "wealth", "trading", "insurance", "claims", "regulatory", "compliance", "audit", "kyc", "aml", "loan", "credit", "fraud", "filing"]
+      useCase: "{name} helps analysts and compliance teams search and summarize regulatory filings, statements and research documents, with answers traceable to their source and retained for audit."
     typicalDataTypes: ["Filings (10-K/10-Q)", "Statements", "Research reports"]
     typicalIngestionRate: "Batch, tied to filing/reporting cycles"
     typicalVectorVolume: "1M - 10M vectors"
@@ -138,6 +152,9 @@ patterns:
       RAG over knowledge-base articles and past tickets to power support-agent
       and customer-facing chat assistants.
     industry: "Cross-industry / Customer Support"
+    suggestion:
+      keywords: ["support", "helpdesk", "help desk", "service desk", "customer service", "ticket", "chatbot", "chat bot", "contact center", "call center", "faq", "virtual agent", "assistant"]
+      useCase: "{name} answers customer and support-agent questions from knowledge-base articles and past tickets, reducing handling time and deflecting routine requests to self-service."
     typicalDataTypes: ["Knowledge-base articles", "Ticket history", "FAQs"]
     typicalIngestionRate: "Continuous, incremental (new/updated articles and tickets)"
     typicalVectorVolume: "200K - 2M vectors"
@@ -173,6 +190,9 @@ patterns:
       Semantic search and anomaly retrieval over high-volume sensor/telemetry
       event descriptions and device documentation.
     industry: "Industrial / IoT"
+    suggestion:
+      keywords: ["iot", "telemetry", "sensor", "device", "predictive maintenance", "maintenance", "fault", "anomaly", "industrial", "manufacturing", "plant", "scada", "equipment", "fleet", "automotive", "vehicle"]
+      useCase: "{name} searches high-volume sensor and telemetry events and device documentation by meaning, so engineers can find similar past faults and anomalies and resolve issues faster."
     typicalDataTypes: ["Telemetry event text", "Device logs", "Technical manuals"]
     typicalIngestionRate: "Very high, continuous streaming ingestion"
     typicalVectorVolume: "5M - 50M vectors, fast growth"
@@ -207,6 +227,9 @@ patterns:
       RAG over source code, commit history, and technical docs for developer
       copilots and code search.
     industry: "Software Engineering"
+    suggestion:
+      keywords: ["code", "developer", "dev", "engineering", "repository", "repo", "git", "api docs", "sdk", "programming", "software"]
+      useCase: "{name} gives developers semantic search and a copilot over source code, commit history and technical documentation, speeding up onboarding, reuse and code review."
     typicalDataTypes: ["Source code", "Commit messages", "Technical documentation"]
     typicalIngestionRate: "Continuous, tied to CI/repo sync"
     typicalVectorVolume: "500K - 5M vectors"
@@ -243,6 +266,9 @@ patterns:
       Semantic and full-text search over logs, traces, and incident postmortems
       for on-call debugging and RCA.
     industry: "Cross-industry / Platform Engineering"
+    suggestion:
+      keywords: ["log", "logs", "observability", "monitoring", "incident", "trace", "tracing", "sre", "devops", "aiops", "postmortem", "rca", "root cause", "alert", "appdynamics", "splunk"]
+      useCase: "{name} lets on-call and SRE teams search logs, traces and incident postmortems by meaning, to find similar past incidents and shorten root-cause analysis."
     typicalDataTypes: ["Application logs", "Traces", "Postmortem documents"]
     typicalIngestionRate: "Very high, continuous streaming ingestion"
     typicalVectorVolume: "10M - 100M+ vectors, short retention"
@@ -279,6 +305,9 @@ patterns:
       Search across mixed text, image, and/or audio content using multimodal
       embeddings (e.g. product catalogs, media libraries).
     industry: "Retail / Media"
+    suggestion:
+      keywords: ["image", "photo", "video", "audio", "media", "visual", "multimodal", "catalog", "catalogue", "asset", "design"]
+      useCase: "{name} searches across text, images and other media with multimodal embeddings, so users can find products or assets by description or by example."
     typicalDataTypes: ["Text", "Images", "Audio transcripts"]
     typicalIngestionRate: "Moderate, batch with periodic catalog refresh"
     typicalVectorVolume: "500K - 5M vectors"
@@ -311,6 +340,9 @@ patterns:
       Vector similarity for real-time item/content recommendations at
       high query volume and strict latency budgets.
     industry: "Retail / Media / Consumer"
+    suggestion:
+      keywords: ["recommend", "recommendation", "personaliz", "personalis", "retail", "ecommerce", "e-commerce", "shop", "product", "content discovery", "similar item", "next best"]
+      useCase: "{name} recommends relevant items and content to each user in real time from vector similarity, at high query volume and within strict latency budgets."
     typicalDataTypes: ["Item/user embeddings", "Interaction events"]
     typicalIngestionRate: "High, near-real-time embedding updates"
     typicalVectorVolume: "10M - 100M vectors"
@@ -346,6 +378,9 @@ patterns:
       Long-term and episodic memory store for AI agents - frequent small
       writes, per-agent/per-tenant isolation, low-latency recall.
     industry: "Cross-industry / AI Platform"
+    suggestion:
+      keywords: ["agent", "agentic", "memory", "autonomous", "orchestrat", "multi-agent", "workflow automation"]
+      useCase: "{name} provides long-term and episodic memory for AI agents, storing and recalling what each agent has learned with low latency and per-agent or per-tenant isolation."
     typicalDataTypes: ["Conversation history", "Agent observations/tool outputs"]
     typicalIngestionRate: "High-frequency, small incremental writes"
     typicalVectorVolume: "100K - 10M vectors, grows continuously per tenant"
@@ -380,6 +415,9 @@ patterns:
       General-purpose search combining dense vector similarity with keyword/
       lexical and metadata filtering as first-class, equally-weighted needs.
     industry: "Cross-industry"
+    suggestion:
+      keywords: ["search", "find", "lookup", "discovery", "explorer", "hybrid", "keyword"]
+      useCase: "{name} combines semantic (vector) search with keyword matching and metadata filters, so users find relevant results whether they search by meaning or by exact terms."
     typicalDataTypes: ["Mixed structured and unstructured content"]
     typicalIngestionRate: "Moderate, batch or incremental"
     typicalVectorVolume: "500K - 5M vectors"
@@ -413,6 +451,9 @@ patterns:
       Enterprise-wide search at very high sustained query volume with strict
       multi-region availability requirements.
     industry: "Enterprise / Large-scale SaaS"
+    suggestion:
+      keywords: ["global", "enterprise-wide", "large-scale", "high volume", "high-volume", "saas", "multi-region", "platform-wide"]
+      useCase: "{name} provides enterprise-wide search at very high sustained query volume, with multi-region availability for a large user base."
     typicalDataTypes: ["Enterprise documents and records at large scale"]
     typicalIngestionRate: "High, continuous"
     typicalVectorVolume: "20M - 200M vectors"

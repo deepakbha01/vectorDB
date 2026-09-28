@@ -80,8 +80,8 @@ export type CustomerMode = 'new' | 'existing';
 export interface Project {
   id: string;
   name: string;
-  businessUseCase?: string;
-  industry?: string;
+  businessUseCase?: string | null;
+  industry?: string | null;
   /** AI Factory Pattern Library entry this project started from, if any - always optional. */
   patternId?: string;
   /** New/greenfield vs. existing/modernization. Existing-customer technical context lives on the Discovery assessment's existing-technology fields, not here. */
@@ -111,6 +111,18 @@ export interface PlatformCatalogEntry {
   label: string;
   operationalComplexity: string;
   requiresKubernetes?: boolean;
+}
+
+/** GET /projects/use-case-suggestion?name= - New Project input recommendation from the application name. */
+export interface UseCaseSuggestion {
+  businessUseCase: string;
+  industry: string | null;
+  patternId: string | null;
+  patternName: string | null;
+  customerMode: CustomerMode | null;
+  matchedKeywords: string[];
+  confidence: 'high' | 'medium' | 'low';
+  reason: string;
 }
 
 /**
