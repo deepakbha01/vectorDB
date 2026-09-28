@@ -5,14 +5,34 @@ import { VectorDbSelectionService } from '../vector-db-selection/vector-db-selec
 import { PhaseStatus } from '../projects/enums/project-status.enum';
 import { CustomerMode } from '../projects/enums/customer-mode.enum';
 import { AuthenticatedUser } from '../auth/auth.service';
+import { BenchmarkService } from '../benchmark/benchmark.service';
+import { CapacityPlanningService } from '../capacity-planning/capacity-planning.service';
+import { CapacityPlan } from '../capacity-planning/capacity-plan.entity';
+
+/**
+ * Current requirement as a share of available capacity for the busiest
+ * resource - the same required/available ratio the Capacity engine uses for
+ * its scaling triggers. Resources with no available capacity recorded are skipped.
+ */
+export function capacityUtilization(plan: CapacityPlan): { percent: number; resource: 'memory' | 'cpu' | 'storage' } | null {
+  const ratios = [
+    { resource: 'memory' as const, required: plan.currentState.memoryGb, available: plan.inputsUsed.availableMemoryGb },
+    { resource: 'cpu' as const, required: plan.currentState.cpuCores, available: plan.inputsUsed.availableCpuCores },
+    { resource: 'storage' as const, required: plan.currentState.storageGb, available: plan.inputsUsed.availableStorageGb },
+  ]
+    .filter((r) => r.available > 0)
+    .map((r) => ({ resource: r.resource, percent: (r.required / r.available) * 100 }));
+  if (ratios.length === 0) return null;
+  const busiest = ratios.reduce((a, b) => (b.percent > a.percent ? b : a));
+  return { resource: busiest.resource, percent: Math.round(busiest.percent * 10) / 10 };
+}
 
 /**
  * Aggregates the widgets shown on the main dashboard. Discovery-derived fields
  * (vector count, dataset size, target QPS/latency/recall, risks) populate as
- * soon as Phase 1 completes. Fields that depend on a *running* deployment
- * (measured P95 latency, measured recall, capacity utilization) stay null
- * until the Operations engines (Sprint 6/7) exist - the shape is fixed now so
- * the frontend does not need to change as those engines land.
+ * soon as Phase 1 completes. Measured P95 latency and recall come from the
+ * latest Optimization benchmark, and capacity utilization from the latest
+ * Capacity Plan; each stays null until its phase has produced a result.
  */
 export interface ProjectDashboardSummary {
   projectId: string;
@@ -29,6 +49,8 @@ export interface ProjectDashboardSummary {
   targetRecallAtK: number | null;
   measuredRecallAtK: number | null;
   capacityUtilizationPercent: number | null;
+  /** Which resource `capacityUtilizationPercent` refers to - the busiest one. */
+  capacityUtilizationResource: 'memory' | 'cpu' | 'storage' | null;
   risks: string[];
   recommendations: string[];
 }
@@ -39,6 +61,8 @@ export class DashboardService {
     private readonly projectsService: ProjectsService,
     private readonly discoveryService: DiscoveryService,
     private readonly vectorDbSelectionService: VectorDbSelectionService,
+    private readonly benchmarkService: BenchmarkService,
+    private readonly capacityPlanningService: CapacityPlanningService,
   ) {}
 
   async getSummary(userId: string): Promise<ProjectDashboardSummary[]> {
@@ -49,7 +73,12 @@ export class DashboardService {
         // findAllForUser already scoped to this owner, so they always pass the access check.
         const requester: AuthenticatedUser = { id: userId, email: project.owner.email, role: project.owner.role };
         const outcome = await this.discoveryService.getLatest(project.id, requester);
-        const vectorDbSelection = await this.vectorDbSelectionService.getLatest(project.id, requester);
+        const [vectorDbSelection, optimization, capacityPlan] = await Promise.all([
+          this.vectorDbSelectionService.getLatest(project.id, requester),
+          this.benchmarkService.getLatest(project.id, requester),
+          this.capacityPlanningService.getLatest(project.id, requester),
+        ]);
+        const utilization = capacityPlan ? capacityUtilization(capacityPlan) : null;
 
         let recommendations: string[] = [];
         if (project.phaseStatuses.discovery !== PhaseStatus.COMPLETED) {
@@ -71,10 +100,11 @@ export class DashboardService {
             : null,
           targetQps: outcome?.assessment.qps ?? null,
           targetP95LatencyMs: outcome?.assessment.targetP95LatencyMs ?? null,
-          measuredP95LatencyMs: null,
+          measuredP95LatencyMs: optimization?.recommendedVariant.p95LatencyMs ?? null,
           targetRecallAtK: outcome?.assessment.recallTarget ?? null,
-          measuredRecallAtK: null,
-          capacityUtilizationPercent: null,
+          measuredRecallAtK: optimization?.recommendedVariant.avgRecall ?? null,
+          capacityUtilizationPercent: utilization?.percent ?? null,
+          capacityUtilizationResource: utilization?.resource ?? null,
           risks: vectorDbSelection?.adr.risks.map((r) => r.description) ?? [],
           recommendations,
         };

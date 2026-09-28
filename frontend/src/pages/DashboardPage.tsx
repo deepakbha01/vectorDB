@@ -5,12 +5,15 @@ import { useAuth } from '../auth/AuthContext';
 import { TopBar } from '../components/TopBar';
 import { Watermark } from '../components/Brand';
 
-function metric(label: string, value: string | number | null, unit = '') {
+const UTILIZATION_RESOURCE: Record<NonNullable<DashboardSummary['capacityUtilizationResource']>, string> = { memory: 'memory', cpu: 'CPU', storage: 'storage' };
+
+/** `pending` names what produces the value, so an empty card says what to run next. */
+function metric(label: string, value: string | number | null, unit = '', pending = 'Pending assessment') {
   return (
     <div className="card">
       <div className="metric-label">{label}</div>
       {value === null ? (
-        <div className="metric-value placeholder">Pending assessment</div>
+        <div className="metric-value placeholder">{pending}</div>
       ) : (
         <div className="metric-value">
           {value}
@@ -145,9 +148,15 @@ export function DashboardPage() {
             {metric('Dataset Size', s.datasetSizeBytes ? `${(s.datasetSizeBytes / 1024 ** 3).toFixed(2)} GB` : null)}
             {metric('Target QPS', s.targetQps)}
             {metric('Target P95 Latency', s.targetP95LatencyMs, 'ms')}
-            {metric('Measured P95 Latency', s.measuredP95LatencyMs, 'ms')}
+            {metric('Measured P95 Latency', s.measuredP95LatencyMs, 'ms', 'Pending Optimization')}
             {metric('Target Recall@K', s.targetRecallAtK)}
-            {metric('Capacity Utilization', s.capacityUtilizationPercent, '%')}
+            {metric('Measured Recall@K', s.measuredRecallAtK, '', 'Pending Optimization')}
+            {metric(
+              s.capacityUtilizationResource ? `Capacity Utilization (${UTILIZATION_RESOURCE[s.capacityUtilizationResource]})` : 'Capacity Utilization',
+              s.capacityUtilizationPercent,
+              '%',
+              'Pending Capacity Plan',
+            )}
           </div>
           {s.risks.length > 0 && (
             <div className="card" style={{ marginBottom: 12 }}>
