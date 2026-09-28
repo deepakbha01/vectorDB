@@ -172,6 +172,8 @@ export interface DashboardSummary {
   targetRecallAtK: number | null;
   measuredRecallAtK: number | null;
   capacityUtilizationPercent: number | null;
+  /** Which resource the utilization refers to - the busiest of memory, CPU and storage. */
+  capacityUtilizationResource: 'memory' | 'cpu' | 'storage' | null;
   risks: string[];
   recommendations: string[];
 }
