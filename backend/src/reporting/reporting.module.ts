@@ -12,6 +12,7 @@ import { IndexDesignModule } from '../index-design/index-design.module';
 import { DeploymentModule } from '../deployment/deployment.module';
 import { BenchmarkModule } from '../benchmark/benchmark.module';
 import { CapacityPlanningModule } from '../capacity-planning/capacity-planning.module';
+import { AiFactoryModule } from '../ai-factory/ai-factory.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { CapacityPlanningModule } from '../capacity-planning/capacity-planning.m
     DeploymentModule,
     BenchmarkModule,
     CapacityPlanningModule,
+    AiFactoryModule,
   ],
   providers: [ReportingService, ReportBuilderService, PdfRendererService, DocxRendererService],
   controllers: [ReportingController],

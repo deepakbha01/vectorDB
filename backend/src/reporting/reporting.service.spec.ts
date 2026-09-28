@@ -12,6 +12,9 @@ import { CapacityPlanningService } from '../capacity-planning/capacity-planning.
 import { ReportBuilderService } from './report-builder.service';
 import { PdfRendererService } from './pdf-renderer.service';
 import { DocxRendererService } from './docx-renderer.service';
+import { FinalRecommendationService } from '../ai-factory/final/final.service';
+import { FinopsAssessmentService } from '../ai-factory/finops/finops.service';
+import { ConfigService } from '@nestjs/config';
 
 describe('ReportingService', () => {
   let service: ReportingService;
@@ -32,9 +35,13 @@ describe('ReportingService', () => {
     buildOptimizationReport: jest.Mock;
     buildCapacityPlanReport: jest.Mock;
     buildCompleteReport: jest.Mock;
+    buildManagementReport: jest.Mock;
   };
   let pdfRenderer: { render: jest.Mock };
   let docxRenderer: { render: jest.Mock };
+  let finalRecommendationService: { getLatest: jest.Mock };
+  let finopsService: { getLatest: jest.Mock };
+  let config: Record<string, string>;
 
   const requester = { id: 'user-1', email: 'architect@example.com', role: 'architect' as any };
   const project = { id: 'project-1', name: 'RAG Assistant' };
@@ -58,7 +65,11 @@ describe('ReportingService', () => {
       buildOptimizationReport: jest.fn().mockReturnValue(doc),
       buildCapacityPlanReport: jest.fn().mockReturnValue(doc),
       buildCompleteReport: jest.fn().mockReturnValue(doc),
+      buildManagementReport: jest.fn().mockReturnValue(doc),
     };
+    finalRecommendationService = { getLatest: jest.fn().mockResolvedValue(null) };
+    finopsService = { getLatest: jest.fn().mockResolvedValue(null) };
+    config = {};
     pdfRenderer = { render: jest.fn().mockResolvedValue(Buffer.from('pdf-bytes')) };
     docxRenderer = { render: jest.fn().mockResolvedValue(Buffer.from('docx-bytes')) };
 
@@ -76,6 +87,9 @@ describe('ReportingService', () => {
         { provide: ReportBuilderService, useValue: reportBuilder },
         { provide: PdfRendererService, useValue: pdfRenderer },
         { provide: DocxRendererService, useValue: docxRenderer },
+        { provide: FinalRecommendationService, useValue: finalRecommendationService },
+        { provide: FinopsAssessmentService, useValue: finopsService },
+        { provide: ConfigService, useValue: { get: (key: string) => config[key] } },
       ],
     }).compile();
 
@@ -153,6 +167,33 @@ describe('ReportingService', () => {
     expect(reportBuilder.buildCompleteReport).toHaveBeenCalledWith(
       project,
       expect.objectContaining({ discovery: undefined, dataPipeline: { id: 'dp-1' } }),
+    );
+  });
+
+  it('builds the management report without AI Factory records when the flag is off', async () => {
+    discoveryService.getLatest.mockResolvedValue({ assessment: { version: 1 } });
+    vectorDbSelectionService.getLatest.mockResolvedValue({ adr: { decision: 'qdrant' } });
+
+    await service.generateReport('project-1', requester, 'management', 'pdf');
+
+    expect(finalRecommendationService.getLatest).not.toHaveBeenCalled();
+    expect(finopsService.getLatest).not.toHaveBeenCalled();
+    expect(reportBuilder.buildManagementReport).toHaveBeenCalledWith(
+      project,
+      expect.objectContaining({ discovery: { version: 1 }, adr: { decision: 'qdrant' }, finalRecommendation: undefined, finops: undefined }),
+    );
+  });
+
+  it('adds the Final Recommendation and Cost Recommendation to the management report when AI Factory is on', async () => {
+    config.AI_FACTORY_ENABLED = 'true';
+    finalRecommendationService.getLatest.mockResolvedValue({ result: { readiness: 'x' } });
+    finopsService.getLatest.mockResolvedValue({ result: { chosen: null } });
+
+    await service.generateReport('project-1', requester, 'management', 'docx');
+
+    expect(reportBuilder.buildManagementReport).toHaveBeenCalledWith(
+      project,
+      expect.objectContaining({ finalRecommendation: { readiness: 'x' }, finops: { chosen: null } }),
     );
   });
 });

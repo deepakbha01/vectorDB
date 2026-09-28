@@ -80,8 +80,8 @@ export type CustomerMode = 'new' | 'existing';
 export interface Project {
   id: string;
   name: string;
-  businessUseCase?: string;
-  industry?: string;
+  businessUseCase?: string | null;
+  industry?: string | null;
   /** AI Factory Pattern Library entry this project started from, if any - always optional. */
   patternId?: string;
   /** New/greenfield vs. existing/modernization. Existing-customer technical context lives on the Discovery assessment's existing-technology fields, not here. */
@@ -111,6 +111,18 @@ export interface PlatformCatalogEntry {
   label: string;
   operationalComplexity: string;
   requiresKubernetes?: boolean;
+}
+
+/** GET /projects/use-case-suggestion?name= - New Project input recommendation from the application name. */
+export interface UseCaseSuggestion {
+  businessUseCase: string;
+  industry: string | null;
+  patternId: string | null;
+  patternName: string | null;
+  customerMode: CustomerMode | null;
+  matchedKeywords: string[];
+  confidence: 'high' | 'medium' | 'low';
+  reason: string;
 }
 
 /**
@@ -252,11 +264,23 @@ export interface CriteriaScores {
 
 export type EligibilityStatus = 'eligible' | 'unverified' | 'ineligible';
 
+/** How a platform's cost-fit score was reached (absent on selections saved before it existed). */
+export interface CostBreakdown {
+  score: number;
+  model: string;
+  basis: string;
+  steps: Array<{ label: string; value: number }>;
+  formula: string;
+  weight: number;
+  weightedContribution: number;
+}
+
 export interface ScoredOption {
   platformId: string;
   label: string;
   totalScore: number;
   criteriaScores: CriteriaScores;
+  costBreakdown?: CostBreakdown;
   evidence: string[];
   eligibilityStatus: EligibilityStatus;
   eligibilityNotes: string[];
@@ -837,7 +861,7 @@ export interface CreateCapacityPlanInput {
   monthlyGrowthPercent?: number;
 }
 
-export type ReportType = 'discovery' | 'vector-db-selection' | 'data-pipeline' | 'index-design' | 'deployment-plan' | 'optimization-report' | 'capacity-plan' | 'complete';
+export type ReportType = 'discovery' | 'vector-db-selection' | 'data-pipeline' | 'index-design' | 'deployment-plan' | 'optimization-report' | 'capacity-plan' | 'complete' | 'management';
 export type ReportFormat = 'pdf' | 'docx';
 
 export interface AuditLogEntry {

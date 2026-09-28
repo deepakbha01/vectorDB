@@ -14,7 +14,12 @@ export class User {
   @Column({ unique: true })
   email: string;
 
-  @Column()
+  /**
+   * Never loaded unless a query asks for it by name (only the login check
+   * does), so a user joined onto another record - e.g. a project's `owner` -
+   * does not carry it. toJSON() below also keeps it out of every response.
+   */
+  @Column({ select: false })
   passwordHash: string;
 
   @Column({ nullable: true })
@@ -28,4 +33,10 @@ export class User {
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  /** Every API response is JSON-serialized, so this keeps the hash out even when a query did load it. */
+  toJSON(): Omit<User, 'passwordHash' | 'toJSON'> {
+    const { passwordHash, ...rest } = this;
+    return rest;
+  }
 }

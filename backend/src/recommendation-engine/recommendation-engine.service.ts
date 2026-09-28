@@ -3,6 +3,7 @@ import { PlatformConfigService } from '../common/config/platform-config.service'
 import {
   DEDICATED_AT_SCALE_PLATFORMS,
   EMBEDDED_LIBRARY_PLATFORMS,
+  FULLY_MANAGED_SAAS_PLATFORMS,
   K8S_SELF_HOSTABLE_PLATFORMS,
   LIVE_INGESTION_SUPPORTED,
   SQL_BASED_PLATFORMS,
@@ -19,6 +20,7 @@ import {
   ComplianceCheck,
   ComplianceGateResult,
   ConfidenceLevel,
+  CostBreakdown,
   CriteriaScores,
   DecisionStatus,
   EligibilityStatus,
@@ -64,6 +66,7 @@ export class RecommendationEngineService {
     const options: ScoredOption[] = catalog.map((entry) => {
       const platformId = entry.id as VectorPlatform;
       const criteriaScores = this.scoreCriteria(platformId, entry, input, thresholds);
+      const costBreakdown = this.explainCost(platformId, input, thresholds, weights.cost);
       const totalScore =
         criteriaScores.vectorCount * weights.vectorCount +
         criteriaScores.qps * weights.qps +
@@ -73,13 +76,14 @@ export class RecommendationEngineService {
         criteriaScores.operationalComplexity * weights.operationalComplexity +
         criteriaScores.cost * weights.cost;
       const { status: eligibilityStatus, notes: eligibilityNotes } = this.checkEligibility(entry, input);
-      const evidence = this.buildEvidence(platformId, entry, input, thresholds, criteriaScores);
+      const evidence = this.buildEvidence(platformId, entry, input, thresholds, criteriaScores, costBreakdown);
 
       return {
         platformId,
         label: entry.label,
         totalScore: Number(totalScore.toFixed(4)),
         criteriaScores,
+        costBreakdown,
         eligibilityStatus,
         eligibilityNotes,
         evidence: eligibilityNotes.length > 0 ? [...eligibilityNotes, ...evidence] : evidence,
@@ -181,7 +185,7 @@ export class RecommendationEngineService {
       recall: this.scoreRecall(hasMatureAnnEngine, input.recallTarget, thresholds),
       existingPlatform: this.scoreExistingPlatform(platformId, input, thresholds),
       operationalComplexity: this.scoreOperationalComplexity(catalogEntry, input, thresholds),
-      cost: this.scoreCost(platformId, input, thresholds),
+      cost: this.explainCost(platformId, input, thresholds, thresholds.scoringWeights.cost).score,
     };
   }
 
@@ -294,35 +298,76 @@ export class RecommendationEngineService {
     return 1.0;
   }
 
-  private scoreCost(platformId: VectorPlatform, input: AssessmentInput, thresholds: Record<string, any>): number {
-    // Reusing existing infrastructure is materially cheaper than provisioning new
-    // compute/storage; a dedicated cluster only pays for itself at scale.
+  /**
+   * The cost-fit score and how it was reached. Reusing existing infrastructure
+   * is materially cheaper than provisioning new compute and storage; a
+   * dedicated self-hosted cluster only pays for itself at scale. This is the
+   * single source of the cost score - criteriaScores.cost reads it - so the
+   * explanation can never drift from the number.
+   */
+  private explainCost(platformId: VectorPlatform, input: AssessmentInput, thresholds: Record<string, any>, weight: number): CostBreakdown {
     const alreadyRunningThisPlatform = input.existingPlatforms.includes(platformId);
+    const fixed = (score: number, model: string, basis: string): CostBreakdown => ({
+      score,
+      model,
+      basis,
+      steps: [{ label: 'Starting point for this model', value: score }],
+      formula: `${score.toFixed(2)} (fixed for this model; no scale term)`,
+      weight,
+      weightedContribution: Number((score * weight).toFixed(4)),
+    });
+
     if (platformId === VectorPlatform.ORACLE) {
-      return input.hasExistingOracle ? 0.9 : 0.4;
+      return input.hasExistingOracle
+        ? fixed(0.9, 'Reuse existing Oracle', 'Oracle is already run here: the vectors go into the existing estate - no new licence, server or team.')
+        : fixed(0.4, 'New Oracle deployment', 'No Oracle estate to reuse: a new instance means new licences, servers and administration.');
     }
     if (platformId === VectorPlatform.POSTGRES_PGVECTOR) {
-      return input.hasExistingPostgres ? 0.95 : 0.6;
+      return input.hasExistingPostgres
+        ? fixed(0.95, 'Reuse existing PostgreSQL', 'PostgreSQL is already run here: pgvector is a free extension on the existing servers.')
+        : fixed(0.6, 'New PostgreSQL deployment', 'No PostgreSQL to reuse: new (open-source, licence-free) servers to run.');
     }
     if (K8S_SELF_HOSTABLE_PLATFORMS.includes(platformId)) {
       const { embeddedMax, dedicatedRecommendedMin } = thresholds.vectorCount;
       const scaleFactor = ramp(input.estimatedVectorCount, embeddedMax, dedicatedRecommendedMin);
       const base = alreadyRunningThisPlatform ? 0.75 : input.hasExistingKubernetes ? 0.6 : 0.25;
-      return Number(Math.min(1, base + scaleFactor * 0.3).toFixed(4));
+      const scaleBonus = scaleFactor * 0.3;
+      const score = Number(Math.min(1, base + scaleBonus).toFixed(4));
+      const basis = alreadyRunningThisPlatform
+        ? 'Already run in production here: no new cluster, tooling or skills to pay for.'
+        : input.hasExistingKubernetes
+          ? 'Self-hosted on the existing Kubernetes cluster: new workloads, but no new cluster to stand up.'
+          : 'Self-hosted with no Kubernetes to reuse: a cluster has to be stood up and run first.';
+      return {
+        score,
+        model: 'Self-hosted on Kubernetes',
+        basis:
+          `${basis} A dedicated cluster costs about the same whatever it holds, so the cost per vector falls as the corpus grows: ` +
+          `the scale term rises from 0 at ${embeddedMax.toLocaleString()} vectors to its full 0.30 at ${dedicatedRecommendedMin.toLocaleString()}.`,
+        steps: [
+          { label: alreadyRunningThisPlatform ? 'Starting point: already run here' : input.hasExistingKubernetes ? 'Starting point: existing Kubernetes' : 'Starting point: new cluster needed', value: base },
+          { label: `Scale term: 0.30 × ${scaleFactor.toFixed(2)} (${input.estimatedVectorCount.toLocaleString()} vectors)`, value: Number(scaleBonus.toFixed(4)) },
+        ],
+        formula: `min(1, ${base.toFixed(2)} + 0.30 × ${scaleFactor.toFixed(2)}) = ${score.toFixed(2)}`,
+        weight,
+        weightedContribution: Number((score * weight).toFixed(4)),
+      };
     }
-    if (platformId === VectorPlatform.PINECONE || platformId === VectorPlatform.MONGODB_ATLAS) {
-      // Fully managed SaaS: no self-host escape valve, but an already-running account/index
-      // still avoids migration cost and unfamiliar-tooling ramp-up.
-      return alreadyRunningThisPlatform ? 0.7 : 0.45;
+    if (FULLY_MANAGED_SAAS_PLATFORMS.includes(platformId)) {
+      // No self-host escape valve, but an already-running account avoids migration and ramp-up.
+      return alreadyRunningThisPlatform
+        ? fixed(0.7, 'Managed SaaS - existing account', 'An account is already in use: no migration or new tooling, but vendor pricing (typically a premium over self-hosting) with no self-hosted fallback.')
+        : fixed(0.45, 'Managed SaaS - new account', 'A new vendor subscription: nothing to run, but usage-based vendor pricing is typically the most expensive way to hold vectors at scale.');
     }
     if (EMBEDDED_LIBRARY_PLATFORMS.includes(platformId)) {
-      // Embedded/in-process: no server to provision or pay for at this scale.
-      return alreadyRunningThisPlatform ? 0.95 : 0.85;
+      return alreadyRunningThisPlatform
+        ? fixed(0.95, 'Embedded in the application - already used', 'Runs inside the application process and is already used: no server to provision or pay for.')
+        : fixed(0.85, 'Embedded in the application', 'Runs inside the application process: no separate server to provision or pay for.');
     }
-    // Actian and any other bolt-on SQL platform without a dedicated branch above: same
-    // reuse-is-cheaper logic as Oracle, since it is provisioned the same way (an existing
-    // instance vs. standing up a new one).
-    return alreadyRunningThisPlatform ? 0.9 : 0.4;
+    // Actian and any other bolt-on SQL platform: provisioned like Oracle - reuse an instance or stand one up.
+    return alreadyRunningThisPlatform
+      ? fixed(0.9, 'Reuse existing instance', 'Already run here: the vectors go into an existing instance.')
+      : fixed(0.4, 'New instance', 'Nothing to reuse: a new instance, with its licences and administration.');
   }
 
   /**
@@ -551,6 +596,7 @@ export class RecommendationEngineService {
     input: AssessmentInput,
     thresholds: Record<string, any>,
     scores: CriteriaScores,
+    cost: CostBreakdown,
   ): string[] {
     const evidence: string[] = [
       `Estimated vector count ${input.estimatedVectorCount.toLocaleString()} scored ${scores.vectorCount} against thresholds ` +
@@ -565,7 +611,7 @@ export class RecommendationEngineService {
         `already running ${catalogEntry.label}=${input.existingPlatforms.includes(platformId)}).`,
       `Operational simplicity ('${catalogEntry.operationalComplexity}' complexity) scored ${scores.operationalComplexity} ` +
         `given a '${input.operationalCapability}' operational capability.`,
-      `Cost fit scored ${scores.cost}.`,
+      `Cost fit scored ${scores.cost} (${cost.model}: ${cost.formula}; adds ${cost.weightedContribution.toFixed(3)} to the total at a ${Math.round(cost.weight * 100)}% weight).`,
     ];
     return evidence;
   }

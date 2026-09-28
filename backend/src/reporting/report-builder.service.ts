@@ -10,6 +10,7 @@ import { CapacityPlan } from '../capacity-planning/capacity-plan.entity';
 import { FitRating } from '../recommendation-engine/recommendation.types';
 import { Phase2Handoff } from '../data-pipeline/data-pipeline-design.types';
 import { ReportDocument, ReportSection } from './report-document.types';
+import { buildManagementReport, ManagementReportParts } from './management-report.builder';
 
 const RATING_LABEL: Record<FitRating, string> = {
   great: 'Strong',
@@ -660,6 +661,11 @@ export class ReportBuilderService {
         { heading: 'Recommended infrastructure', lists: [{ items: plan.recommendedInfrastructure }] },
       ],
     };
+  }
+
+  /** Management Report - tables only, see management-report.builder.ts. */
+  buildManagementReport(project: Project, parts: ManagementReportParts): ReportDocument {
+    return buildManagementReport(project, parts);
   }
 
   buildCompleteReport(
