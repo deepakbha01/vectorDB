@@ -131,7 +131,7 @@ export function TokenObservabilityPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="Token Observability" />
+        <TopBar eyebrow="Inference track" title="Token Observability" />
         {!features.tokenObservability && !preview && !previewError ? (
           <div className="card" style={{ maxWidth: 800 }}>
             Token Observability is not enabled on this server (<code>AI_FACTORY_ENABLED</code> and <code>TOKEN_OBSERVABILITY_ENABLED</code>). The existing phases are unaffected either way.

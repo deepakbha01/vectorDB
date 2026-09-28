@@ -604,11 +604,133 @@ a.brand-mark:hover {
   color: #fff;
 }
 
+/* Page header: utility row (brand, nav, user, theme, log out) above the page heading. */
 .top-bar {
+  margin-bottom: 24px;
+}
+
+.top-bar-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.top-bar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  font-size: 13px;
+}
+
+.top-bar-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.top-bar-nav a {
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--muted-text);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.top-bar-nav a:hover {
+  color: var(--text);
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.top-bar-nav a.active {
+  color: var(--primary-text);
+  background: var(--primary-soft);
+}
+
+.top-bar-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+}
+
+.top-bar-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-2);
+}
+
+.top-bar-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--primary-soft);
+  color: var(--primary-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.top-bar-email {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-bar-logout {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.top-bar-logout:hover {
+  border-color: var(--primary-text);
+  color: var(--text);
+}
+
+.page-heading {
+  margin-top: 20px;
+}
+
+.page-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--primary-text);
+  margin-bottom: 4px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text);
+}
+
+@media (max-width: 700px) {
+  .top-bar-divider,
+  .top-bar-email {
+    display: none;
+  }
 }
 
 /* Discovery (Phase 1) form */

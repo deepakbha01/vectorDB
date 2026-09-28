@@ -73,7 +73,7 @@ export function IndexDesignPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="Phase 3 - Design: Index Selection" />
+        <TopBar eyebrow="Phase 3 · Index Design" title="Index Selection" />
 
         {design && !showForm && (
           <div style={{ marginBottom: 20 }}>

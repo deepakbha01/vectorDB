@@ -98,7 +98,7 @@ export function IngestionPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="Phase 5 - Implementation: Ingestion Pipeline" />
+        <TopBar eyebrow="Phase 6 · Ingestion" title="Ingestion Pipeline" />
 
         <form className="stacked" style={{ maxWidth: 640, marginBottom: 24 }} onSubmit={onSubmit}>
           <div>

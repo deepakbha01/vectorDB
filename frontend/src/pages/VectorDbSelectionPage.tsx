@@ -551,7 +551,7 @@ export function VectorDbSelectionPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="Phase 4 - Vector DB Selection & Target Architecture" />
+        <TopBar eyebrow="Phase 4 · Vector DB Selection" title="Vector DB Selection & Target Architecture" />
 
         {!outcome && (
           <div className="card" style={{ marginBottom: 20 }}>

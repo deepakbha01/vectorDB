@@ -49,7 +49,7 @@ export function CapacityPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="Phase 7 - Operations: Scaling & Sharding" />
+        <TopBar eyebrow="Phase 8 · Capacity" title="Scaling & Sharding" />
 
         <form className="stacked" style={{ maxWidth: 480, marginBottom: 24 }} onSubmit={onGenerate}>
           <p style={{ fontSize: 13, color: 'var(--muted)' }}>

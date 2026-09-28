@@ -681,7 +681,7 @@ export function DiscoveryPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="Phase 1 - Discovery: Use Case & Scale Assessment" />
+        <TopBar eyebrow="Phase 1 · Discovery" title="Use Case & Scale Assessment" />
 
         <BusinessUseCaseCard project={project} onSaved={setProject} />
 
