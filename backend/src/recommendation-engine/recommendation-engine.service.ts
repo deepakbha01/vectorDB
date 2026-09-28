@@ -34,6 +34,14 @@ import {
 } from './recommendation.types';
 
 /**
+ * An optional Discovery target that was actually set. Blank ones are stored
+ * as null (not undefined), so `!== undefined` alone lets "null" leak into text.
+ */
+function hasTarget(value: number | null | undefined): value is number {
+  return value !== undefined && value !== null;
+}
+
+/**
  * Phase 1 Architecture Decision Engine.
  *
  * Scores every catalog platform (backend/config/databases.yaml) against the
@@ -678,7 +686,8 @@ export class RecommendationEngineService {
         validationRequired: true,
       },
     ];
-    if (input.precisionTarget !== undefined) {
+    // Optional targets are null when left blank on Discovery (see hasTarget) - record only the ones actually set.
+    if (hasTarget(input.precisionTarget)) {
       assumptions.push({
         id: 'assumption-precision-not-scored',
         parameter: 'Precision@K target',
@@ -692,11 +701,11 @@ export class RecommendationEngineService {
         validationRequired: false,
       });
     }
-    if (input.ndcgTarget !== undefined || input.mrrTarget !== undefined) {
+    if (hasTarget(input.ndcgTarget) || hasTarget(input.mrrTarget)) {
       assumptions.push({
         id: 'assumption-ranking-metrics-not-scored',
         parameter: 'NDCG@K / MRR targets',
-        value: [input.ndcgTarget !== undefined ? `NDCG@K=${input.ndcgTarget}` : null, input.mrrTarget !== undefined ? `MRR=${input.mrrTarget}` : null]
+        value: [hasTarget(input.ndcgTarget) ? `NDCG@K=${input.ndcgTarget}` : null, hasTarget(input.mrrTarget) ? `MRR=${input.mrrTarget}` : null]
           .filter(Boolean)
           .join(', '),
         source: 'Discovery assessment (Phase 1)',
@@ -781,7 +790,7 @@ export class RecommendationEngineService {
         validationRequired: true,
       });
     }
-    if (input.precisionTarget !== undefined && input.precisionTarget >= 0.99) {
+    if (hasTarget(input.precisionTarget) && input.precisionTarget >= 0.99) {
       risks.push({
         id: 'risk-precision-near-ceiling',
         category: 'search_quality',
