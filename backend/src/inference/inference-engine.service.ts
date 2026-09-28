@@ -348,7 +348,8 @@ export class InferenceEngineService {
       risks.push(`Availability ${input.availabilityTargetPercent}% needs >= 2 replicas across failure domains (and a second region or provider for API-based designs).`);
     }
     const chosenMonthly = decision === 'managed_api' ? managedApi.monthlyUsd : recommended?.monthlyTotalUsd;
-    if (input.monthlyBudgetUsd !== undefined && chosenMonthly !== undefined && chosenMonthly > input.monthlyBudgetUsd) {
+    // A null budget is "no budget": `cost > null` would otherwise compare against 0 and always flag.
+    if (input.monthlyBudgetUsd !== undefined && input.monthlyBudgetUsd !== null && chosenMonthly !== undefined && chosenMonthly > input.monthlyBudgetUsd) {
       risks.push(`Recommended option ${usd(chosenMonthly)}/month exceeds the ${usd(input.monthlyBudgetUsd)} budget - consider a smaller model, INT8/FP8, prompt caching, or routing easy requests to a small model.`);
     }
 

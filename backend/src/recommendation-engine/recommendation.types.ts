@@ -29,7 +29,8 @@ export interface AssessmentInput {
   requiresFullTextSearch: boolean;
   requiresMetadataFiltering: boolean;
   operationalCapability: OperationalCapability;
-  monthlyBudgetUsd?: number;
+  /** null when the Discovery assessment has no budget (the entity stores null). */
+  monthlyBudgetUsd?: number | null;
   requiresMultiRegion: boolean;
   tenancyModel: TenancyModel;
   deploymentRegionCount?: number;

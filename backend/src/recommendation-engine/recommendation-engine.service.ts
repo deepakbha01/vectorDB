@@ -491,7 +491,8 @@ export class RecommendationEngineService {
    * invent a number. Only emitted when a budget was actually specified.
    */
   private buildBudgetFeasibility(decision: VectorPlatform, input: AssessmentInput): BudgetFeasibility | null {
-    if (input.monthlyBudgetUsd === undefined) {
+    // `null` is what a Discovery assessment without a budget holds - treat it as no budget, not as "$null".
+    if (input.monthlyBudgetUsd === undefined || input.monthlyBudgetUsd === null) {
       return null;
     }
     return {
