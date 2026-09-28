@@ -10,6 +10,7 @@ import {
 } from '../api/client';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
+import { BusinessUseCaseCard } from '../components/BusinessUseCaseCard';
 
 const DEFAULT_FORM: DiscoveryAssessmentInput = {
   environment: 'production',
@@ -681,6 +682,8 @@ export function DiscoveryPage() {
       </div>
       <div className="main-content">
         <TopBar title="Phase 1 - Discovery: Use Case & Scale Assessment" />
+
+        <BusinessUseCaseCard project={project} onSaved={setProject} />
 
         {outcome && !showForm && (
           <div className="card" style={{ marginBottom: 20 }}>
