@@ -13,6 +13,7 @@ const REPORT_TYPES: Array<{ type: ReportType; label: string }> = [
   { type: 'optimization-report', label: 'Optimization Report (Phase 7)' },
   { type: 'capacity-plan', label: 'Capacity Plan (Phase 8)' },
   { type: 'complete', label: 'Complete Assessment Report (all phases)' },
+  { type: 'management', label: 'Management Report (summary tables)' },
 ];
 
 export function ReportsPage() {

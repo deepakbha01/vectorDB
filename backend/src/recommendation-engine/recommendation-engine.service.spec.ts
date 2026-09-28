@@ -521,3 +521,54 @@ describe('RecommendationEngineService', () => {
     });
   });
 });
+
+describe('RecommendationEngineService - cost fit explained', () => {
+  const service = new RecommendationEngineService({
+    getThresholds: () => thresholds,
+    getSupportedPlatforms: () => catalog,
+    getRulesVersion: () => thresholds.rulesVersion,
+  } as unknown as PlatformConfigService);
+  const option = (input: AssessmentInput, id: VectorPlatform) => service.evaluate(input).options.find((o) => o.platformId === id)!;
+
+  it('explains every option, and the explanation is the score used in the total', () => {
+    for (const input of [baseInput(), baseInput({ estimatedVectorCount: 12_500_000, hasExistingKubernetes: true, hasExistingOracle: true })]) {
+      for (const o of service.evaluate(input).options) {
+        expect(o.costBreakdown.score).toBe(o.criteriaScores.cost);
+        expect(o.costBreakdown.weight).toBe(0.1);
+        expect(o.costBreakdown.weightedContribution).toBeCloseTo(o.criteriaScores.cost * 0.1, 4);
+        expect(o.costBreakdown.model).toBeTruthy();
+        expect(o.evidence.some((e) => e.startsWith(`Cost fit scored ${o.criteriaScores.cost} (${o.costBreakdown.model}:`))).toBe(true);
+      }
+    }
+  });
+
+  it('self-hosted on Kubernetes: a starting point by what can be reused, plus a scale term', () => {
+    // 12.5M vectors is halfway between 5M and 20M: scale factor 0.5, term 0.15.
+    const onK8s = option(baseInput({ estimatedVectorCount: 12_500_000, hasExistingKubernetes: true }), VectorPlatform.QDRANT).costBreakdown;
+    expect(onK8s).toEqual(
+      expect.objectContaining({
+        model: 'Self-hosted on Kubernetes',
+        score: 0.75,
+        formula: 'min(1, 0.60 + 0.30 × 0.50) = 0.75',
+        steps: [
+          { label: 'Starting point: existing Kubernetes', value: 0.6 },
+          { label: 'Scale term: 0.30 × 0.50 (12,500,000 vectors)', value: 0.15 },
+        ],
+      }),
+    );
+    expect(option(baseInput({ estimatedVectorCount: 12_500_000 }), VectorPlatform.QDRANT).costBreakdown.formula).toBe('min(1, 0.25 + 0.30 × 0.50) = 0.40');
+    expect(option(baseInput({ estimatedVectorCount: 12_500_000, existingPlatforms: [VectorPlatform.QDRANT] }), VectorPlatform.QDRANT).costBreakdown.formula).toBe('min(1, 0.75 + 0.30 × 0.50) = 0.90');
+    // Capped at 1.
+    expect(option(baseInput({ estimatedVectorCount: 50_000_000, existingPlatforms: [VectorPlatform.MILVUS], hasExistingKubernetes: true }), VectorPlatform.MILVUS).costBreakdown.formula).toBe('min(1, 0.75 + 0.30 × 1.00) = 1.00');
+  });
+
+  it('reuse beats new for Oracle and PostgreSQL; managed SaaS and embedded have fixed points', () => {
+    expect(option(baseInput({ hasExistingOracle: true }), VectorPlatform.ORACLE).costBreakdown).toEqual(expect.objectContaining({ model: 'Reuse existing Oracle', score: 0.9 }));
+    expect(option(baseInput(), VectorPlatform.ORACLE).costBreakdown).toEqual(expect.objectContaining({ model: 'New Oracle deployment', score: 0.4 }));
+    expect(option(baseInput({ hasExistingPostgres: true }), VectorPlatform.POSTGRES_PGVECTOR).costBreakdown.score).toBe(0.95);
+    expect(option(baseInput(), VectorPlatform.PINECONE).costBreakdown).toEqual(expect.objectContaining({ model: 'Managed SaaS - new account', score: 0.45, formula: '0.45 (fixed for this model; no scale term)' }));
+    expect(option(baseInput({ existingPlatforms: [VectorPlatform.MONGODB_ATLAS] }), VectorPlatform.MONGODB_ATLAS).costBreakdown.score).toBe(0.7);
+    expect(option(baseInput(), VectorPlatform.LANCEDB).costBreakdown).toEqual(expect.objectContaining({ model: 'Embedded in the application', score: 0.85 }));
+    expect(option(baseInput(), VectorPlatform.ACTIAN).costBreakdown).toEqual(expect.objectContaining({ model: 'New instance', score: 0.4 }));
+  });
+});

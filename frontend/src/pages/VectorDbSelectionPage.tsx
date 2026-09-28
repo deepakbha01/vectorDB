@@ -12,6 +12,7 @@ import {
   RiskSeverity,
   SensitivityAnalysis,
   VectorDbSelectionOutcome,
+  ScoredOption,
 } from '../api/client';
 import { ExecutiveSummaryCard } from '../components/ExecutiveSummaryCard';
 import { PhaseNav } from '../components/PhaseNav';
@@ -84,6 +85,49 @@ function PlainLanguageCard({ summary }: { summary: PlainLanguageSummary }) {
       considerations={summary.risks}
       bottomLine={summary.bottomLine}
     />
+  );
+}
+
+/**
+ * How the cost-fit score was reached for one platform: the cost model that
+ * applied, why, the terms added up and the formula with this project's
+ * numbers, and what cost adds to the platform's total.
+ */
+function CostFitExplained({ option }: { option: ScoredOption }) {
+  const c = option.costBreakdown;
+  return (
+    <div style={{ margin: '10px 0 4px 18px', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} aria-label={`How ${option.label}'s cost fit was calculated`}>
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>How the cost fit was calculated</div>
+      {!c ? (
+        <div style={{ color: 'var(--muted)' }}>Scored {option.criteriaScores.cost.toFixed(2)}. Re-run the selection to see how this cost fit was calculated.</div>
+      ) : (
+        <>
+          <div>
+            <strong>{c.model}</strong> - {c.basis}
+          </div>
+          <table style={{ borderCollapse: 'collapse', margin: '8px 0', minWidth: 360 }}>
+            <tbody>
+              {c.steps.map((s) => (
+                <tr key={s.label}>
+                  <td style={{ padding: '2px 16px 2px 0', color: 'var(--muted)' }}>{s.label}</td>
+                  <td style={{ padding: '2px 0', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{s.value.toFixed(2)}</td>
+                </tr>
+              ))}
+              <tr style={{ borderTop: '1px solid var(--border)' }}>
+                <td style={{ padding: '4px 16px 2px 0', fontWeight: 600 }}>Cost fit (0-1)</td>
+                <td style={{ padding: '4px 0 2px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{c.score.toFixed(2)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div style={{ fontFamily: 'var(--font-mono)' }}>{c.formula}</div>
+          <div style={{ color: 'var(--muted)', marginTop: 6 }}>
+            At a {Math.round(c.weight * 100)}% weight, cost adds {c.weightedContribution.toFixed(3)} to {option.label}'s total of {option.totalScore.toFixed(2)}. This is a directional fit - how
+            costly the platform is to stand up and run relative to the others - not a price. Dollar figures for the chosen design come from the AI Factory's Cost
+            Recommendation, priced from its rate card.
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -346,6 +390,7 @@ function AdrView({ adr, projectId }: { adr: ArchitectureDecisionRecord; projectI
                   <li key={e}>{e}</li>
                 ))}
               </ul>
+              <CostFitExplained option={o} />
             </details>
           ))}
         </div>

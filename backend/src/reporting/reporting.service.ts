@@ -11,8 +11,12 @@ import { ReportBuilderService } from './report-builder.service';
 import { PdfRendererService } from './pdf-renderer.service';
 import { DocxRendererService } from './docx-renderer.service';
 import { AuthenticatedUser } from '../auth/auth.service';
+import { ConfigService } from '@nestjs/config';
+import { FeaturesController } from '../features/features.controller';
+import { FinalRecommendationService } from '../ai-factory/final/final.service';
+import { FinopsAssessmentService } from '../ai-factory/finops/finops.service';
 
-export const REPORT_TYPES = ['discovery', 'vector-db-selection', 'data-pipeline', 'index-design', 'deployment-plan', 'optimization-report', 'capacity-plan', 'complete'] as const;
+export const REPORT_TYPES = ['discovery', 'vector-db-selection', 'data-pipeline', 'index-design', 'deployment-plan', 'optimization-report', 'capacity-plan', 'complete', 'management'] as const;
 export type ReportType = (typeof REPORT_TYPES)[number];
 export const REPORT_FORMATS = ['pdf', 'docx'] as const;
 export type ReportFormat = (typeof REPORT_FORMATS)[number];
@@ -46,6 +50,9 @@ export class ReportingService {
     private readonly reportBuilder: ReportBuilderService,
     private readonly pdfRenderer: PdfRendererService,
     private readonly docxRenderer: DocxRendererService,
+    private readonly finalRecommendationService: FinalRecommendationService,
+    private readonly finopsService: FinopsAssessmentService,
+    private readonly config: ConfigService,
   ) {}
 
   async generateReport(projectId: string, requester: AuthenticatedUser, type: ReportType, format: ReportFormat): Promise<RenderedReport> {
@@ -98,6 +105,33 @@ export class ReportingService {
       const plan = await this.capacityPlanningService.getLatest(projectId, requester);
       if (!plan) throw new NotFoundException('No Capacity Plan has been generated for this project yet.');
       return this.reportBuilder.buildCapacityPlanReport(plan);
+    }
+
+    if (type === 'management') {
+      // AI Factory records only feed the Management Report when the feature is switched on, same as the UI.
+      const aiFactory = new FeaturesController(this.config).flags().aiFactory;
+      const [discovery, vectorDbSelection, dataPipeline, indexDesign, deploymentPlan, optimizationReport, capacityPlan, final, finops] = await Promise.all([
+        this.discoveryService.getLatest(projectId, requester),
+        this.vectorDbSelectionService.getLatest(projectId, requester),
+        this.dataPipelineDesignService.getLatest(projectId, requester),
+        this.indexDesignService.getLatest(projectId, requester),
+        this.deploymentPlanService.getLatest(projectId, requester),
+        this.benchmarkService.getLatest(projectId, requester),
+        this.capacityPlanningService.getLatest(projectId, requester),
+        aiFactory ? this.finalRecommendationService.getLatest(projectId, requester) : null,
+        aiFactory ? this.finopsService.getLatest(projectId, requester) : null,
+      ]);
+      return this.reportBuilder.buildManagementReport(project, {
+        discovery: discovery?.assessment,
+        adr: vectorDbSelection?.adr,
+        dataPipeline: dataPipeline ?? undefined,
+        indexDesign: indexDesign ?? undefined,
+        deploymentPlan: deploymentPlan ?? undefined,
+        optimizationReport: optimizationReport ?? undefined,
+        capacityPlan: capacityPlan ?? undefined,
+        finalRecommendation: final?.result,
+        finops: finops?.result,
+      });
     }
 
     // complete: assembles whichever phases are available - partial completion is expected and shown as such.
