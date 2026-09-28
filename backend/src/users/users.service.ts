@@ -34,7 +34,11 @@ export class UsersService {
   }
 
   async validateCredentials(email: string, password: string): Promise<User | null> {
-    const user = await this.findByEmail(email);
+    // The one place the hash is read: `passwordHash` is `select: false`, so it must be asked for by name.
+    const user = await this.users.findOne({
+      where: { email },
+      select: { id: true, email: true, passwordHash: true, fullName: true, role: true, createdAt: true, updatedAt: true },
+    });
     if (!user) {
       return null;
     }
