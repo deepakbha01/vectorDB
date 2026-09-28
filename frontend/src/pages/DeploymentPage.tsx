@@ -79,7 +79,7 @@ export function DeploymentPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="Phase 4 - Implementation: Provisioning & Deployment" />
+        <TopBar eyebrow="Phase 5 · Infrastructure" title="Provisioning & Deployment" />
 
         {!plan && (
           <div className="card" style={{ maxWidth: 560 }}>

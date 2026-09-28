@@ -95,7 +95,7 @@ export function AiFactoryPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="AI Factory Assessment" />
+        <TopBar eyebrow="Inference track" title="AI Factory Assessment" />
         {!features.aiFactory && !overview && (
           <div className="card" style={{ maxWidth: 800 }}>
             The AI Factory guided workflow is not enabled on this server. An administrator can turn it on with <code>AI_FACTORY_ENABLED=true</code>; the existing phases are unaffected either way.

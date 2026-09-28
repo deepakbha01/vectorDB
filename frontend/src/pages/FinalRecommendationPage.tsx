@@ -71,7 +71,7 @@ export function FinalRecommendationPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="Final Recommendation" />
+        <TopBar eyebrow="Inference track" title="Final Recommendation" />
         {!features.aiFactory && !preview && !previewError ? (
           <div className="card" style={{ maxWidth: 800 }}>
             The AI Factory workflow is not enabled on this server (<code>AI_FACTORY_ENABLED</code>). The existing phases are unaffected either way.

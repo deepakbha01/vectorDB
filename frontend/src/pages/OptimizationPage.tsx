@@ -49,7 +49,7 @@ export function OptimizationPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="Phase 6 - Operations: Latency & Recall Tuning" />
+        <TopBar eyebrow="Phase 7 · Optimization" title="Latency & Recall Tuning" />
 
         <form className="stacked" style={{ maxWidth: 480, marginBottom: 24 }} onSubmit={onRun}>
           <p style={{ fontSize: 13, color: 'var(--muted)' }}>

@@ -49,7 +49,7 @@ export function BusinessUseCaseCard({ project, onSaved }: { project: Project; on
 
       {!editing ? (
         <>
-          <p style={{ fontSize: 13, margin: '8px 0 0', whiteSpace: 'pre-wrap', color: project.businessUseCase ? undefined : 'var(--muted)' }}>
+          <p style={{ fontSize: 13, lineHeight: 1.6, margin: '8px 0 0', whiteSpace: 'pre-wrap', color: project.businessUseCase ? 'var(--text-2)' : 'var(--muted)' }}>
             {project.businessUseCase || 'No business use case recorded yet.'}
           </p>
           {project.industry && <p style={{ fontSize: 12, color: 'var(--muted)', margin: '6px 0 0' }}>Industry: {project.industry}</p>}

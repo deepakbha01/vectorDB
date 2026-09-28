@@ -113,7 +113,7 @@ export function RagAgentPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="RAG / Agent Architecture" />
+        <TopBar eyebrow="Inference track" title="RAG / Agent Architecture" />
         {!features.aiFactory && !defaults && !defaultsError ? (
           <div className="card" style={{ maxWidth: 800 }}>
             The AI Factory workflow is not enabled on this server (<code>AI_FACTORY_ENABLED</code>). The existing phases are unaffected either way.

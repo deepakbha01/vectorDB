@@ -358,7 +358,7 @@ export function DataPipelineDesignPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="Phase 2 - Design: Data & Embedding Strategy" />
+        <TopBar eyebrow="Phase 2 · Data & Embeddings" title="Data & Embedding Strategy" />
 
         {design && !showForm && (
           <div style={{ marginBottom: 20 }}>

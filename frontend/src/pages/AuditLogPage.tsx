@@ -33,7 +33,7 @@ export function AuditLogPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="Audit Log" />
+        <TopBar eyebrow="Project tools" title="Audit Log" />
         <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16 }}>
           Every action taken on this project - who, what, when - most recent first. Click a row for the request/
           response details (secrets are redacted).

@@ -106,7 +106,7 @@ export function DataExplorerPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content" style={{ maxWidth: 1250 }}>
-        <TopBar title="Data Explorer" />
+        <TopBar eyebrow="Project tools" title="Data Explorer" />
         {!features.dataExplorer && !status ? (
           <div className="card">The Data Explorer is not enabled on this server (<code>DATA_EXPLORER_ENABLED</code>).</div>
         ) : (

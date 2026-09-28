@@ -104,7 +104,7 @@ export function ModelSelectionPage() {
         <PhaseNav project={project} />
       </div>
       <div className="main-content">
-        <TopBar title="Model Selection" />
+        <TopBar eyebrow="Inference track" title="Model Selection" />
         {!features.aiFactory && !defaults ? (
           <div className="card" style={{ maxWidth: 800 }}>
             The AI Factory workflow is not enabled on this server (<code>AI_FACTORY_ENABLED</code>). The existing phases are unaffected either way.
