@@ -246,7 +246,13 @@ export class IngestionService {
       );
     }
 
-    await this.projectsService.updatePhaseStatus(projectId, requester, ProjectPhase.INGESTION, PhaseStatus.COMPLETED);
+    // A run that stored nothing has not completed the phase: it only moves a not-started phase to in
+    // progress, and never undoes the status an earlier successful run earned.
+    if (status !== IngestionRunStatus.FAILED) {
+      await this.projectsService.updatePhaseStatus(projectId, requester, ProjectPhase.INGESTION, PhaseStatus.COMPLETED);
+    } else if ((project.phaseStatuses?.[ProjectPhase.INGESTION] ?? PhaseStatus.NOT_STARTED) === PhaseStatus.NOT_STARTED) {
+      await this.projectsService.updatePhaseStatus(projectId, requester, ProjectPhase.INGESTION, PhaseStatus.IN_PROGRESS);
+    }
 
     this.logger.log(
       `user=${requester.email} action=run_ingestion projectId=${projectId} runVersion=${run.version} status=${status} ` +

@@ -1,17 +1,55 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { apiClient, DeadLetterRecord, DocumentInput, extractErrorMessage, IngestionRun, Project, RetryDeadLettersResult } from '../api/client';
+import {
+  apiClient,
+  DataPipelineDesign,
+  DeadLetterRecord,
+  DocumentInput,
+  extractErrorMessage,
+  IngestionRun,
+  MetadataField,
+  Project,
+  RetryDeadLettersResult,
+} from '../api/client';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
-const SAMPLE_DOCUMENTS = JSON.stringify(
-  [
-    { id: 'doc-1', text: 'Vector databases store high-dimensional embeddings for similarity search.', metadata: { source: 'intro.md' } },
-    { id: 'doc-2', text: 'HNSW graphs trade memory for low-latency, high-recall approximate search.', metadata: { source: 'indexing.md' } },
-  ],
-  null,
-  2,
-);
+const SAMPLE_TEXTS = [
+  'Vector databases store high-dimensional embeddings for similarity search.',
+  'HNSW graphs trade memory for low-latency, high-recall approximate search.',
+];
+
+/** An example value of a metadata field's type, for the i-th sample document. */
+function sampleValue(field: MetadataField, i: number): unknown {
+  switch (field.type) {
+    case 'number':
+      return i + 1;
+    case 'boolean':
+      return i === 0;
+    case 'date':
+      return `2026-01-0${i + 1}`;
+    case 'json':
+      return { section: i + 1 };
+    default:
+      return `${field.name}-${i + 1}`;
+  }
+}
+
+/**
+ * Sample documents that pass the Validate stage: their metadata uses exactly the fields declared in
+ * the project's Phase 2 design, so a run with the samples never fails on an undeclared field.
+ */
+function sampleDocuments(fields: MetadataField[]): string {
+  return JSON.stringify(
+    SAMPLE_TEXTS.map((text, i) => ({
+      id: `doc-${i + 1}`,
+      text,
+      metadata: Object.fromEntries(fields.map((f) => [f.name, sampleValue(f, i)])),
+    })),
+    null,
+    2,
+  );
+}
 
 function statusPillClass(status: IngestionRun['status']) {
   if (status === 'completed') return 'status-pill validated';
@@ -22,7 +60,8 @@ function statusPillClass(status: IngestionRun['status']) {
 export function IngestionPage() {
   const { id } = useParams<{ id: string }>();
   const [project, setProject] = useState<Project | null>(null);
-  const [documentsJson, setDocumentsJson] = useState(SAMPLE_DOCUMENTS);
+  const [documentsJson, setDocumentsJson] = useState('');
+  const [metadataFields, setMetadataFields] = useState<MetadataField[] | null>(null);
   const [history, setHistory] = useState<IngestionRun[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -39,6 +78,14 @@ export function IngestionPage() {
   useEffect(() => {
     if (!id) return;
     apiClient.get<Project>(`/projects/${id}`).then((res) => setProject(res.data));
+    apiClient
+      .get<DataPipelineDesign>(`/projects/${id}/data-pipeline/designs/latest`)
+      .then((res) => res.data.metadataFields ?? [])
+      .catch(() => []) // no Phase 2 design yet: the run itself reports that
+      .then((fields) => {
+        setMetadataFields(fields);
+        setDocumentsJson((current) => current || sampleDocuments(fields));
+      });
     loadHistory();
   }, [id]);
 
@@ -104,6 +151,13 @@ export function IngestionPage() {
           <div>
             <label>Documents (JSON array of {'{ id?, text, metadata }'})</label>
             <textarea rows={10} style={{ fontFamily: 'monospace', fontSize: 12 }} value={documentsJson} onChange={(e) => setDocumentsJson(e.target.value)} />
+            {metadataFields && (
+              <div style={{ fontSize: 12, marginTop: 4 }}>
+                {metadataFields.length > 0
+                  ? `Allowed metadata fields (Phase 2 schema): ${metadataFields.map((f) => `${f.name} (${f.type})`).join(', ')}. A document with any other field is rejected.`
+                  : 'The Phase 2 schema declares no metadata fields, so documents must have empty metadata.'}
+              </div>
+            )}
           </div>
           {error && <div className="error-text">{error}</div>}
           <button className="primary-btn" type="submit" disabled={submitting}>
@@ -125,6 +179,12 @@ export function IngestionPage() {
             </div>
             <div className="card-grid" style={{ marginBottom: 8 }}>
               <div className="card">
+                <div className="metric-label">Documents rejected</div>
+                <div className="metric-value">
+                  {run.metrics.documentsCorrupted} / {run.metrics.documentsSubmitted}
+                </div>
+              </div>
+              <div className="card">
                 <div className="metric-label">Chunks produced</div>
                 <div className="metric-value">{run.metrics.chunksProduced}</div>
               </div>
@@ -145,7 +205,8 @@ export function IngestionPage() {
                 <div className="metric-value">{run.metrics.durationMs}ms</div>
               </div>
             </div>
-            {run.metrics.chunksDeadLettered > 0 && (
+            {/* Documents rejected at validation are dead letters too, so a run that failed on them still shows why. */}
+            {run.metrics.chunksDeadLettered + run.metrics.documentsCorrupted > 0 && (
               <button className="primary-btn" onClick={() => viewDeadLetters(run.id)}>
                 View dead letters
               </button>
@@ -168,7 +229,7 @@ export function IngestionPage() {
                   {deadLetters.map((dl) => (
                     <li key={dl.id} style={{ marginBottom: 4 }}>
                       <strong>{dl.documentId ?? 'unknown document'}</strong>
-                      {dl.chunkIndex !== undefined ? ` (chunk ${dl.chunkIndex})` : ''}: {dl.reason}
+                      {dl.chunkIndex != null ? ` (chunk ${dl.chunkIndex})` : ''}: {dl.reason}
                       {dl.reprocessed ? ' - reprocessed' : ''}
                     </li>
                   ))}

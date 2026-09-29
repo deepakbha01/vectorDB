@@ -67,6 +67,18 @@ describe('ChromaVectorAdapter', () => {
     expect(mockCollectionInstance.upsert).toHaveBeenLastCalledWith({ ids: ['3'], embeddings: [[0.3]] });
   });
 
+  it('upsert stores json metadata (objects, arrays of objects) as JSON text - Chroma takes only scalars and flat arrays', async () => {
+    mockCollectionInstance.upsert.mockResolvedValue(undefined);
+    await adapter.upsert('docs', [
+      { id: '1', vector: [0.1], metadata: { a: 'x', n: 2, ok: true, none: null, tags: ['p', 'q'], obj: { section: 1 }, rows: [{ r: 1 }] } },
+    ]);
+    expect(mockCollectionInstance.upsert).toHaveBeenLastCalledWith({
+      ids: ['1'],
+      embeddings: [[0.1]],
+      metadatas: [{ a: 'x', n: 2, ok: true, none: null, tags: ['p', 'q'], obj: '{"section":1}', rows: '[{"r":1}]' }],
+    });
+  });
+
   it('search converts distances to scores and defaults missing metadata to {}', async () => {
     mockCollectionInstance.query.mockResolvedValue({ ids: [['1', '2']], distances: [[0.1, 0.4]], metadatas: [[{ a: 1 }, null]] });
     const results = await adapter.search('docs', { vector: [0.1], topK: 2 });
