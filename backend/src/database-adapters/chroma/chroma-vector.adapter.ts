@@ -13,6 +13,12 @@ import { IndexType } from '../../index-recommendation-engine/enums/index-type.en
 import { sanitizeSqlIdentifier } from '../../common/identifier-sanitizer';
 import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, ExplorerRecordDetail, VectorExplorer } from '../vector-explorer';
 import { chromaWhere, fieldsFromSample, normaliseMetric, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
+import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
+
+/** Chroma's HNSW `space` for a similarity metric (cosine when not given). */
+function chromaSpace(metric?: SimilarityMetric): 'cosine' | 'ip' | 'l2' {
+  return metric === SimilarityMetric.DOT_PRODUCT ? 'ip' : metric === SimilarityMetric.EUCLIDEAN ? 'l2' : 'cosine';
+}
 
 /**
  * Connects to a self-hosted Chroma server (typically a single lightweight
@@ -70,28 +76,63 @@ export class ChromaVectorAdapter implements VectorDatabaseAdapter, VectorExplore
     });
   }
 
-  async createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[]): Promise<void> {
+  /**
+   * Chroma has only HNSW (no native IVF/PQ), so every Phase 3 decision maps to it. Its build
+   * parameters (ef_construction, max_neighbors) can only be set when a collection is created -
+   * Chroma 1.x rejects them in modify() - while ef_search can change at any time. An empty
+   * collection is therefore re-created with the full configuration; one that already holds
+   * data keeps its build parameters and only takes the new ef_search.
+   */
+  async createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[], metric?: SimilarityMetric): Promise<void> {
     const p = (name: string) => parameters.find((x) => x.name === name)?.value;
+    const name = this.collectionName(collectionOrTableName);
     const collection = await this.getCollection(collectionOrTableName);
-    // Chroma's HNSW parameters are collection metadata, updated via modify() rather than a
-    // separate index-creation call; there is no native IVF/PQ, so all Phase 3 decisions map to HNSW.
-    await collection.modify({
-      configuration: { hnsw: { ef_construction: p('efConstruction'), max_neighbors: p('M'), ef_search: p('efSearch') } } as any,
-    });
+    const efSearch = p('efSearch');
+    if ((await collection.count()) === 0) {
+      await this.getClient().deleteCollection({ name });
+      await this.getClient().createCollection({
+        name,
+        embeddingFunction: null,
+        configuration: { hnsw: { space: chromaSpace(metric), ef_construction: p('efConstruction'), max_neighbors: p('M'), ef_search: efSearch } } as any,
+      });
+    } else {
+      this.logger.warn(`Collection '${name}' already holds data: Chroma cannot change ef_construction / M after creation, so only ef_search is applied.`);
+      if (efSearch !== undefined) await collection.modify({ configuration: { hnsw: { ef_search: efSearch } } as any });
+    }
+    this.efSearchApplied.delete(name);
+  }
+
+  /**
+   * Chroma has no per-query ef_search: it is a collection setting. A search that asks for one
+   * sets it first, once per value, and parallel searches for the same value share that update.
+   */
+  private readonly efSearchApplied = new Map<string, { value: number; done: Promise<unknown> }>();
+
+  private applyEfSearch(collection: Collection, name: string, efSearch: number): Promise<unknown> {
+    const current = this.efSearchApplied.get(name);
+    if (current?.value === efSearch) return current.done;
+    const done = collection.modify({ configuration: { hnsw: { ef_search: efSearch } } as any });
+    this.efSearchApplied.set(name, { value: efSearch, done });
+    done.catch(() => this.efSearchApplied.delete(name));
+    return done;
   }
 
   async upsert(collectionOrTableName: string, records: VectorRecord[]): Promise<void> {
     if (records.length === 0) return;
     const collection = await this.getCollection(collectionOrTableName);
+    // Chroma rejects an empty metadata object but accepts none, so a record without metadata sends null.
+    const metadatas = records.map((r) => (r.metadata && Object.keys(r.metadata).length > 0 ? (r.metadata as any) : null));
     await collection.upsert({
       ids: records.map((r) => r.id),
       embeddings: records.map((r) => r.vector),
-      metadatas: records.map((r) => r.metadata as any),
+      ...(metadatas.some((m) => m !== null) && { metadatas }),
     });
   }
 
   async search(collectionOrTableName: string, query: VectorSearchQuery): Promise<VectorSearchResult[]> {
     const collection = await this.getCollection(collectionOrTableName);
+    const efSearch = query.searchParams?.efSearch;
+    if (typeof efSearch === 'number') await this.applyEfSearch(collection, this.collectionName(collectionOrTableName), Math.trunc(efSearch));
     const result = await collection.query({
       queryEmbeddings: [query.vector],
       nResults: query.topK,
