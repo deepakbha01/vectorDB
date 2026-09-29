@@ -1,4 +1,5 @@
 import { Eligibility, EvidenceType } from '../ai-factory.types';
+import { ScoreContribution } from '../eligibility/score-breakdown';
 
 export type InferencePattern = 'synchronous' | 'streaming' | 'asynchronous' | 'batch' | 'real_time';
 export type ModelFamily = 'open_weight' | 'proprietary_api';
@@ -82,8 +83,12 @@ export interface EvaluatedServingOption {
   failures: string[];
   conditions: string[];
   notes: string[];
+  /** The mandatory rules the option meets - why it is eligible (absent on results saved before this was added). */
+  passed?: string[];
   score: number;
   criteria: Record<string, number>;
+  /** Each criterion's value x weight, largest contribution first (absent on older saved results). */
+  scoreBreakdown?: ScoreContribution[];
 }
 
 export interface RouteRule {

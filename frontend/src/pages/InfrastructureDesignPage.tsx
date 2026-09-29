@@ -6,6 +6,7 @@ import { Eligibility } from '../api/aiFactory';
 import { CreateInfrastructureDesignInput, InfrastructureDefaults, InfrastructureDesign, InfrastructureResult } from '../api/infrastructure';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
+import { EligibilityWhy, ScoreWhy } from '../components/EligibilityWhy';
 
 const ELIGIBILITY: Record<Eligibility, { label: string; color: string }> = {
   eligible: { label: 'Eligible', color: 'var(--success)' },
@@ -186,12 +187,13 @@ function InfrastructureResultView({ r, version, createdAt }: { r: Infrastructure
         <div key={p.component} className="card" style={{ overflowX: 'auto' }}>
           <div className="metric-label">{p.componentLabel} - candidate placements (eligibility is decided before scoring)</div>
           <Table
-            headers={['Placement', 'Eligibility', 'Score', 'Why']}
+            headers={['Placement', 'Eligibility', 'Why this eligibility', 'Score', 'What drives the score']}
             rows={p.candidates.map((x) => [
               x.label,
               <span key="e" style={{ color: ELIGIBILITY[x.eligibility].color, fontWeight: 600 }}>{ELIGIBILITY[x.eligibility].label}</span>,
+              <EligibilityWhy key="w" option={x} />,
               x.score.toFixed(3),
-              [...x.failures, ...x.conditions, ...x.notes].join(' ') || '—',
+              <ScoreWhy key="s" option={x} />,
             ])}
           />
         </div>

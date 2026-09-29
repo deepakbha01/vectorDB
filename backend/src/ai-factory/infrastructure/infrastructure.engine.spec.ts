@@ -180,3 +180,19 @@ describe('resolveInfraContext', () => {
     expect(vectorPlatforms('mongodb_atlas')).toEqual(['saas']);
   });
 });
+
+describe('why each placement got its eligibility and score', () => {
+  it('lists the mandatory rules a placement meets, never one it also fails, and explains every score', () => {
+    const r = designInfrastructure(ctx(), cat);
+    for (const p of r.placements) {
+      for (const c of p.candidates) {
+        expect(c.passed!.filter((x) => c.failures.includes(x))).toEqual([]);
+        // The allowed-target rule always applies, so an eligible placement always says why.
+        if (c.eligibility === 'eligible') expect(c.passed!.join(' ')).toMatch(/is an allowed deployment target/);
+        const b = c.scoreBreakdown!;
+        expect(b.map((x) => x.contribution)).toEqual([...b.map((x) => x.contribution)].sort((m, n) => n - m));
+        expect(b.reduce((s, x) => s + x.contribution, 0)).toBeCloseTo(c.score, 2);
+      }
+    }
+  });
+});

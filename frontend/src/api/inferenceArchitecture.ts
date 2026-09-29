@@ -1,5 +1,5 @@
 /** Inference Architecture (AI Factory Wave 4) - mirrors backend/src/ai-factory/inference-architecture/*. */
-import { Eligibility, EvidenceType } from './aiFactory';
+import { Eligibility, EvidenceType, ScoreContribution } from './aiFactory';
 
 export type InferencePattern = 'synchronous' | 'streaming' | 'asynchronous' | 'batch' | 'real_time';
 export const PATTERNS: Array<[InferencePattern, string]> = [
@@ -23,7 +23,11 @@ export interface EvaluatedServingOption {
   failures: string[];
   conditions: string[];
   notes: string[];
+  /** Mandatory rules the option meets (absent on results saved before it was added). */
+  passed?: string[];
   score: number;
+  /** Each criterion's value x weight, largest contribution first (absent on older results). */
+  scoreBreakdown?: ScoreContribution[];
 }
 
 export interface LatencyEstimate {

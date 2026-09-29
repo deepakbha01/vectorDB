@@ -11,6 +11,7 @@ import {
   RerankOption,
   RetrievalOption,
 } from './rag-agent.types';
+import { scoreBreakdown } from '../eligibility/score-breakdown';
 
 const TIE_EPSILON = 0.001;
 const band = (o: EvaluatedOption) => (o.eligibility === 'eligible' ? 0 : o.eligibility === 'conditional' ? 1 : 2);
@@ -19,8 +20,8 @@ const HIGH_CRITICALITY = ['high', 'mission_critical'];
 /** Metadata that lets an answer point back at its source. */
 const SOURCE_FIELD = /source|doc(ument)?_?id|document|url|uri|path|title|file/i;
 
-type Verdict = Pick<EvaluatedOption, 'failures' | 'conditions' | 'notes'>;
-const verdict = (): Verdict => ({ failures: [], conditions: [], notes: [] });
+type Verdict = Pick<EvaluatedOption, 'failures' | 'conditions' | 'notes'> & { passed: string[] };
+const verdict = (): Verdict => ({ failures: [], conditions: [], notes: [], passed: [] });
 const eligibilityOf = (v: Verdict): EvaluatedOption['eligibility'] => (v.failures.length ? 'not_eligible' : v.conditions.length ? 'conditional' : 'eligible');
 
 /** Weights normalised to 1 after the stated priorities emphasise their criterion. */
@@ -31,6 +32,11 @@ export function weightsFor<K extends string>(base: Record<K, number>, emphasise:
 }
 
 const score = (tiers: Record<string, number | undefined>, w: Record<string, number>) => round(Object.entries(w).reduce((s, [k, wk]) => s + wk * ((tiers[k] ?? 0) / 5), 0));
+/** The option's score with its breakdown: each weighted tier (tier / 5) times its weight. */
+const scored = (tiers: Record<string, number | undefined>, w: Record<string, number>) => ({
+  score: score(tiers, w),
+  scoreBreakdown: scoreBreakdown(Object.fromEntries(Object.keys(w).map((k) => [k, (tiers[k] ?? 0) / 5])), w),
+});
 
 function decide(area: DecisionArea, title: string, candidates: EvaluatedOption[]): AreaDecision {
   const sorted = [...candidates].sort((a, b) => band(a) - band(b) || (Math.abs(b.score - a.score) > TIE_EPSILON ? b.score - a.score : a.id.localeCompare(b.id)));
@@ -88,10 +94,14 @@ export function evaluateRetrieval(o: RetrievalOption, ctx: RagAgentContext): Ver
     if (ctx.requiresHybridSearch) v.failures.push('Discovery requires hybrid (vector + keyword) search.');
     if (ctx.requiresFullTextSearch) v.failures.push('Discovery requires full-text search, which dense vectors alone do not provide.');
     if (!v.failures.length) v.notes.push('Exact identifiers (codes, names, SKUs) retrieve poorly without keyword matching - check the evaluation set covers them.');
+  } else {
+    if (ctx.requiresHybridSearch) v.passed.push('Combines vector and keyword search, as Discovery requires hybrid search.');
+    if (ctx.requiresFullTextSearch) v.passed.push('Adds keyword matching, which Discovery requires for full-text search.');
   }
   if (o.requiresNativeHybrid) {
     if (ctx.nativeHybrid === false) v.failures.push(`${ctx.vectorPlatform} has no native hybrid search (databases catalogue).`);
     else if (ctx.nativeHybrid === null) v.conditions.push('No Vector DB decision yet - confirm the chosen database supports hybrid search natively.');
+    else v.passed.push(`${ctx.vectorPlatform} supports hybrid search natively.`);
   }
   if (o.extraComponent) v.conditions.push(`Adds a component to run: ${o.extraComponent.toLowerCase()}, with its own ingestion path and consistency checks.`);
   return v;
@@ -101,6 +111,9 @@ export function evaluateRetrieval(o: RetrievalOption, ctx: RagAgentContext): Ver
 export function evaluateRerank(o: RerankOption, ctx: RagAgentContext, cat: RagAgentCatalogue, ttftWithout: number | null): Verdict {
   const v = verdict();
   const n = rerankCandidates(ctx, cat);
+  if (ctx.requiresReranking && o.id !== 'none') v.passed.push('Reranks the retrieved passages, as Discovery requires.');
+  if (o.external && !ctx.onPremOnly && ctx.thirdPartyApiAllowed) v.passed.push('Third-party APIs are allowed (Inference assessment), so passages may go to an external reranker.');
+  if (!o.external && o.id !== 'none' && ctx.onPremOnly) v.passed.push('Runs inside the boundary, as on-premises-only deployment requires.');
   if (o.id === 'none') {
     if (ctx.requiresReranking) v.failures.push('Discovery requires reranking.');
     else if (ctx.precisionTarget !== null && ctx.precisionTarget >= 0.8) v.notes.push(`Precision target ${ctx.precisionTarget} is demanding without a reranker - verify on the evaluation set.`);
@@ -133,7 +146,9 @@ export function evaluateAgent(o: AgentOption, ctx: RagAgentContext, cat: RagAgen
   if (o.requiresToolCalling) {
     if (ctx.primary && !ctx.primary.toolCalling) v.failures.push(`Primary model ${ctx.primary.label} does not support tool calling - choose a tool-capable model in Model Selection.`);
     else if (!ctx.primary) v.conditions.push('No Model Selection yet - confirm the primary model supports tool calling.');
+    else v.passed.push(`Primary model ${ctx.primary.label} supports tool calling, which this orchestration needs.`);
   } else {
+    v.passed.push('Needs no tool calling from the model - the workflow graph drives each step.');
     if (ctx.openEndedTasks) v.conditions.push('Tasks are open-ended - a fixed graph only covers the paths designed up front; unplanned requests fall through to a default answer.');
     if (ctx.primary && !ctx.primary.structuredOutput) {
       v.notes.push(`${ctx.primary.label} has no native structured output - use constrained decoding / JSON-schema validation between steps.`);
@@ -345,7 +360,7 @@ export function designRagAgent(ctx: RagAgentContext, cat: RagAgentCatalogue): Ra
       'Retrieval strategy',
       cat.retrieval.options.map((o) => {
         const v = evaluateRetrieval(o, ctx);
-        return { area: 'retrieval', id: o.id, label: o.label, eligibility: eligibilityOf(v), ...v, score: score(o as unknown as Record<string, number>, w) };
+        return { area: 'retrieval', id: o.id, label: o.label, eligibility: eligibilityOf(v), ...v, ...scored(o as unknown as Record<string, number>, w) };
       }),
     );
     decisions.push(r);
@@ -358,7 +373,7 @@ export function designRagAgent(ctx: RagAgentContext, cat: RagAgentCatalogue): Ra
       'Reranking',
       cat.reranking.options.map((o) => {
         const v = evaluateRerank(o, ctx, cat, ttftWithout);
-        return { area: 'reranking', id: o.id, label: o.label, eligibility: eligibilityOf(v), ...v, score: score(o as unknown as Record<string, number>, wr) };
+        return { area: 'reranking', id: o.id, label: o.label, eligibility: eligibilityOf(v), ...v, ...scored(o as unknown as Record<string, number>, wr) };
       }),
     );
     decisions.push(k);
@@ -377,7 +392,7 @@ export function designRagAgent(ctx: RagAgentContext, cat: RagAgentCatalogue): Ra
       'Agent orchestration',
       cat.agent.options.map((o) => {
         const v = evaluateAgent(o, ctx, cat, pre.endToEndMs);
-        return { area: 'agent', id: o.id, label: o.label, eligibility: eligibilityOf(v), ...v, score: score(o as unknown as Record<string, number>, w) };
+        return { area: 'agent', id: o.id, label: o.label, eligibility: eligibilityOf(v), ...v, ...scored(o as unknown as Record<string, number>, w) };
       }),
     );
     decisions.push(a);

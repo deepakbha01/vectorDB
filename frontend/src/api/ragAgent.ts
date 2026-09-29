@@ -1,5 +1,5 @@
 /** RAG / Agent architecture (AI Factory Wave 6) - mirrors backend/src/ai-factory/rag-agent/*. */
-import { Eligibility, EvidenceType } from './aiFactory';
+import { Eligibility, EvidenceType, ScoreContribution } from './aiFactory';
 
 export type ToolAccess = 'none' | 'read_only' | 'read_write' | 'external_actions';
 export const TOOL_ACCESS: Array<[ToolAccess, string]> = [
@@ -27,7 +27,11 @@ export interface EvaluatedOption {
   failures: string[];
   conditions: string[];
   notes: string[];
+  /** Mandatory requirements the option meets (absent on results saved before it was added). */
+  passed?: string[];
   score: number;
+  /** Each criterion's value x weight, largest first (absent on older results). */
+  scoreBreakdown?: ScoreContribution[];
 }
 
 export interface AreaDecision {

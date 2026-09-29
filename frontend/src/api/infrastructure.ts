@@ -1,5 +1,5 @@
 /** Infrastructure Design (AI Factory Wave 5) - mirrors backend/src/ai-factory/infrastructure/*. */
-import { Eligibility, EvidenceType } from './aiFactory';
+import { Eligibility, EvidenceType, ScoreContribution } from './aiFactory';
 
 export type TargetId = 'on_premises' | 'azure' | 'aws' | 'oci' | 'gcp';
 export type PlatformKind = 'kubernetes' | 'vm' | 'managed' | 'saas' | 'in_app';
@@ -20,7 +20,11 @@ export interface PlacementCandidate {
   failures: string[];
   conditions: string[];
   notes: string[];
+  /** Mandatory requirements the option meets (absent on results saved before it was added). */
+  passed?: string[];
   score: number;
+  /** Each criterion's value x weight, largest first (absent on older results). */
+  scoreBreakdown?: ScoreContribution[];
 }
 
 export interface Placement {

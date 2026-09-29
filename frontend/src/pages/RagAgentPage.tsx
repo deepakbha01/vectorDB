@@ -6,6 +6,7 @@ import { Eligibility } from '../api/aiFactory';
 import { CreateRagAgentDesignInput, RagAgentDefaults, RagAgentDesign, RagAgentResult, TOOL_ACCESS, ToolAccess } from '../api/ragAgent';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
+import { EligibilityWhy, ScoreWhy } from '../components/EligibilityWhy';
 
 const ELIGIBILITY: Record<Eligibility, { label: string; color: string }> = {
   eligible: { label: 'Eligible', color: 'var(--success)' },
@@ -255,12 +256,13 @@ function RagAgentResultView({ r, version, createdAt }: { r: RagAgentResult; vers
         <div key={d.area} className="card" style={{ overflowX: 'auto' }}>
           <div className="metric-label">{d.title} - options (eligibility is decided before scoring)</div>
           <Table
-            headers={['Option', 'Eligibility', 'Score', 'Why']}
+            headers={['Option', 'Eligibility', 'Why this eligibility', 'Score', 'What drives the score']}
             rows={d.candidates.map((c) => [
               d.chosen?.id === c.id ? <strong key="l">{c.label}</strong> : c.label,
               <span key="e" style={{ color: ELIGIBILITY[c.eligibility].color, fontWeight: 600 }}>{ELIGIBILITY[c.eligibility].label}</span>,
+              <EligibilityWhy key="w" option={c} />,
               c.score.toFixed(3),
-              [...c.failures, ...c.conditions, ...c.notes].join(' ') || '—',
+              <ScoreWhy key="s" option={c} />,
             ])}
           />
         </div>
