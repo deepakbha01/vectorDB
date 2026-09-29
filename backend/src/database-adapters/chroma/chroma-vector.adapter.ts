@@ -15,6 +15,16 @@ import { BrowseOptions, ExplorerCollectionInfo, ExplorerFilter, ExplorerPage, Ex
 import { chromaWhere, fieldsFromSample, normaliseMetric, recordDetail, trimMetadata, vectorFields } from '../explorer-helpers';
 import { SimilarityMetric } from '../../discovery/enums/discovery.enum';
 
+/**
+ * A metadata value Chroma can store. Chroma takes only scalars and flat arrays of them, so a `json`
+ * field's object (or an array holding objects) is stored as its JSON text.
+ */
+function chromaMetadataValue(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value) && value.every((v) => ['string', 'number', 'boolean'].includes(typeof v))) return value;
+  return JSON.stringify(value);
+}
+
 /** Chroma's HNSW `space` for a similarity metric (cosine when not given). */
 function chromaSpace(metric?: SimilarityMetric): 'cosine' | 'ip' | 'l2' {
   return metric === SimilarityMetric.DOT_PRODUCT ? 'ip' : metric === SimilarityMetric.EUCLIDEAN ? 'l2' : 'cosine';
@@ -121,7 +131,11 @@ export class ChromaVectorAdapter implements VectorDatabaseAdapter, VectorExplore
     if (records.length === 0) return;
     const collection = await this.getCollection(collectionOrTableName);
     // Chroma rejects an empty metadata object but accepts none, so a record without metadata sends null.
-    const metadatas = records.map((r) => (r.metadata && Object.keys(r.metadata).length > 0 ? (r.metadata as any) : null));
+    const metadatas = records.map((r) =>
+      r.metadata && Object.keys(r.metadata).length > 0
+        ? (Object.fromEntries(Object.entries(r.metadata).map(([k, v]) => [k, chromaMetadataValue(v)])) as any)
+        : null,
+    );
     await collection.upsert({
       ids: records.map((r) => r.id),
       embeddings: records.map((r) => r.vector),

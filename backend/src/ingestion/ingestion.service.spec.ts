@@ -153,6 +153,24 @@ describe('IngestionService', () => {
     ]);
   });
 
+  it('does not mark the phase completed when a run stores nothing - a not-started phase moves to in progress', async () => {
+    adapterFactory.getAdapter.mockReturnValue({ upsert: jest.fn() });
+
+    await service.runIngestion('project-1', requester, { documents: [{ text: '   ', metadata: {} }] } as any);
+
+    expect(projectsService.updatePhaseStatus).toHaveBeenCalledWith('project-1', requester, 'ingestion', 'in_progress');
+    expect(projectsService.updatePhaseStatus).not.toHaveBeenCalledWith('project-1', requester, 'ingestion', 'completed');
+  });
+
+  it('leaves the phase status earned by an earlier run alone when a later run fails', async () => {
+    projectsService.findOne.mockResolvedValue({ id: 'project-1', platform: VectorPlatform.POSTGRES_PGVECTOR, phaseStatuses: { ingestion: 'completed' } });
+    adapterFactory.getAdapter.mockReturnValue({ upsert: jest.fn() });
+
+    await service.runIngestion('project-1', requester, { documents: [{ text: '   ', metadata: {} }] } as any);
+
+    expect(projectsService.updatePhaseStatus).not.toHaveBeenCalled();
+  });
+
   it('skips chunks whose content hash was already stored (deduplication)', async () => {
     contentHashesRepo.findOne.mockResolvedValue({ id: 'existing-hash-row' });
     const adapter = { upsert: jest.fn() };
