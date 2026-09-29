@@ -78,8 +78,9 @@ export class ChromaVectorAdapter implements VectorDatabaseAdapter, VectorExplore
     }
   }
 
+  /** Idempotent, like the other adapters' CREATE ... IF NOT EXISTS: re-running a deployment reuses the collection. */
   async createSchema(definition: SchemaDefinition): Promise<void> {
-    await this.getClient().createCollection({
+    await this.getClient().getOrCreateCollection({
       name: this.collectionName(definition.collectionOrTableName),
       embeddingFunction: null,
       metadata: { 'hnsw:space': 'cosine' },

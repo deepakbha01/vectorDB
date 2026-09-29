@@ -54,6 +54,38 @@ describe('PostgresVectorAdapter', () => {
     expect(mockPoolInstance.query).toHaveBeenCalledWith('CREATE TABLE docs (...);');
   });
 
+  describe('createSchema on a table created before pgvector was installed', () => {
+    function existingArrayTable(dims: Array<{ dims: number; n: number }>) {
+      mockPoolInstance.query.mockImplementation((sql: string) => {
+        if (sql.includes('information_schema.columns')) return Promise.resolve({ rows: [{ udt_name: '_float8' }] });
+        if (sql.includes('array_length')) return Promise.resolve({ rows: dims });
+        return Promise.resolve({ rows: [] });
+      });
+    }
+
+    it('converts the DOUBLE PRECISION[] embedding column to vector(dimension) in place when the stored vectors match', async () => {
+      existingArrayTable([{ dims: 768, n: 3 }]);
+      await adapter.createSchema({ collectionOrTableName: 'docs', dimension: 768, metadataFields: [] });
+      expect(mockPoolInstance.query).toHaveBeenCalledWith('ALTER TABLE docs ALTER COLUMN embedding TYPE vector(768) USING embedding::vector(768)');
+    });
+
+    it('refuses with a clear error, without altering the table, when stored vectors have another dimension', async () => {
+      existingArrayTable([{ dims: 1536, n: 3 }]);
+      await expect(adapter.createSchema({ collectionOrTableName: 'docs', dimension: 768, metadataFields: [] })).rejects.toThrow(
+        /3 with 1536 dimensions/,
+      );
+      expect(mockPoolInstance.query.mock.calls.some((c) => String(c[0]).startsWith('ALTER TABLE'))).toBe(false);
+    });
+
+    it('leaves a table that already has a vector column alone', async () => {
+      mockPoolInstance.query.mockImplementation((sql: string) =>
+        Promise.resolve({ rows: sql.includes('information_schema.columns') ? [{ udt_name: 'vector' }] : [] }),
+      );
+      await adapter.createSchema({ collectionOrTableName: 'docs', dimension: 768, metadataFields: [] });
+      expect(mockPoolInstance.query.mock.calls.some((c) => String(c[0]).startsWith('ALTER TABLE'))).toBe(false);
+    });
+  });
+
   it('upsert builds an INSERT..ON CONFLICT with dynamic metadata columns inside a transaction', async () => {
     mockClient.query.mockResolvedValue({});
     await adapter.upsert('docs', [{ id: '1', vector: [0.1, 0.2], metadata: { source_url: 'https://a', page: 3 } }]);
