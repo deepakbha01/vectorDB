@@ -125,6 +125,23 @@ describe('resolvePerformanceContext', () => {
     expect(m.search_latency_p99.measured!.value).toBe(61);
   });
 
+  it('measures QPS only from the parallel load pass, never from the one-at-a-time rate', () => {
+    // This benchmark predates the load pass: achievedQps (~1 / latency) says nothing about peak throughput.
+    expect(resolve(base()).metrics.qps.measured).toBeNull();
+
+    const loaded = base();
+    loaded.optimization.recommendedVariant = { ...loaded.optimization.recommendedVariant, sustainedQps: 212.5, concurrency: 4 };
+    expect(resolve(loaded).metrics.qps.measured).toMatchObject({ value: 212.5, source: 'Optimization benchmark v1 (ef=128, 500 queries, top-10, 4 parallel clients)' });
+  });
+
+  it('takes no measurements from an exact-scan benchmark (no pgvector on the target)', () => {
+    const exact = base();
+    exact.optimization.searchMode = 'exact_scan';
+    exact.optimization.recommendedVariant = { ...exact.optimization.recommendedVariant, sustainedQps: 212.5, concurrency: 4 };
+    const m = resolve(exact).metrics;
+    for (const id of ['recall', 'qps', 'search_latency_p95', 'search_latency_p99']) expect(m[id].measured).toBeNull();
+  });
+
   it('flags measurements taken before the design they describe', () => {
     const m = resolve(base({ indexDesign: { version: 2, createdAt: day(9) } })).metrics;
     expect(m.recall.measured!.caveats).toContain('Measured before Index design v2 - re-run to confirm it still holds.');

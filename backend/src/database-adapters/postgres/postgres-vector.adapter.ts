@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Pool, PoolClient } from 'pg';
 import {
   SchemaDefinition,
+  SearchMode,
   VectorDatabaseAdapter,
   VectorRecord,
   VectorSearchQuery,
@@ -99,6 +100,11 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplo
       }
     }
     return this.hasPgvectorCache;
+  }
+
+  /** `exact_scan` when pgvector is missing: search() then compares every row in the application (searchFallback). */
+  async searchMode(): Promise<SearchMode> {
+    return (await this.hasPgvector()) ? 'ann' : 'exact_scan';
   }
 
   private plainColumnType(type: MetadataFieldDefinition['type']): string {

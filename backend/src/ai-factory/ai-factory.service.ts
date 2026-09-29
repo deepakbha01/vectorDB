@@ -438,7 +438,7 @@ export class AiFactoryService {
             requiresBenchmark: perf.result.counts.requires_benchmark,
             failing: perf.result.groups.flatMap((g) => g.metrics).filter((k) => k.status === 'fail').map((k) => k.label),
           })
-        : { ...section('optimization', 'partial', opt ? { recall: opt.recommendedVariant.avgRecall, p95LatencyMs: opt.recommendedVariant.p95LatencyMs, achievedQps: opt.recommendedVariant.achievedQps, evidence: 'measured (vector benchmark sample)' } : {}), plannedWave: 8 },
+        : { ...section('optimization', 'partial', opt ? { recall: opt.recommendedVariant.avgRecall, p95LatencyMs: opt.recommendedVariant.p95LatencyMs, singleClientQps: opt.recommendedVariant.achievedQps, sustainedQps: opt.recommendedVariant.sustainedQps ?? null, concurrency: opt.recommendedVariant.concurrency ?? null, searchMode: opt.searchMode ?? null, evidence: opt.searchMode === 'exact_scan' ? 'not representative (exact scan - no pgvector on the target)' : 'measured (vector benchmark sample)' } : {}), plannedWave: 8 },
       cost: fin
         ? section('finops', 'full', {
             chosenMonthlyUsd: fin.result.chosen?.monthlyUsd ?? null,

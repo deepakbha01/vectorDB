@@ -81,11 +81,13 @@ export function resolvePerformanceContext(dto: CreatePerformanceAssessmentDto, x
     opt && vectorCount && opt.sampleSize < vectorCount * cat.sampleCheck.minShare && opt.sampleSize < cat.sampleCheck.minSampleVectors
       ? [`Benchmark ran on ${opt.sampleSize.toLocaleString()} vectors against ~${vectorCount.toLocaleString()} expected - confirm at production scale.`]
       : [];
-  const platformVector = (value: number | undefined): MeasuredValue | null =>
-    opt && best && value !== undefined
+  // An exact-scan benchmark (no pgvector on the target) measured a brute-force scan, not the tuned index.
+  const representative = opt?.searchMode !== 'exact_scan';
+  const platformVector = (value: number | undefined, detail = ''): MeasuredValue | null =>
+    opt && best && representative && value !== undefined
       ? {
           value: round(value, 3),
-          source: `Optimization benchmark v${opt.version} (${best.searchParamName}=${best.searchParamValue}, ${opt.queryCount.toLocaleString()} queries, top-${opt.topK})`,
+          source: `Optimization benchmark v${opt.version} (${best.searchParamName}=${best.searchParamValue}, ${opt.queryCount.toLocaleString()} queries, top-${opt.topK}${detail})`,
           measuredAt: date(opt.createdAt),
           reported: false,
           caveats: [...sampleCaveat, ...staleCaveat('vector', opt.createdAt)],
@@ -96,7 +98,9 @@ export function resolvePerformanceContext(dto: CreatePerformanceAssessmentDto, x
     metrics[id] = { applicable: vectorApplicable, notApplicableReason: 'No Discovery (vector track) yet.', target: t, estimate: null, measured: reported(id, 'vector') ?? measured };
   };
   vec('recall', target(d?.recallTarget, `${dv}: recall target`), platformVector(best?.avgRecall));
-  vec('qps', target(d?.peakQps, `${dv}: peak QPS`), platformVector(best?.achievedQps));
+  // Throughput under parallel load, not the one-at-a-time rate (≈ 1 / latency), which says nothing about
+  // peak QPS. Benchmarks saved before the load pass existed have none, so QPS stays unmeasured for them.
+  vec('qps', target(d?.peakQps, `${dv}: peak QPS`), platformVector(best?.sustainedQps, best?.concurrency ? `, ${best.concurrency} parallel clients` : ''));
   vec('search_latency_p95', target(d?.targetP95LatencyMs, `${dv}: P95 search target`), platformVector(best?.p95LatencyMs));
   vec('search_latency_p99', target(d?.targetP99LatencyMs, `${dv}: P99 search target`), platformVector(best?.p99LatencyMs));
   vec('index_build_time', null, null);

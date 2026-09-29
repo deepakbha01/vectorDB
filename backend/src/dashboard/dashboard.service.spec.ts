@@ -116,6 +116,19 @@ describe('DashboardService', () => {
     // memory 6/16 = 37.5% is the busiest (CPU 25%, storage 2%)
     expect(summary.capacityUtilizationPercent).toBe(37.5);
     expect(summary.capacityUtilizationResource).toBe('memory');
+    expect(summary.benchmarkNotRepresentative).toBe(false);
+  });
+
+  it('shows no measured values from an exact-scan benchmark (no pgvector on the target) and says why', async () => {
+    projectsService.findAllForUser.mockResolvedValue([
+      { id: 'p1', name: 'RAG Assistant', owner, platform: VectorPlatform.POSTGRES_PGVECTOR, platformIsManualOverride: false, phaseStatuses: { discovery: PhaseStatus.COMPLETED } },
+    ]);
+    discoveryService.getLatest.mockResolvedValue(null);
+    benchmarkService.getLatest.mockResolvedValue({ searchMode: 'exact_scan', recommendedVariant: { p95LatencyMs: 37, avgRecall: 1 } });
+
+    const [summary] = await service.getSummary('user-1');
+
+    expect(summary).toMatchObject({ measuredP95LatencyMs: null, measuredRecallAtK: null, benchmarkNotRepresentative: true });
   });
 });
 

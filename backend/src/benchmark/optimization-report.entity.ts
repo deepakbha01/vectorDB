@@ -4,6 +4,7 @@ import { User } from '../users/user.entity';
 import { IndexType } from '../index-recommendation-engine/enums/index-type.enum';
 import { TuningParameter } from '../index-recommendation-engine/index-recommendation.types';
 import { CapacityImpact, CostImplications, VariantResult } from './benchmark.types';
+import { SearchMode } from '../database-adapters/vector-database-adapter.interface';
 
 /**
  * Phase 6 deliverable: the Optimization Report. Compares search-time
@@ -58,6 +59,14 @@ export class OptimizationReport {
 
   @Column({ type: 'jsonb' })
   costImplications: CostImplications;
+
+  /**
+   * `exact_scan`: the target had no vector index support (PostgreSQL without pgvector),
+   * so the results describe a brute-force scan, not the tuned index. null on reports
+   * saved before this was recorded.
+   */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  searchMode: SearchMode | null;
 
   @CreateDateColumn()
   createdAt: Date;

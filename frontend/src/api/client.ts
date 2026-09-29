@@ -171,6 +171,8 @@ export interface DashboardSummary {
   measuredP95LatencyMs: number | null;
   targetRecallAtK: number | null;
   measuredRecallAtK: number | null;
+  /** The latest benchmark was an exact scan (no pgvector on the target). */
+  benchmarkNotRepresentative: boolean;
   capacityUtilizationPercent: number | null;
   /** Which resource the utilization refers to - the busiest of memory, CPU and storage. */
   capacityUtilizationResource: 'memory' | 'cpu' | 'storage' | null;
@@ -788,7 +790,11 @@ export interface VariantResult {
   p95LatencyMs: number;
   p99LatencyMs: number;
   avgRecall: number;
+  /** One client, one query at a time (about 1 / latency) - not throughput under load. */
   achievedQps: number;
+  /** Throughput with `concurrency` parallel clients; absent on benchmarks run before it was measured. */
+  sustainedQps?: number;
+  concurrency?: number;
 }
 
 export interface OptimizationReport {
@@ -805,6 +811,8 @@ export interface OptimizationReport {
   beforeAfterComparison: { baseline: VariantResult; recommended: VariantResult };
   capacityImpact: { estimatedMemoryGb: number };
   costImplications: { estimatedCostPerHourUsd: number };
+  /** `exact_scan`: ran without pgvector on the target - not representative of the tuned index. null on older reports. */
+  searchMode?: 'ann' | 'exact_scan' | null;
   createdAt: string;
 }
 

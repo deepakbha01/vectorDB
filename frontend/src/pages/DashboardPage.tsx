@@ -148,9 +148,9 @@ export function DashboardPage() {
             {metric('Dataset Size', s.datasetSizeBytes ? `${(s.datasetSizeBytes / 1024 ** 3).toFixed(2)} GB` : null)}
             {metric('Target QPS', s.targetQps)}
             {metric('Target P95 Latency', s.targetP95LatencyMs, 'ms')}
-            {metric('Measured P95 Latency', s.measuredP95LatencyMs, 'ms', 'Pending Optimization')}
+            {metric('Measured P95 Latency', s.measuredP95LatencyMs, 'ms', s.benchmarkNotRepresentative ? 'Needs pgvector' : 'Pending Optimization')}
             {metric('Target Recall@K', s.targetRecallAtK)}
-            {metric('Measured Recall@K', s.measuredRecallAtK, '', 'Pending Optimization')}
+            {metric('Measured Recall@K', s.measuredRecallAtK, '', s.benchmarkNotRepresentative ? 'Needs pgvector' : 'Pending Optimization')}
             {metric(
               s.capacityUtilizationResource ? `Capacity Utilization (${UTILIZATION_RESOURCE[s.capacityUtilizationResource]})` : 'Capacity Utilization',
               s.capacityUtilizationPercent,
