@@ -48,6 +48,8 @@ export interface ProjectDashboardSummary {
   measuredP95LatencyMs: number | null;
   targetRecallAtK: number | null;
   measuredRecallAtK: number | null;
+  /** The latest benchmark was an exact scan (no pgvector on the target), so measured values are left empty. */
+  benchmarkNotRepresentative: boolean;
   capacityUtilizationPercent: number | null;
   /** Which resource `capacityUtilizationPercent` refers to - the busiest one. */
   capacityUtilizationResource: 'memory' | 'cpu' | 'storage' | null;
@@ -79,6 +81,8 @@ export class DashboardService {
           this.capacityPlanningService.getLatest(project.id, requester),
         ]);
         const utilization = capacityPlan ? capacityUtilization(capacityPlan) : null;
+        // An exact-scan benchmark (no pgvector on the target) did not measure the tuned index.
+        const measured = optimization && optimization.searchMode !== 'exact_scan' ? optimization.recommendedVariant : null;
 
         let recommendations: string[] = [];
         if (project.phaseStatuses.discovery !== PhaseStatus.COMPLETED) {
@@ -100,9 +104,10 @@ export class DashboardService {
             : null,
           targetQps: outcome?.assessment.qps ?? null,
           targetP95LatencyMs: outcome?.assessment.targetP95LatencyMs ?? null,
-          measuredP95LatencyMs: optimization?.recommendedVariant.p95LatencyMs ?? null,
+          measuredP95LatencyMs: measured?.p95LatencyMs ?? null,
           targetRecallAtK: outcome?.assessment.recallTarget ?? null,
-          measuredRecallAtK: optimization?.recommendedVariant.avgRecall ?? null,
+          measuredRecallAtK: measured?.avgRecall ?? null,
+          benchmarkNotRepresentative: optimization?.searchMode === 'exact_scan',
           capacityUtilizationPercent: utilization?.percent ?? null,
           capacityUtilizationResource: utilization?.resource ?? null,
           risks: vectorDbSelection?.adr.risks.map((r) => r.description) ?? [],

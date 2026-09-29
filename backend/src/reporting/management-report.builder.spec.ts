@@ -53,8 +53,9 @@ function executive(doc: ReturnType<typeof buildManagementReport>): Record<string
   return Object.fromEntries(table(doc, 'Executive Summary')!.rows.map((r) => [r[0], [r[1], r[2]]]));
 }
 
-const tuned = (p95: number, recall: number, qps: number): any => ({
-  recommendedVariant: { p95LatencyMs: p95, avgRecall: recall, achievedQps: qps },
+/** A benchmark with a load pass: `sustainedQps` from 4 parallel clients; the one-at-a-time rate is ~1 / latency. */
+const tuned = (p95: number, recall: number, sustainedQps: number): any => ({
+  recommendedVariant: { p95LatencyMs: p95, avgRecall: recall, achievedQps: 28, sustainedQps, concurrency: 4 },
   costImplications: { estimatedCostPerHourUsd: 10 },
 });
 
@@ -195,14 +196,39 @@ describe('buildManagementReport', () => {
     const rows = table(buildManagementReport(project, { discovery, optimizationReport: tuned(80, 0.93, 250) }), 'Performance against targets')!.rows;
     expect(rows[0]).toEqual(['P95 latency', '<= 100ms', '80ms', 'Met']);
     expect(rows[1]).toEqual(['Recall', '>= 0.95', '0.93', 'Not met']);
-    expect(rows[2]).toEqual(['Throughput (QPS)', '>= 200 peak', '250', 'Met']);
+    expect(rows[2]).toEqual(['Throughput (QPS)', '>= 200 peak', '250 (4 parallel clients)', 'Met']);
+  });
+
+  it('treats an exact-scan benchmark (no pgvector) as not measured and asks for pgvector', () => {
+    const exact: any = { ...tuned(37, 1, 90), searchMode: 'exact_scan' };
+    const doc = buildManagementReport(autoAi.project, { ...autoAi.parts, optimizationReport: exact });
+
+    const rows = table(doc, 'Performance against targets')!.rows;
+    for (const row of rows.slice(0, 3)) expect(row.slice(2)).toEqual(['Not representative - no pgvector on the target', 'Not yet measured']);
+    const e = executive(doc);
+    expect(e['Performance outcome'][0]).toBe('Not yet measured: the benchmark ran without pgvector.');
+    expect(e['Executive recommendation'][0]).toBe('Conditional Approval');
+    expect(e['Management conditions'][1]).toContain('Install pgvector on the target database and re-run the Optimization benchmark.');
+    expect(table(doc, 'Management actions and decisions required')!.rows[0][2]).toBe('Install pgvector on the target database and re-run the Optimization benchmark');
+    expect(table(doc, 'Assessment scorecard')!.rows[6][2]).toContain('Ran without pgvector (exact scan)');
+  });
+
+  it('never judges peak throughput from the one-at-a-time rate of a benchmark without a load pass', () => {
+    // Saved before the load pass existed: achievedQps (~1 / latency) is not throughput under load.
+    const old: any = { recommendedVariant: { p95LatencyMs: 37, avgRecall: 1, achievedQps: 28.75 }, costImplications: { estimatedCostPerHourUsd: 10 } };
+    const doc = buildManagementReport(autoAi.project, { ...autoAi.parts, optimizationReport: old });
+    expect(table(doc, 'Performance against targets')!.rows[2]).toEqual(['Throughput (QPS)', '>= 60 peak', 'Not measured under load - re-run Optimization', 'Not yet measured']);
+    const e = executive(doc);
+    expect(e['Performance outcome'][0]).toBe('Latency and recall targets achieved.');
+    expect(e['Management conditions'][1]).toBe('1. Confirm the operating budget. 2. Proceed to production readiness after closure.');
+    expect(table(doc, 'Assessment scorecard')!.rows[6][2]).toBe('Tuned: P95 37ms, recall 1, throughput not measured under load');
   });
 
   it('asks management to close a missed target and to set a budget', () => {
     const done = { ...project, phaseStatuses: allStatuses(PhaseStatus.COMPLETED) };
     const doc = buildManagementReport(done, { discovery: { ...discovery, monthlyBudgetUsd: null }, optimizationReport: tuned(80, 0.99, 30) });
     const actions = table(doc, 'Management actions and decisions required')!.rows.map((r) => r[2]);
-    expect(actions[0]).toBe('Close the Throughput (QPS) gap (target >= 200 peak, achieved 30)');
+    expect(actions[0]).toBe('Close the Throughput (QPS) gap (target >= 200 peak, achieved 30 (4 parallel clients))');
     expect(actions).toContain('Set a monthly budget against the $7,300* estimate');
   });
 

@@ -81,14 +81,29 @@ export function OptimizationPage() {
 
         {report && (
           <div>
+            {report.searchMode === 'exact_scan' && (
+              <div className="card" role="alert" style={{ marginBottom: 16, borderColor: 'var(--warning)' }}>
+                <div className="metric-label" style={{ color: 'var(--warning)' }}>
+                  Not representative - no pgvector on the target database
+                </div>
+                <p style={{ fontSize: 13, margin: '6px 0 0' }}>
+                  Every search was an exact scan in the application, so {report.recommendedVariant.searchParamName} was not applied, recall is 1
+                  by construction and the latencies below do not describe the recommended index. Throughput under load was not measured.
+                  Install pgvector on the target and run this benchmark again.
+                </p>
+              </div>
+            )}
             <div className="card" style={{ marginBottom: 16 }}>
               <div className="metric-label">Recommended configuration</div>
               <div className="metric-value" style={{ fontSize: 20 }}>
                 {report.recommendedVariant.searchParamName} = {report.recommendedVariant.searchParamValue}
               </div>
               <p style={{ fontSize: 13, color: 'var(--muted)' }}>
-                P95 {report.recommendedVariant.p95LatencyMs}ms - recall {report.recommendedVariant.avgRecall} - achieved{' '}
-                {report.recommendedVariant.achievedQps} QPS (single connection)
+                P95 {report.recommendedVariant.p95LatencyMs}ms - recall {report.recommendedVariant.avgRecall} -{' '}
+                {report.recommendedVariant.sustainedQps != null
+                  ? `${report.recommendedVariant.sustainedQps} QPS sustained with ${report.recommendedVariant.concurrency} parallel clients`
+                  : 'throughput not measured under load (re-run to measure it)'}{' '}
+                ({report.recommendedVariant.achievedQps} QPS one query at a time)
               </p>
             </div>
 
@@ -104,7 +119,8 @@ export function OptimizationPage() {
                     <th style={{ padding: '6px 8px' }}>P95</th>
                     <th style={{ padding: '6px 8px' }}>P99</th>
                     <th style={{ padding: '6px 8px' }}>Recall</th>
-                    <th style={{ padding: '6px 8px' }}>QPS</th>
+                    <th style={{ padding: '6px 8px' }} title="One client, one query at a time (about 1 / latency)">Single-client QPS</th>
+                    <th style={{ padding: '6px 8px' }} title="Parallel clients sending queries at once - compare this with a QPS target">Sustained QPS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -124,6 +140,7 @@ export function OptimizationPage() {
                       <td style={{ padding: '6px 8px' }}>{v.p99LatencyMs}ms</td>
                       <td style={{ padding: '6px 8px' }}>{v.avgRecall}</td>
                       <td style={{ padding: '6px 8px' }}>{v.achievedQps}</td>
+                      <td style={{ padding: '6px 8px' }}>{v.sustainedQps != null ? `${v.sustainedQps} (${v.concurrency} clients)` : 'not measured'}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException } from '@nestjs/common';
-import { BenchmarkService } from './benchmark.service';
+import { BenchmarkService, EXACT_SCAN_NOTE, runConcurrently } from './benchmark.service';
 import { OptimizationReport } from './optimization-report.entity';
 import { ProjectsService } from '../projects/projects.service';
 import { IndexDesignService } from '../index-design/index-design.service';
@@ -111,6 +111,36 @@ describe('BenchmarkService', () => {
     expect(report.variantResults).toHaveLength(2); // [50, 100] - baseline (100) already included
     expect(report.variantResults.every((v: any) => v.avgRecall === 1)).toBe(true);
     expect(report.variantResults.find((v: any) => v.isBaseline).searchParamValue).toBe(100);
+    // Each variant: one pass one-at-a-time (latency, recall) + one load pass with parallel clients (throughput).
+    expect(adapter.search).toHaveBeenCalledTimes(2 * 2 * benchmarkDefaults.queryCount);
+    for (const v of report.variantResults) {
+      expect(v.concurrency).toBe(4);
+      expect(v.sustainedQps).toBeGreaterThan(0);
+    }
+  });
+
+  it('uses the requested number of parallel clients for the load pass', async () => {
+    const adapter = makeAdapter();
+    adapterFactory.getAdapter.mockReturnValue(adapter);
+    const report: any = await service.runBenchmark('project-1', requester, { concurrency: 2 });
+    expect(report.variantResults.every((v: any) => v.concurrency === 2)).toBe(true);
+    expect(report.searchMode).toBe('ann'); // adapters without a fallback always search their index
+  });
+
+  it('records an exact scan (no pgvector), skips the load pass and says the results are not representative', async () => {
+    const adapter: any = { ...makeAdapter(), searchMode: jest.fn().mockResolvedValue('exact_scan') };
+    adapterFactory.getAdapter.mockReturnValue(adapter);
+
+    const report: any = await service.runBenchmark('project-1', requester, {});
+
+    expect(report.searchMode).toBe('exact_scan');
+    // Baseline only (the parameter is ignored on a scan), one-at-a-time, at most 20 queries.
+    expect(report.variantResults.map((v: any) => v.searchParamValue)).toEqual([100]);
+    expect(adapter.search).toHaveBeenCalledTimes(benchmarkDefaults.queryCount);
+    expect(report.queryCount).toBe(benchmarkDefaults.queryCount);
+    expect(report.variantResults.every((v: any) => v.sustainedQps === undefined && v.concurrency === undefined)).toBe(true);
+    expect(report.bottlenecks).toEqual([EXACT_SCAN_NOTE]);
+    expect(adapter.dropSchema).toHaveBeenCalledWith(expect.any(String), true);
   });
 
   it('still cleans up the ephemeral collection when a variant search throws', async () => {
@@ -166,5 +196,44 @@ describe('BenchmarkService', () => {
 
     expect(report.version).toBe(1);
     expect(projectsService.updatePhaseStatus).toHaveBeenCalled();
+  });
+});
+
+describe('runConcurrently', () => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  it('processes every item exactly once', async () => {
+    const seen: number[] = [];
+    await runConcurrently([1, 2, 3, 4, 5, 6, 7], 3, async (n) => {
+      await sleep(1);
+      seen.push(n);
+    });
+    expect(seen.sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it('runs up to `workers` items at once, so wall-clock time is far below the one-at-a-time total', async () => {
+    let active = 0;
+    let peak = 0;
+    const ms = await runConcurrently(Array.from({ length: 8 }, (_, i) => i), 4, async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await sleep(40);
+      active--;
+    });
+    expect(peak).toBe(4);
+    // 8 items x 40ms one at a time would be 320ms; 4 at a time is about 80ms.
+    expect(ms).toBeLessThan(250);
+  });
+
+  it('never starts more workers than there are items', async () => {
+    let peak = 0;
+    let active = 0;
+    await runConcurrently([1, 2], 10, async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await sleep(5);
+      active--;
+    });
+    expect(peak).toBe(2);
   });
 });

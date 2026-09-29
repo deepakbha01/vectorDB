@@ -189,6 +189,9 @@ function executiveSummary(project: Project, parts: ManagementReportParts, perfor
   if (parts.adr?.decisionStatus === 'conditional') {
     conditions.push({ action: 'Close the open platform validations.', focus: 'closure of the open platform validations' });
   }
+  if (benchmarkNotRepresentative(parts)) {
+    conditions.push({ action: 'Install pgvector on the target database and re-run the Optimization benchmark.', focus: 'a representative benchmark with pgvector installed' });
+  }
   if (!allPhasesDone) {
     conditions.push({ action: `Complete the outstanding assessment phases: ${joinAnd(phases.outstanding)}.`, focus: 'completion of the outstanding assessment phases' });
   }
@@ -258,6 +261,11 @@ function executiveSummary(project: Project, parts: ManagementReportParts, perfor
   if (!parts.discovery) {
     performanceShort = NOT_AVAILABLE;
     performanceText = 'Performance targets are captured in Discovery, which has not yet been submitted.';
+  } else if (benchmarkNotRepresentative(parts)) {
+    performanceShort = 'Not yet measured: the benchmark ran without pgvector.';
+    performanceText =
+      'The target database has no pgvector, so the Optimization benchmark compared every vector in the application instead of using ' +
+      'the recommended index. Its latency, recall and throughput do not describe the proposed design; install pgvector on the target and re-run Optimization.';
   } else if (measured.length === 0) {
     performanceShort = 'Targets defined; not yet benchmarked.';
     performanceText = 'Performance targets are defined but have not yet been benchmarked; the Optimization phase provides the measured results.';
@@ -398,7 +406,10 @@ function phaseOutcome(phase: ProjectPhase, parts: ManagementReportParts): string
         : NOT_AVAILABLE;
     case ProjectPhase.OPTIMIZATION: {
       const v = parts.optimizationReport?.recommendedVariant;
-      return v ? `Tuned: P95 ${v.p95LatencyMs}ms, recall ${v.avgRecall}, ${v.achievedQps} QPS` : NOT_AVAILABLE;
+      if (!v) return NOT_AVAILABLE;
+      if (benchmarkNotRepresentative(parts)) return 'Ran without pgvector (exact scan) - results not representative; install pgvector and re-run';
+      const throughput = v.sustainedQps != null ? `${v.sustainedQps} QPS with ${v.concurrency} parallel clients` : 'throughput not measured under load';
+      return `Tuned: P95 ${v.p95LatencyMs}ms, recall ${v.avgRecall}, ${throughput}`;
     }
     case ProjectPhase.CAPACITY: {
       const last = parts.capacityPlan?.forecast[parts.capacityPlan.forecast.length - 1];
@@ -411,16 +422,38 @@ function phaseOutcome(phase: ProjectPhase, parts: ManagementReportParts): string
   }
 }
 
+const EXACT_SCAN_RESULT = 'Not representative - no pgvector on the target';
+
+/** The latest benchmark ran as an exact scan (no pgvector), so it says nothing about the tuned index. */
+function benchmarkNotRepresentative(parts: ManagementReportParts): boolean {
+  return parts.optimizationReport?.searchMode === 'exact_scan';
+}
+
 /** Target vs achieved; "achieved" is the tuned benchmark when there is one, otherwise the design estimate. */
 function performanceRows(parts: ManagementReportParts): string[][] {
   const d = parts.discovery;
   if (!d) return [];
-  const v = parts.optimizationReport?.recommendedVariant;
   const judge = (met: boolean | null) => (met === null ? 'Not yet measured' : met ? 'Met' : 'Not met');
+  if (benchmarkNotRepresentative(parts)) {
+    return [
+      ['P95 latency', `<= ${d.targetP95LatencyMs}ms`, EXACT_SCAN_RESULT, judge(null)],
+      ['Recall', `>= ${d.recallTarget}`, EXACT_SCAN_RESULT, judge(null)],
+      ['Throughput (QPS)', `>= ${d.peakQps} peak`, EXACT_SCAN_RESULT, judge(null)],
+      ['Availability', `${d.availabilityTargetPercent}%`, parts.capacityPlan ? 'HA design in Capacity Plan' : '-', 'Design target'],
+      ['RPO / RTO', `${d.rpoMinutes}min / ${d.rtoMinutes}min`, parts.capacityPlan ? 'DR design in Capacity Plan' : '-', 'Design target'],
+    ];
+  }
+  const v = parts.optimizationReport?.recommendedVariant;
   return [
     ['P95 latency', `<= ${d.targetP95LatencyMs}ms`, v ? `${v.p95LatencyMs}ms` : parts.indexDesign?.impact.latencyEstimate ?? '-', judge(v ? v.p95LatencyMs <= d.targetP95LatencyMs : null)],
     ['Recall', `>= ${d.recallTarget}`, v ? String(v.avgRecall) : parts.indexDesign?.impact.recallEstimate ?? '-', judge(v ? v.avgRecall >= d.recallTarget : null)],
-    ['Throughput (QPS)', `>= ${d.peakQps} peak`, v ? String(v.achievedQps) : '-', judge(v ? v.achievedQps >= d.peakQps : null)],
+    // Only throughput under parallel load is comparable to a peak target; the one-at-a-time rate is ≈ 1 / latency.
+    [
+      'Throughput (QPS)',
+      `>= ${d.peakQps} peak`,
+      v?.sustainedQps != null ? `${v.sustainedQps} (${v.concurrency} parallel clients)` : v ? 'Not measured under load - re-run Optimization' : '-',
+      judge(v?.sustainedQps != null ? v.sustainedQps >= d.peakQps : null),
+    ],
     ['Availability', `${d.availabilityTargetPercent}%`, parts.capacityPlan ? 'HA design in Capacity Plan' : '-', 'Design target'],
     ['RPO / RTO', `${d.rpoMinutes}min / ${d.rtoMinutes}min`, parts.capacityPlan ? 'DR design in Capacity Plan' : '-', 'Design target'],
   ];
@@ -477,6 +510,9 @@ function actionRows(project: Project, parts: ManagementReportParts, performance:
   }
   for (const [metric, target, achieved] of performance.filter((row) => row[3] === 'Not met')) {
     actions.push(['High', `Close the ${metric} gap (target ${target}, achieved ${achieved})`, 'Scale out, re-tune or accept a lower target before go-live']);
+  }
+  if (benchmarkNotRepresentative(parts)) {
+    actions.push(['High', 'Install pgvector on the target database and re-run the Optimization benchmark', 'The benchmark ran as an exact scan, so latency, recall and throughput are not yet measured for the recommended index']);
   }
   if (statedBudget(parts) == null && estimatedMonthlyCost(parts).value !== NOT_AVAILABLE) {
     actions.push(['Medium', `Set a monthly budget against the ${estimatedMonthlyCost(parts).value} estimate`, 'No budget has been stated, so cost cannot be judged']);

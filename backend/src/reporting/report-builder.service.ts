@@ -10,6 +10,7 @@ import { CapacityPlan } from '../capacity-planning/capacity-plan.entity';
 import { FitRating } from '../recommendation-engine/recommendation.types';
 import { Phase2Handoff } from '../data-pipeline/data-pipeline-design.types';
 import { ReportDocument, ReportSection } from './report-document.types';
+import { EXACT_SCAN_NOTE } from '../benchmark/benchmark.service';
 import { buildManagementReport, ManagementReportParts } from './management-report.builder';
 
 const RATING_LABEL: Record<FitRating, string> = {
@@ -581,17 +582,25 @@ export class ReportBuilderService {
         {
           heading: 'Recommended configuration',
           fields: [
+            ...(report.searchMode === 'exact_scan' ? [{ label: 'Warning', value: EXACT_SCAN_NOTE }] : []),
             { label: report.recommendedVariant.searchParamName, value: String(report.recommendedVariant.searchParamValue) },
             { label: 'P95 latency', value: `${report.recommendedVariant.p95LatencyMs}ms` },
             { label: 'Recall', value: String(report.recommendedVariant.avgRecall) },
-            { label: 'Achieved QPS', value: String(report.recommendedVariant.achievedQps) },
+            {
+              label: 'Sustained QPS (parallel load)',
+              value:
+                report.recommendedVariant.sustainedQps != null
+                  ? `${report.recommendedVariant.sustainedQps} with ${report.recommendedVariant.concurrency} parallel clients`
+                  : 'Not measured under load - re-run the benchmark',
+            },
+            { label: 'Single-client QPS (one query at a time)', value: String(report.recommendedVariant.achievedQps) },
           ],
         },
         {
           heading: 'Latency vs Recall vs Memory vs Cost',
           tables: [
             {
-              headers: [report.variantResults[0]?.searchParamName ?? 'Parameter', 'P50', 'P95', 'P99', 'Recall', 'QPS'],
+              headers: [report.variantResults[0]?.searchParamName ?? 'Parameter', 'P50', 'P95', 'P99', 'Recall', 'Single-client QPS', 'Sustained QPS'],
               rows: report.variantResults.map((v) => [
                 String(v.searchParamValue) + (v.isBaseline ? ' (baseline)' : ''),
                 `${v.p50LatencyMs}ms`,
@@ -599,6 +608,7 @@ export class ReportBuilderService {
                 `${v.p99LatencyMs}ms`,
                 String(v.avgRecall),
                 String(v.achievedQps),
+                v.sustainedQps != null ? `${v.sustainedQps} (${v.concurrency} clients)` : 'not measured',
               ]),
             },
           ],

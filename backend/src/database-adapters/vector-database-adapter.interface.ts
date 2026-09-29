@@ -47,6 +47,13 @@ export interface SchemaDefinition {
   metadataFields: Array<{ name: string; type: string }>;
 }
 
+/**
+ * How search() finds neighbours on this target: `ann` through the platform's own
+ * vector index, or `exact_scan` when the platform's vector support is missing and
+ * the adapter compares every stored vector itself (PostgreSQL without pgvector).
+ */
+export type SearchMode = 'ann' | 'exact_scan';
+
 export interface VectorDatabaseAdapter {
   readonly platformId:
     | 'oracle'
@@ -79,4 +86,11 @@ export interface VectorDatabaseAdapter {
    * there is no default and no way to opt out of the check.
    */
   dropSchema(collectionOrTableName: string, confirm: boolean): Promise<void>;
+
+  /**
+   * Only adapters with a no-index fallback implement this; the rest always search
+   * through their index (`ann`). Benchmarks record it, because an exact scan says
+   * nothing about the tuned index's latency, recall or throughput.
+   */
+  searchMode?(): Promise<SearchMode>;
 }

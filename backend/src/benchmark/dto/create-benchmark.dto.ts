@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ArrayMaxSize, IsArray, IsInt, IsOptional, Min } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export class CreateBenchmarkDto {
   @ApiProperty({ required: false, description: 'Synthetic corpus size (defaults from config/thresholds.yaml).' })
@@ -25,4 +25,11 @@ export class CreateBenchmarkDto {
   @IsArray()
   @ArrayMaxSize(10)
   variants?: number[];
+
+  @ApiProperty({ required: false, description: 'Parallel clients for the throughput pass (default benchmarkDefaults.throughputConcurrency).' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(32)
+  concurrency?: number;
 }

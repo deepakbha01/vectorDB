@@ -82,6 +82,9 @@ benchmarkDefaults:
   sampleSize: 2000
   queryCount: 100
   topK: 10
+  # Parallel clients for the throughput (load) pass. The PostgreSQL target pool
+  # allows 5 connections, so more than that would only queue on the client side.
+  throughputConcurrency: 4
   costPerGbHourUsd: 0.05   # directional cloud-memory cost estimate, not a real bill
   hnsw:
     searchParamName: efSearch

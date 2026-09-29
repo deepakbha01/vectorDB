@@ -11,6 +11,7 @@ import { IndexDesignService } from '../index-design/index-design.service';
 import { IndexRecommendationEngineService } from '../index-recommendation-engine/index-recommendation-engine.service';
 import { PlatformConfigService } from '../common/config/platform-config.service';
 import { VectorAdapterFactory } from '../database-adapters/vector-adapter.factory';
+import { SearchMode } from '../database-adapters/vector-database-adapter.interface';
 import { AuthenticatedUser } from '../auth/auth.service';
 import { User } from '../users/user.entity';
 import { Project } from '../projects/project.entity';
@@ -18,6 +19,34 @@ import { ProjectPhase, PhaseStatus } from '../projects/enums/project-status.enum
 import { VectorPlatform } from '../projects/enums/platform.enum';
 
 const UPSERT_BATCH_SIZE = 500;
+const DEFAULT_THROUGHPUT_CONCURRENCY = 4;
+/** Queries run on an exact scan: enough to show it is not an index, without reading the table hundreds of times. */
+const EXACT_SCAN_MAX_QUERIES = 20;
+
+export const EXACT_SCAN_NOTE =
+  'Not representative: the target has no vector index support (PostgreSQL without pgvector), so every search was an exact ' +
+  'scan in the application. The search parameter was not applied, recall is 1 by construction, and latency does not describe ' +
+  'the tuned index; throughput under load was not measured. Install pgvector on the target and re-run this benchmark.';
+
+/**
+ * Sends every item through `fn` with `workers` running in parallel (each takes
+ * the next item when it finishes one) and returns the wall-clock milliseconds -
+ * throughput is items / that time, unlike a one-at-a-time pass which only
+ * measures 1 / latency.
+ */
+export async function runConcurrently<T>(items: T[], workers: number, fn: (item: T) => Promise<unknown>): Promise<number> {
+  let next = 0;
+  const started = Date.now();
+  await Promise.all(
+    Array.from({ length: Math.max(1, Math.min(workers, items.length)) }, async () => {
+      while (next < items.length) {
+        const item = items[next++];
+        await fn(item);
+      }
+    }),
+  );
+  return Date.now() - started;
+}
 
 @Injectable()
 export class BenchmarkService {
@@ -47,6 +76,7 @@ export class BenchmarkService {
     const sampleSize = dto.sampleSize ?? defaults.sampleSize;
     const queryCount = Math.min(dto.queryCount ?? defaults.queryCount, sampleSize);
     const topK = dto.topK ?? defaults.topK;
+    const concurrency = dto.concurrency ?? defaults.throughputConcurrency ?? DEFAULT_THROUGHPUT_CONCURRENCY;
     const dimension = indexDesign.inputsUsed.dimension;
     const searchParamName: string = indexTypeDefaults.searchParamName;
     const baselineValue: number =
@@ -64,25 +94,45 @@ export class BenchmarkService {
     const collectionName = `bench_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
 
     let variantResults: VariantResult[];
+    let searchMode: SearchMode = 'ann';
+    let runValues = variantValues;
+    let runQueries = queries;
     try {
       await adapter.createSchema({ collectionOrTableName: collectionName, dimension, metric: indexDesign.inputsUsed.metric, metadataFields: [] });
+      searchMode = (await adapter.searchMode?.()) ?? 'ann';
       await adapter.createVectorIndex(collectionName, indexDesign.decision, indexDesign.configuration, indexDesign.inputsUsed.metric);
       for (let i = 0; i < corpus.length; i += UPSERT_BATCH_SIZE) {
         const batch = corpus.slice(i, i + UPSERT_BATCH_SIZE).map((c) => ({ id: c.id, vector: c.vector, metadata: {} }));
         await adapter.upsert(collectionName, batch);
       }
 
+      // An exact scan ignores the search parameter, so every variant would be identical - and each search
+      // reads the whole table into the application, which is slow. Run only the baseline, on a few queries.
+      if (searchMode === 'exact_scan') {
+        runValues = [baselineValue];
+        runQueries = queries.slice(0, EXACT_SCAN_MAX_QUERIES);
+      }
+
       variantResults = [];
-      for (const value of variantValues) {
+      for (const value of runValues) {
         const latencies: number[] = [];
         let recallSum = 0;
-        for (const query of queries) {
+        for (const query of runQueries) {
           const start = Date.now();
           const results = await adapter.search(collectionName, { vector: query.vector, topK, searchParams: { [searchParamName]: value } });
           latencies.push(Date.now() - start);
           recallSum += recallAtK(results.map((r) => r.id), groundTruth.get(query.id) ?? []);
         }
         const totalSeconds = latencies.reduce((a, b) => a + b, 0) / 1000;
+        // Load pass: the same queries from `concurrency` parallel clients. Latency and recall come
+        // from the one-at-a-time pass above (unaffected by queueing); throughput comes from here.
+        // Skipped on an exact scan: it would only measure the application comparing every row, slowly.
+        const loadMs =
+          searchMode === 'ann'
+            ? await runConcurrently(runQueries, concurrency, (query) =>
+                adapter.search(collectionName, { vector: query.vector, topK, searchParams: { [searchParamName]: value } }),
+              )
+            : null;
         variantResults.push({
           searchParamName,
           searchParamValue: value,
@@ -90,8 +140,13 @@ export class BenchmarkService {
           p50LatencyMs: percentile(latencies, 50),
           p95LatencyMs: percentile(latencies, 95),
           p99LatencyMs: percentile(latencies, 99),
-          avgRecall: Number((recallSum / queries.length).toFixed(4)),
-          achievedQps: totalSeconds > 0 ? Number((queries.length / totalSeconds).toFixed(2)) : 0,
+          avgRecall: Number((recallSum / runQueries.length).toFixed(4)),
+          achievedQps: totalSeconds > 0 ? Number((runQueries.length / totalSeconds).toFixed(2)) : 0,
+          ...(loadMs !== null && {
+            // At least 1ms: a run too fast to time must not read as zero throughput.
+            sustainedQps: Number((runQueries.length / (Math.max(1, loadMs) / 1000)).toFixed(2)),
+            concurrency,
+          }),
         });
       }
     } finally {
@@ -106,7 +161,10 @@ export class BenchmarkService {
 
     const targetP95 = indexDesign.inputsUsed.targetP95LatencyMs;
     const targetRecall = indexDesign.inputsUsed.recallTarget;
-    const bottlenecks = this.identifyBottlenecks(variantResults, targetP95, targetRecall);
+    const bottlenecks =
+      searchMode === 'exact_scan'
+        ? [EXACT_SCAN_NOTE]
+        : this.identifyBottlenecks(variantResults, targetP95, targetRecall);
     const recommendedVariant = this.pickRecommendedVariant(variantResults, targetP95, targetRecall);
     const baseline = variantResults.find((v) => v.isBaseline)!;
 
@@ -119,7 +177,7 @@ export class BenchmarkService {
         indexType: indexDesign.decision,
         baselineConfiguration: indexDesign.configuration,
         sampleSize,
-        queryCount,
+        queryCount: runQueries.length, // what was actually run - fewer on an exact scan
         topK,
         variantResults,
         recommendedVariant,
@@ -127,6 +185,7 @@ export class BenchmarkService {
         beforeAfterComparison: { baseline, recommended: recommendedVariant },
         capacityImpact: { estimatedMemoryGb },
         costImplications: { estimatedCostPerHourUsd },
+        searchMode,
       }),
     );
 
