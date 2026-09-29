@@ -17,7 +17,7 @@ export interface AssessmentInput {
   targetP95LatencyMs: number;
   targetP99LatencyMs: number;
   recallTarget: number;
-  precisionTarget?: number;
+  precisionTarget?: number | null;
   requiresReranking: boolean;
   hasExistingOracle: boolean;
   hasExistingPostgres: boolean;
@@ -42,8 +42,8 @@ export interface AssessmentInput {
   requiresKeyManagement: boolean;
   requiresTenantIsolation: boolean;
   requiresAuditLogging: boolean;
-  ndcgTarget?: number;
-  mrrTarget?: number;
+  ndcgTarget?: number | null;
+  mrrTarget?: number | null;
   // Only used by the PII compliance gate below - not otherwise scored by Phase 1.
   requiresEncryptionAtRest: boolean;
   requiresEncryptionInTransit: boolean;

@@ -429,6 +429,19 @@ describe('RecommendationEngineService', () => {
       expect(result.openValidations.some((v) => v.includes('stated budget'))).toBe(false);
     });
 
+    it('never writes "null" into the decision record for optional targets left blank on Discovery', () => {
+      const result = service.evaluate(baseInput({ precisionTarget: null, ndcgTarget: null, mrrTarget: null, monthlyBudgetUsd: null }));
+      const text = JSON.stringify({ assumptions: result.assumptions, risks: result.risks, openValidations: result.openValidations });
+      expect(text).not.toMatch(/=null|of null|\$null|target = null/);
+      expect(result.assumptions.map((a) => a.id)).not.toEqual(expect.arrayContaining(['assumption-precision-not-scored']));
+      expect(result.assumptions.map((a) => a.id)).not.toEqual(expect.arrayContaining(['assumption-ranking-metrics-not-scored']));
+    });
+
+    it('records only the ranking targets that were set', () => {
+      const result = service.evaluate(baseInput({ ndcgTarget: 0.8, mrrTarget: null }));
+      expect(result.assumptions.find((a) => a.id === 'assumption-ranking-metrics-not-scored')?.value).toBe('NDCG@K=0.8');
+    });
+
     it('never claims budget fit from the cost score alone - status is "not_yet_estimated" until a real quote exists', () => {
       const result = service.evaluate(baseInput({ monthlyBudgetUsd: 1000 }));
       expect(result.budgetFeasibility).not.toBeNull();
