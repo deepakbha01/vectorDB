@@ -1,5 +1,5 @@
 /** Model Selection (AI Factory Wave 3) - mirrors backend/src/ai-factory/model-selection/*. */
-import { Eligibility } from './aiFactory';
+import { Eligibility, ScoreContribution } from './aiFactory';
 
 export interface CreateModelSelectionInput {
   requiredContextTokens?: number;
@@ -27,7 +27,11 @@ export interface EvaluatedModel {
   failures: string[];
   conditions: string[];
   notes: string[];
+  /** Mandatory requirements the option meets (absent on results saved before it was added). */
+  passed?: string[];
   score: number;
+  /** Each criterion's value x weight, largest first (absent on older results). */
+  scoreBreakdown?: ScoreContribution[];
   criteria: Record<string, number>;
   inferenceModelId?: string;
   managedApiTierId?: string;

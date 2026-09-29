@@ -6,6 +6,7 @@ import { Eligibility } from '../api/aiFactory';
 import { CreateModelSelectionInput, EvaluatedModel, ModelSelection, ModelSelectionDefaults, ModelSelectionResult } from '../api/modelSelection';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
+import { EligibilityWhy, ScoreWhy } from '../components/EligibilityWhy';
 
 const ELIGIBILITY: Record<Eligibility, { label: string; color: string }> = {
   eligible: { label: 'Eligible', color: 'var(--success)' },
@@ -182,13 +183,14 @@ function SelectionResult({ r, version, createdAt, projectId }: { r: ModelSelecti
       <div className="card" style={{ overflowX: 'auto' }}>
         <div className="metric-label">All candidates - eligibility is decided before scoring; a not-eligible model can never rank above an eligible one</div>
         <Table
-          headers={['Model', 'Family', 'Eligibility', 'Score', 'Why']}
+          headers={['Model', 'Family', 'Eligibility', 'Why this eligibility', 'Score', 'What drives the score']}
           rows={r.candidates.map((c) => [
             c.label,
             FAMILY[c.family],
             <span key="e" style={{ color: ELIGIBILITY[c.eligibility].color, fontWeight: 600 }}>{ELIGIBILITY[c.eligibility].label}</span>,
+            <EligibilityWhy key="w" option={c} />,
             c.score.toFixed(3),
-            [...c.failures, ...c.conditions, ...c.notes].join(' ') || '—',
+            <ScoreWhy key="s" option={c} />,
           ])}
         />
       </div>

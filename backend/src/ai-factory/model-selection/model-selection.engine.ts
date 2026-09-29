@@ -1,4 +1,5 @@
 import { CatalogueModel, EvaluatedModel, ModelCatalogue, ModelRequirements, ModelSelectionResult } from './model-selection.types';
+import { ScoreContribution, scoreBreakdown } from '../eligibility/score-breakdown';
 
 const CAPABILITY_LABEL: Record<string, string> = {
   tool_calling: 'tool / function calling',
@@ -15,24 +16,47 @@ const round = (n: number) => Math.round(n * 1000) / 1000;
  * makes it NOT ELIGIBLE, whatever it would score), then conditions that keep
  * it eligible only with validation or contractual safeguards (CONDITIONAL).
  */
-export function checkEligibility(m: CatalogueModel, req: ModelRequirements, cat: ModelCatalogue): Pick<EvaluatedModel, 'eligibility' | 'failures' | 'conditions' | 'notes'> {
+export function checkEligibility(m: CatalogueModel, req: ModelRequirements, cat: ModelCatalogue): Pick<EvaluatedModel, 'eligibility' | 'failures' | 'conditions' | 'notes' | 'passed'> {
   const failures: string[] = [];
   const conditions: string[] = [];
   const notes: string[] = [];
+  // The mandatory requirements the model meets - so an eligible model says why, not just a failed one.
+  const passed: string[] = [];
   const has = (c: string) => m.capabilities.includes(c as never);
   const licence = cat.licences[m.licence];
+  const rule = (applies: boolean, ok: boolean, pass: string, fail: string) => {
+    if (applies) (ok ? passed : failures).push(ok ? pass : fail);
+  };
 
-  if (m.contextWindow < req.requiredContextTokens) failures.push(`Context window ${fmt(m.contextWindow)} tokens is below the ${fmt(req.requiredContextTokens)} required.`);
-  if (req.multimodal && !has('vision')) failures.push(`No ${CAPABILITY_LABEL.vision}, required for multimodal data.`);
-  if (req.toolCalling && !has('tool_calling')) failures.push(`No ${CAPABILITY_LABEL.tool_calling}, required for agent / copilot workloads.`);
-  if (req.structuredOutput && !has('structured_output')) failures.push(`No ${CAPABILITY_LABEL.structured_output}.`);
-  if (req.multilingual && !has('multilingual')) failures.push(`No ${CAPABILITY_LABEL.multilingual}.`);
-  if (req.selfHostingRequired && m.family === 'proprietary_api') failures.push('Only available as a third-party API, but the model must run inside the customer boundary.');
-  if (req.fineTuning !== 'none' && !m.fineTunable) failures.push(`Cannot be fine-tuned (${req.fineTuning} fine-tuning required).`);
-  if (req.permissiveLicenceOnly && !licence?.permissive) failures.push(`Licence (${licence?.label ?? m.licence}) is not permissive, and only permissive licences are allowed.`);
-  if (req.maxSelfHostedParamsB !== undefined && m.family === 'open_weight' && (m.paramsB ?? 0) > req.maxSelfHostedParamsB) {
-    failures.push(`${m.paramsB}B parameters exceeds the ${req.maxSelfHostedParamsB}B that available GPU capacity allows.`);
-  }
+  rule(
+    true,
+    m.contextWindow >= req.requiredContextTokens,
+    `Context window ${fmt(m.contextWindow)} tokens covers the ${fmt(req.requiredContextTokens)} required.`,
+    `Context window ${fmt(m.contextWindow)} tokens is below the ${fmt(req.requiredContextTokens)} required.`,
+  );
+  rule(req.multimodal, has('vision'), `Has ${CAPABILITY_LABEL.vision}, required for multimodal data.`, `No ${CAPABILITY_LABEL.vision}, required for multimodal data.`);
+  rule(req.toolCalling, has('tool_calling'), `Has ${CAPABILITY_LABEL.tool_calling}, required for agent / copilot workloads.`, `No ${CAPABILITY_LABEL.tool_calling}, required for agent / copilot workloads.`);
+  rule(req.structuredOutput, has('structured_output'), `Has ${CAPABILITY_LABEL.structured_output}.`, `No ${CAPABILITY_LABEL.structured_output}.`);
+  rule(req.multilingual, has('multilingual'), `Has ${CAPABILITY_LABEL.multilingual}.`, `No ${CAPABILITY_LABEL.multilingual}.`);
+  rule(
+    req.selfHostingRequired,
+    m.family !== 'proprietary_api',
+    'Can run inside the customer boundary (self-hostable weights), as required.',
+    'Only available as a third-party API, but the model must run inside the customer boundary.',
+  );
+  rule(req.fineTuning !== 'none', m.fineTunable, `Can be fine-tuned (${req.fineTuning} fine-tuning required).`, `Cannot be fine-tuned (${req.fineTuning} fine-tuning required).`);
+  rule(
+    req.permissiveLicenceOnly,
+    !!licence?.permissive,
+    `Licence (${licence?.label ?? m.licence}) is permissive, as required.`,
+    `Licence (${licence?.label ?? m.licence}) is not permissive, and only permissive licences are allowed.`,
+  );
+  rule(
+    req.maxSelfHostedParamsB !== undefined && m.family === 'open_weight' && m.paramsB !== undefined && m.paramsB !== null,
+    (m.paramsB ?? 0) <= (req.maxSelfHostedParamsB ?? Infinity),
+    `${m.paramsB}B parameters fits the ${req.maxSelfHostedParamsB}B that available GPU capacity allows.`,
+    `${m.paramsB}B parameters exceeds the ${req.maxSelfHostedParamsB}B that available GPU capacity allows.`,
+  );
 
   if (req.codeGeneration && !has('code')) conditions.push(`Not tuned for ${CAPABILITY_LABEL.code} - evaluate on the customer's code tasks.`);
   if (m.qualityTier < cat.accuracyMinQualityTier[req.accuracyRequirement]) {
@@ -48,7 +72,7 @@ export function checkEligibility(m: CatalogueModel, req: ModelRequirements, cat:
   if (licence && !licence.permissive) notes.push(`Licence: ${licence.label} - ${licence.note}`);
   if (m.contextWindow < req.requiredContextTokens * 2 && m.contextWindow >= req.requiredContextTokens) notes.push('Little context headroom beyond the stated requirement.');
 
-  return { eligibility: failures.length ? 'not_eligible' : conditions.length ? 'conditional' : 'eligible', failures, conditions, notes };
+  return { eligibility: failures.length ? 'not_eligible' : conditions.length ? 'conditional' : 'eligible', failures, conditions, notes, passed };
 }
 
 /** Re-normalised weights after priority multipliers. */
@@ -62,7 +86,11 @@ export function effectiveWeights(req: ModelRequirements, cat: ModelCatalogue): R
   return Object.fromEntries(Object.entries(w).map(([k, v]) => [k, round(v / total)]));
 }
 
-export function scoreModel(m: CatalogueModel, req: ModelRequirements, weights: Record<string, number>): { score: number; criteria: Record<string, number> } {
+export function scoreModel(
+  m: CatalogueModel,
+  req: ModelRequirements,
+  weights: Record<string, number>,
+): { score: number; criteria: Record<string, number>; scoreBreakdown: ScoreContribution[] } {
   // Tiers are relative 1-5 ratings; falling below a required tier is handled as a condition in checkEligibility, not here.
   const criteria = {
     quality: m.qualityTier / 5,
@@ -74,7 +102,7 @@ export function scoreModel(m: CatalogueModel, req: ModelRequirements, weights: R
     deploymentFlexibility: m.family === 'open_weight' ? 1 : 0.6,
   };
   const score = Object.entries(criteria).reduce((sum, [k, v]) => sum + v * (weights[k] ?? 0), 0);
-  return { score: round(score), criteria: Object.fromEntries(Object.entries(criteria).map(([k, v]) => [k, round(v)])) };
+  return { score: round(score), criteria: Object.fromEntries(Object.entries(criteria).map(([k, v]) => [k, round(v)])), scoreBreakdown: scoreBreakdown(criteria, weights) };
 }
 
 /** Scores this close are treated as a tie and broken by a stated, deterministic rule. */

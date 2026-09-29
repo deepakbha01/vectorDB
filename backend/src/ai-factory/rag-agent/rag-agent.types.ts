@@ -1,4 +1,5 @@
 import { Eligibility, EvidenceType } from '../ai-factory.types';
+import { ScoreContribution } from '../eligibility/score-breakdown';
 
 export type ToolAccess = 'none' | 'read_only' | 'read_write' | 'external_actions';
 export type DecisionArea = 'retrieval' | 'reranking' | 'agent';
@@ -131,7 +132,11 @@ export interface EvaluatedOption {
   failures: string[];
   conditions: string[];
   notes: string[];
+  /** Mandatory requirements the option meets - why it is eligible (absent on results saved before this was added). */
+  passed?: string[];
   score: number;
+  /** Each criterion's value x weight, largest first (absent on older saved results). */
+  scoreBreakdown?: ScoreContribution[];
 }
 
 export interface AreaDecision {

@@ -1,4 +1,5 @@
 import { Eligibility, EvidenceType } from '../ai-factory.types';
+import { ScoreContribution } from '../eligibility/score-breakdown';
 
 export type TargetId = 'on_premises' | 'azure' | 'aws' | 'oci' | 'gcp';
 export type PlatformKind = 'kubernetes' | 'vm' | 'managed' | 'saas' | 'in_app';
@@ -86,7 +87,11 @@ export interface PlacementCandidate {
   failures: string[];
   conditions: string[];
   notes: string[];
+  /** Mandatory rules the placement meets - why it is eligible (absent on results saved before this was added). */
+  passed?: string[];
   score: number;
+  /** Each criterion's value x weight, largest first (absent on older saved results). */
+  scoreBreakdown?: ScoreContribution[];
 }
 
 export interface Placement {

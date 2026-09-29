@@ -1,4 +1,5 @@
 import { Eligibility } from '../ai-factory.types';
+import { ScoreContribution } from '../eligibility/score-breakdown';
 
 export type ModelFamily = 'open_weight' | 'proprietary_api';
 export type ModelCapability = 'tool_calling' | 'structured_output' | 'multilingual' | 'vision' | 'code';
@@ -71,8 +72,12 @@ export interface EvaluatedModel {
   /** Requirements met only with validation or contractual conditions (→ conditional). */
   conditions: string[];
   notes: string[];
+  /** Mandatory requirements this model meets - why it is eligible (absent on results saved before this was added). */
+  passed?: string[];
   score: number;
   criteria: Record<string, number>;
+  /** Each criterion's value x weight, largest first (absent on older saved results). */
+  scoreBreakdown?: ScoreContribution[];
   inferenceModelId?: string;
   managedApiTierId?: string;
 }

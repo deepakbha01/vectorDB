@@ -86,6 +86,38 @@ describe('checkServingEligibility - mandatory rules make an option NOT ELIGIBLE'
     expect(v.eligibility).toBe('conditional');
     expect(v.conditions.join(' ')).toMatch(message as RegExp);
   });
+
+  it('says why an eligible option is eligible: each mandatory rule it meets', () => {
+    const v = checkServingEligibility(option('vllm-k8s'), ctx(), cat);
+    expect(v.eligibility).toBe('eligible');
+    expect(v.passed).toEqual([
+      'Serves self-hostable open-weight models, as the inference assessment recommends.',
+      expect.stringMatching(/^Runs on an allowed target \(.*(on-premises|Azure).*\)\.$/),
+      'Supports every pattern the workload needs (synchronous, streaming).',
+      'Serves the sized precision (FP8).',
+      'Splits the model across 2 GPUs (tensor parallelism), as the sizing requires.',
+      ...(option('vllm-k8s').maxModelParamsB !== undefined ? [expect.stringMatching(/Handles the 70.6B-parameter model/)] : []),
+    ]);
+  });
+
+  it('never lists a rule as both met and failed', () => {
+    const v = checkServingEligibility(option('cpu-runtime'), ctx(), cat);
+    expect(v.failures.join(' ')).toMatch(/sized precision/);
+    expect(v.passed.join(' ')).not.toMatch(/sized precision/);
+  });
+});
+
+describe('scoreServingOption breakdown', () => {
+  it('explains the score: value x weight per criterion, largest first, summing to the score', () => {
+    const r = designInferenceArchitecture(ctx(), cat);
+    for (const c of r.candidates) {
+      const b = c.scoreBreakdown!;
+      expect(b.map((x) => x.criterion).sort()).toEqual(Object.keys(cat.scoringWeights).sort());
+      expect(b.map((x) => x.contribution)).toEqual([...b.map((x) => x.contribution)].sort((p, q) => q - p));
+      expect(b.reduce((s, x) => s + x.contribution, 0)).toBeCloseTo(c.score, 2);
+      for (const x of b) expect(x.weight).toBe(cat.scoringWeights[x.criterion as keyof typeof cat.scoringWeights]);
+    }
+  });
 });
 
 describe('designInferenceArchitecture', () => {

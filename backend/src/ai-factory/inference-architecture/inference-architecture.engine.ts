@@ -8,6 +8,7 @@ import {
   ServingContext,
   ServingOption,
 } from './inference-architecture.types';
+import { scoreBreakdown } from '../eligibility/score-breakdown';
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
 const ms = (n: number) => `${Math.round(n).toLocaleString('en-US')} ms`;
@@ -20,25 +21,47 @@ export function checkServingEligibility(o: ServingOption, ctx: ServingContext, c
   const failures: string[] = [];
   const conditions: string[] = [];
   const notes: string[] = o.note ? [o.note] : [];
+  // The mandatory rules the option meets - so an eligible option says why, not just a failed one.
+  const passed: string[] = [];
+  const families = (fs: string[]) => fs.map((f) => (f === 'open_weight' ? 'self-hostable open-weight' : 'managed API')).join(' / ');
 
-  if (!o.modelFamilies.some((f) => ctx.allowedFamilies.includes(f))) {
+  const matchingFamilies = o.modelFamilies.filter((f) => ctx.allowedFamilies.includes(f));
+  if (!matchingFamilies.length) {
     failures.push(
       ctx.allowedFamilies.length
-        ? `Serves ${o.modelFamilies.map((f) => (f === 'open_weight' ? 'self-hostable open-weight' : 'managed API')).join(' / ')} models, but the inference assessment recommends ${ctx.allowedFamilies.map((f) => (f === 'open_weight' ? 'self-hosting' : 'a managed API')).join(' or ')}.`
+        ? `Serves ${families(o.modelFamilies)} models, but the inference assessment recommends ${ctx.allowedFamilies.map((f) => (f === 'open_weight' ? 'self-hosting' : 'a managed API')).join(' or ')}.`
         : 'The inference assessment found no feasible serving option - nothing can be served.',
     );
+  } else {
+    passed.push(`Serves ${families(matchingFamilies)} models, as the inference assessment recommends.`);
   }
-  if (ctx.deploymentTargets.length && !o.runsOn.some((t) => ctx.deploymentTargets.includes(t))) {
-    failures.push(`Runs on ${o.runsOn.map((t) => TARGET_LABEL[t] ?? t).join(', ')}, none of the allowed targets (${ctx.deploymentTargets.map((t) => TARGET_LABEL[t] ?? t).join(', ')}).`);
+  if (ctx.deploymentTargets.length) {
+    const targets = o.runsOn.filter((t) => ctx.deploymentTargets.includes(t));
+    if (!targets.length) {
+      failures.push(`Runs on ${o.runsOn.map((t) => TARGET_LABEL[t] ?? t).join(', ')}, none of the allowed targets (${ctx.deploymentTargets.map((t) => TARGET_LABEL[t] ?? t).join(', ')}).`);
+    } else {
+      passed.push(`Runs on an allowed target (${targets.map((t) => TARGET_LABEL[t] ?? t).join(', ')}).`);
+    }
   }
   const missingPatterns = ctx.patterns.filter((p) => !o.patterns.includes(p));
   if (missingPatterns.length) failures.push(`Does not support the ${missingPatterns.join(', ')} pattern(s) the workload needs.`);
-  if (ctx.precision && !o.precisions.includes('provider') && !o.precisions.includes(ctx.precision) && o.modelFamilies.includes('open_weight')) {
-    failures.push(`Cannot serve the sized precision (${ctx.precision.toUpperCase()}).`);
+  else if (ctx.patterns.length) passed.push(`Supports every pattern the workload needs (${ctx.patterns.join(', ')}).`);
+  if (ctx.precision && o.modelFamilies.includes('open_weight')) {
+    if (!o.precisions.includes('provider') && !o.precisions.includes(ctx.precision)) failures.push(`Cannot serve the sized precision (${ctx.precision.toUpperCase()}).`);
+    else passed.push(`Serves the sized precision (${ctx.precision.toUpperCase()}).`);
   }
-  if (ctx.tensorParallel > 1 && !o.multiGpuTensorParallel) failures.push(`Cannot split a model across ${ctx.tensorParallel} GPUs (tensor parallelism), which the sizing requires.`);
-  if (o.maxModelParamsB !== undefined && ctx.modelParamsB !== null && ctx.modelParamsB > o.maxModelParamsB) failures.push(`${ctx.modelParamsB}B-parameter model exceeds the ${o.maxModelParamsB}B this runtime handles.`);
-  if (ctx.needsMultiLora && o.modelFamilies.includes('open_weight') && !o.features.includes('multi_lora')) failures.push('No multi-LoRA adapter serving, which the fine-tuning approach needs.');
+  if (ctx.tensorParallel > 1) {
+    if (!o.multiGpuTensorParallel) failures.push(`Cannot split a model across ${ctx.tensorParallel} GPUs (tensor parallelism), which the sizing requires.`);
+    else passed.push(`Splits the model across ${ctx.tensorParallel} GPUs (tensor parallelism), as the sizing requires.`);
+  }
+  if (o.maxModelParamsB !== undefined && ctx.modelParamsB !== null) {
+    if (ctx.modelParamsB > o.maxModelParamsB) failures.push(`${ctx.modelParamsB}B-parameter model exceeds the ${o.maxModelParamsB}B this runtime handles.`);
+    else passed.push(`Handles the ${ctx.modelParamsB}B-parameter model (up to ${o.maxModelParamsB}B).`);
+  }
+  if (ctx.needsMultiLora && o.modelFamilies.includes('open_weight')) {
+    if (!o.features.includes('multi_lora')) failures.push('No multi-LoRA adapter serving, which the fine-tuning approach needs.');
+    else passed.push('Serves multi-LoRA adapters, which the fine-tuning approach needs.');
+  }
 
   if (o.requiresKubernetes) {
     if (ctx.hasKubernetes === false) conditions.push('Needs a Kubernetes platform, and none exists today - add one (or pick a non-Kubernetes option).');
@@ -52,7 +75,7 @@ export function checkServingEligibility(o: ServingOption, ctx: ServingContext, c
   if (o.modelFamilies.includes('proprietary_api') && ctx.restrictedData) conditions.push('Restricted data (PHI / PCI) needs a signed BAA / DPA with zero data retention.');
   if (!o.runsOn.includes('on_premises') && ctx.dataResidency) conditions.push(`Confirm the provider region keeps inference inside "${ctx.dataResidency}".`);
 
-  return { eligibility: failures.length ? ('not_eligible' as const) : conditions.length ? ('conditional' as const) : ('eligible' as const), failures, conditions, notes };
+  return { eligibility: failures.length ? ('not_eligible' as const) : conditions.length ? ('conditional' as const) : ('eligible' as const), failures, conditions, notes, passed };
 }
 
 export function scoreServingOption(o: ServingOption, ctx: ServingContext, cat: ServingCatalogue) {
@@ -71,7 +94,11 @@ export function scoreServingOption(o: ServingOption, ctx: ServingContext, cat: S
   };
   const w = cat.scoringWeights;
   const score = round(Object.entries(criteria).reduce((s, [k, v]) => s + v * (w[k as keyof typeof w] ?? 0), 0));
-  return { score, criteria: Object.fromEntries(Object.entries(criteria).map(([k, v]) => [k, round(v)])) };
+  return {
+    score,
+    criteria: Object.fromEntries(Object.entries(criteria).map(([k, v]) => [k, round(v)])),
+    scoreBreakdown: scoreBreakdown(criteria, w as unknown as Record<string, number>),
+  };
 }
 
 const band = (e: EvaluatedServingOption) => (e.eligibility === 'eligible' ? 0 : e.eligibility === 'conditional' ? 1 : 2);

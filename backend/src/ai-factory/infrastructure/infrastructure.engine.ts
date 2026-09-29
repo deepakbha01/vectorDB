@@ -1,4 +1,5 @@
 import { ComponentNeed, InfraContext, InfrastructureCatalogue, InfrastructureResult, Placement, PlacementCandidate, PlatformKind, TargetId } from './infrastructure.types';
+import { ScoreContribution, scoreBreakdown } from '../eligibility/score-breakdown';
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
 const gb = (n: number) => `${Math.round(n * 10) / 10} GB`;
@@ -28,11 +29,18 @@ export function checkPlacement(need: ComponentNeed, target: TargetId, platform: 
   const failures: string[] = [];
   const conditions: string[] = [];
   const notes: string[] = [];
+  // The mandatory rules the placement meets - so an eligible placement says why, not just a failed one.
+  const passed: string[] = [];
   const onPrem = target === 'on_premises';
 
   if (!ctx.allowedTargets.includes(target)) failures.push(`${spec.label} is not an allowed deployment target.`);
-  if (need.gpuId && platform !== 'managed' && !spec.gpus.includes(need.gpuId)) {
-    failures.push(`The inference sizing assumes ${need.gpuLabel ?? need.gpuId}, which ${spec.label} does not offer - re-size the inference assessment for this target's GPUs.`);
+  else passed.push(`${spec.label} is an allowed deployment target.`);
+  if (need.gpuId && platform !== 'managed') {
+    if (!spec.gpus.includes(need.gpuId)) {
+      failures.push(`The inference sizing assumes ${need.gpuLabel ?? need.gpuId}, which ${spec.label} does not offer - re-size the inference assessment for this target's GPUs.`);
+    } else {
+      passed.push(`${spec.label} offers the ${need.gpuLabel ?? need.gpuId} the inference sizing assumes.`);
+    }
   }
 
   const order = cat.opsCapabilityOrder;
@@ -53,7 +61,7 @@ export function checkPlacement(need: ComponentNeed, target: TargetId, platform: 
   if (!onPrem && ctx.dataResidency) notes.push(`Choose ${spec.label} regions inside "${ctx.dataResidency}".`);
   if (need.gpuId && platform !== 'managed' && !onPrem) notes.push('Confirm regional GPU capacity and quota before committing.');
 
-  return { eligibility: failures.length ? ('not_eligible' as const) : conditions.length ? ('conditional' as const) : ('eligible' as const), failures, conditions, notes };
+  return { eligibility: failures.length ? ('not_eligible' as const) : conditions.length ? ('conditional' as const) : ('eligible' as const), failures, conditions, notes, passed };
 }
 
 export function placementWeights(ctx: InfraContext, cat: InfrastructureCatalogue): Record<string, number> {
@@ -63,7 +71,13 @@ export function placementWeights(ctx: InfraContext, cat: InfrastructureCatalogue
   return Object.fromEntries(Object.entries(w).map(([k, v]) => [k, v / total]));
 }
 
-function scorePlacement(target: TargetId, anchor: TargetId | null, ctx: InfraContext, cat: InfrastructureCatalogue, w: Record<string, number>): number {
+function scorePlacement(
+  target: TargetId,
+  anchor: TargetId | null,
+  ctx: InfraContext,
+  cat: InfrastructureCatalogue,
+  w: Record<string, number>,
+): { score: number; scoreBreakdown: ScoreContribution[] } {
   const s = cat.targets[target];
   const criteria: Record<string, number> = {
     elasticity: s.elasticity / 5,
@@ -72,7 +86,7 @@ function scorePlacement(target: TargetId, anchor: TargetId | null, ctx: InfraCon
     availability: s.availabilityZones || (target === 'on_premises' && ctx.multipleOnPremSites) ? 1 : 0.4,
     coLocation: anchor === null || anchor === target ? 1 : 0.5,
   };
-  return round(Object.entries(criteria).reduce((sum, [k, v]) => sum + v * (w[k] ?? 0), 0));
+  return { score: round(Object.entries(criteria).reduce((sum, [k, v]) => sum + v * (w[k] ?? 0), 0)), scoreBreakdown: scoreBreakdown(criteria, w) };
 }
 
 const band = (c: PlacementCandidate) => (c.eligibility === 'eligible' ? 0 : c.eligibility === 'conditional' ? 1 : 2);
@@ -80,7 +94,7 @@ const band = (c: PlacementCandidate) => (c.eligibility === 'eligible' ? 0 : c.el
 export function placeComponent(need: ComponentNeed, anchor: TargetId | null, ctx: InfraContext, cat: InfrastructureCatalogue): Placement {
   const w = placementWeights(ctx, cat);
   const candidates: PlacementCandidate[] = candidatePairs(need, cat)
-    .map((p) => ({ component: need.id, target: p.target, platform: p.platform, label: p.label, ...checkPlacement(need, p.target, p.platform, ctx, cat), score: scorePlacement(p.target, anchor, ctx, cat, w) }))
+    .map((p) => ({ component: need.id, target: p.target, platform: p.platform, label: p.label, ...checkPlacement(need, p.target, p.platform, ctx, cat), ...scorePlacement(p.target, anchor, ctx, cat, w) }))
     .sort((a, b) => band(a) - band(b) || (Math.abs(b.score - a.score) > TIE_EPSILON ? b.score - a.score : `${a.target}/${a.platform}`.localeCompare(`${b.target}/${b.platform}`)));
   const chosen = candidates.find((c) => c.eligibility !== 'not_eligible') ?? null;
   const why = !chosen

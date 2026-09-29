@@ -13,6 +13,7 @@ import {
 } from '../api/inferenceArchitecture';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
+import { EligibilityWhy, ScoreWhy } from '../components/EligibilityWhy';
 
 const ELIGIBILITY: Record<Eligibility, { label: string; color: string }> = {
   eligible: { label: 'Eligible', color: 'var(--success)' },
@@ -226,12 +227,13 @@ function ArchitectureResult({ r, version, createdAt }: { r: InferenceArchitectur
       <div className="card" style={{ overflowX: 'auto' }}>
         <div className="metric-label">Serving options - eligibility is decided before scoring</div>
         <Table
-          headers={['Option', 'Eligibility', 'Score', 'Why']}
+          headers={['Option', 'Eligibility', 'Why this eligibility', 'Score', 'What drives the score']}
           rows={r.candidates.map((c) => [
             c.label,
             <span key="e" style={{ color: ELIGIBILITY[c.eligibility].color, fontWeight: 600 }}>{ELIGIBILITY[c.eligibility].label}</span>,
+            <EligibilityWhy key="w" option={c} />,
             c.score.toFixed(3),
-            [...c.failures, ...c.conditions, ...c.notes].join(' ') || '—',
+            <ScoreWhy key="s" option={c} />,
           ])}
         />
       </div>

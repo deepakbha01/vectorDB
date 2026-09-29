@@ -9,6 +9,14 @@ export type SectionStatus = LineageStatus | 'not_yet_available';
 export type EvidenceType = 'estimated' | 'vendor_listed' | 'measured' | 'assumption';
 export type Eligibility = 'eligible' | 'conditional' | 'not_eligible' | 'not_assessed';
 
+/** One criterion's share of an option's weighted score (value x weight). */
+export interface ScoreContribution {
+  criterion: string;
+  value: number;
+  weight: number;
+  contribution: number;
+}
+
 export interface PhaseLineage {
   phase: PhaseKey;
   label: string;

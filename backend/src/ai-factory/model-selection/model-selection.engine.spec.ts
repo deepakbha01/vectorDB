@@ -213,3 +213,27 @@ describe('resolveModelRequirements - defaults from the Workload Profile, with th
     expect(model(r.primary!.id).capabilities).toContain('tool_calling');
   });
 });
+
+describe('why each model got its eligibility and score', () => {
+  it('lists the mandatory requirements a model meets, never one it also fails', () => {
+    for (const r of [req(), req({ toolCalling: true, multilingual: true }), req({ selfHostingRequired: true, permissiveLicenceOnly: true })]) {
+      for (const c of selectModels(r, cat).candidates) {
+        expect(c.passed!.filter((p) => c.failures.includes(p))).toEqual([]);
+        // The context-window rule always applies, so every eligible model has at least that reason.
+        if (c.eligibility === 'eligible') expect(c.passed!.join(' ')).toMatch(/Context window .* covers/);
+      }
+    }
+    const v = checkEligibility(model(cat.models[0].id), req({ requiredContextTokens: 10_000_000 }), cat);
+    expect(v.failures.join(' ')).toMatch(/Context window .* is below/);
+    expect(v.passed!.join(' ')).not.toMatch(/Context window/);
+  });
+
+  it('explains the score: value x weight per criterion, largest first, summing to the score', () => {
+    const r = selectModels(req(), cat);
+    for (const c of r.candidates) {
+      const b = c.scoreBreakdown!;
+      expect(b.map((x) => x.contribution)).toEqual([...b.map((x) => x.contribution)].sort((p, q) => q - p));
+      expect(b.reduce((s, x) => s + x.contribution, 0)).toBeCloseTo(c.score, 2);
+    }
+  });
+});

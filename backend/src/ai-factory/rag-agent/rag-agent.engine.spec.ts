@@ -262,3 +262,23 @@ describe('resolveRagAgentContext', () => {
     expect(() => resolveRagAgentContext({ includeRag: false, includeAgent: false }, inputs(), catalogues)).toThrow(/Neither RAG nor an agent/);
   });
 });
+
+describe('why each option got its eligibility and score', () => {
+  it('lists the mandatory requirements an option meets, never one it also fails, and explains every score', () => {
+    for (const c of [ctx(), ctx({ requiresHybridSearch: true, requiresReranking: true }), ctx({ onPremOnly: true })]) {
+      for (const d of designRagAgent(c, cat).decisions) {
+        for (const o of d.candidates) {
+          expect(o.passed!.filter((p) => o.failures.includes(p))).toEqual([]);
+          const b = o.scoreBreakdown!;
+          expect(b.map((x) => x.contribution)).toEqual([...b.map((x) => x.contribution)].sort((p, q) => q - p));
+          expect(b.reduce((s, x) => s + x.contribution, 0)).toBeCloseTo(o.score, 2);
+        }
+      }
+    }
+  });
+
+  it('says why a hybrid retrieval option is eligible when Discovery requires hybrid search', () => {
+    const hybrid = cat.retrieval.options.find((o) => o.keyword)!;
+    expect(evaluateRetrieval(hybrid, ctx({ requiresHybridSearch: true })).passed.join(' ')).toMatch(/hybrid search/);
+  });
+});
