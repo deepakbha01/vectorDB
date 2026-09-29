@@ -12,6 +12,7 @@ const mockCollectionInstance = {
 const mockClientInstance = {
   heartbeat: jest.fn(),
   createCollection: jest.fn(),
+  getOrCreateCollection: jest.fn(),
   getCollection: jest.fn(() => Promise.resolve(mockCollectionInstance)),
   deleteCollection: jest.fn(),
 };
@@ -44,10 +45,11 @@ describe('ChromaVectorAdapter', () => {
     await expect(adapter.healthCheck()).resolves.toBe(true);
   });
 
-  it('createSchema disables the default embedding function and sets cosine space', async () => {
-    mockClientInstance.createCollection.mockResolvedValue({});
+  it('createSchema disables the default embedding function, sets cosine space, and reuses an existing collection', async () => {
+    mockClientInstance.getOrCreateCollection.mockResolvedValue({});
     await adapter.createSchema({ collectionOrTableName: 'docs', dimension: 768, metadataFields: [] });
-    expect(mockClientInstance.createCollection).toHaveBeenCalledWith({ name: 'docs', embeddingFunction: null, metadata: { 'hnsw:space': 'cosine' } });
+    expect(mockClientInstance.getOrCreateCollection).toHaveBeenCalledWith({ name: 'docs', embeddingFunction: null, metadata: { 'hnsw:space': 'cosine' } });
+    expect(mockClientInstance.createCollection).not.toHaveBeenCalled();
   });
 
   it('upsert maps records to Chroma parallel-array {ids, embeddings, metadatas}', async () => {

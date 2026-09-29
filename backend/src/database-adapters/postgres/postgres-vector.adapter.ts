@@ -127,6 +127,7 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplo
         metadataFields: definition.metadataFields as SchemaDefinition['metadataFields'] as any,
       });
       await this.getPool().query(postgres_pgvector.ddl);
+      await this.upgradeArrayEmbeddingColumn(sanitizeSqlIdentifier(definition.collectionOrTableName, 'collectionOrTableName'), definition.dimension);
       return;
     }
 
@@ -149,6 +150,35 @@ export class PostgresVectorAdapter implements VectorDatabaseAdapter, VectorExplo
       .filter((line) => line !== '')
       .join('\n');
     await this.getPool().query(ddl);
+  }
+
+  /**
+   * A table created while pgvector was missing keeps its plain DOUBLE PRECISION[] embedding column
+   * after pgvector is installed (CREATE TABLE IF NOT EXISTS leaves it alone), and no vector index
+   * can be built on it. Convert it in place to vector(dimension) - rows are kept - when every stored
+   * vector has that dimension; otherwise stop with a clear error rather than touch the data.
+   */
+  private async upgradeArrayEmbeddingColumn(table: string, dimension: number): Promise<void> {
+    const column = await this.getPool().query(
+      `SELECT udt_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1 AND column_name = 'embedding'`,
+      [table],
+    );
+    if (column.rows?.[0]?.udt_name !== '_float8') return;
+
+    const { rows } = await this.getPool().query(
+      `SELECT array_length(embedding, 1) AS dims, count(*)::int AS n FROM ${table} GROUP BY 1 ORDER BY 1`,
+    );
+    const mismatched = rows.filter((r: { dims: number | null }) => r.dims !== dimension);
+    if (mismatched.length > 0) {
+      const found = mismatched.map((r: { dims: number | null; n: number }) => `${r.n} with ${r.dims ?? 0} dimensions`).join(', ');
+      throw new BadRequestException(
+        `Table '${table}' was created before pgvector was installed and holds vectors that do not match this design's ` +
+          `${dimension} dimensions (${found}). They cannot be converted to vector(${dimension}): remove those rows or ` +
+          'the table on the target database, or use a different collection name, then retry.',
+      );
+    }
+    await this.getPool().query(`ALTER TABLE ${table} ALTER COLUMN embedding TYPE vector(${dimension}) USING embedding::vector(${dimension})`);
+    this.logger.warn(`Converted '${table}.embedding' from DOUBLE PRECISION[] to vector(${dimension}) now that pgvector is available (${rows.reduce((a: number, r: { n: number }) => a + r.n, 0)} rows kept).`);
   }
 
   /**
