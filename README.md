@@ -1,4 +1,4 @@
-# AVENTRA
+# Evectorize
 
 Vector Database Assessment & Optimization Platform.
 
