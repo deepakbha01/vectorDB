@@ -4,6 +4,9 @@ import { Link } from 'react-router-dom';
 /** The product name, shown on every page and in the browser tab. */
 export const APP_NAME = 'Evectorize';
 
+/** The tagline shown with the name: under it on the sign-in pages, beside it in the top bar. */
+export const APP_TAGLINE = 'Where Data Finds Direction';
+
 /** Sets the browser tab title to "<page> · Evectorize". */
 export function usePageTitle(page: string) {
   useEffect(() => {
@@ -11,15 +14,24 @@ export function usePageTitle(page: string) {
   }, [page]);
 }
 
-/** The Evectorize wordmark; links to the dashboard where there is one to go to. */
+/**
+ * The Evectorize wordmark with its tagline; the name links to the dashboard where there is one
+ * to go to. Large (sign-in pages): the tagline sits under the name. Otherwise (top bar): beside it.
+ */
 export function BrandMark({ linked = true, large = false }: { linked?: boolean; large?: boolean }) {
   const className = large ? 'brand-mark brand-mark-large' : 'brand-mark';
-  return linked ? (
+  const name = linked ? (
     <Link to="/dashboard" className={className} aria-label={`${APP_NAME} - dashboard`}>
       {APP_NAME}
     </Link>
   ) : (
     <span className={className}>{APP_NAME}</span>
+  );
+  return (
+    <div className={large ? 'brand brand-large' : 'brand'}>
+      {name}
+      <span className="brand-tagline">{APP_TAGLINE}</span>
+    </div>
   );
 }
 
