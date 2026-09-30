@@ -63,15 +63,15 @@ env:
   - name: BOOTSTRAP_ADMIN_EMAIL
     value: ops@example.com
   - name: BOOTSTRAP_ADMIN_PASSWORD_FILE
-    value: /run/secrets/aventra-admin/password
+    value: /run/secrets/evectorize-admin/password
 volumeMounts:
-  - name: aventra-admin
-    mountPath: /run/secrets/aventra-admin
+  - name: evectorize-admin
+    mountPath: /run/secrets/evectorize-admin
     readOnly: true
 volumes:
-  - name: aventra-admin
+  - name: evectorize-admin
     secret:
-      secretName: aventra-admin   # kubectl create secret generic aventra-admin --from-literal=password=...
+      secretName: evectorize-admin   # kubectl create secret generic evectorize-admin --from-literal=password=...
 ```
 
 Never commit a real `.env` file. In a real deployment, source these from

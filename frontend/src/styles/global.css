@@ -480,11 +480,11 @@ form.stacked textarea {
   gap: 20px;
 }
 
-/* AVENTRA wordmark (top bar of every page; larger above the sign-in card). */
+/* Evectorize wordmark (top bar of every page; larger above the sign-in card). */
 .brand-mark {
   font-weight: 800;
-  font-size: 15px;
-  letter-spacing: 0.22em;
+  font-size: 16px;
+  letter-spacing: 0.04em;
   color: var(--primary-text);
   text-decoration: none;
   white-space: nowrap;
@@ -496,13 +496,13 @@ a.brand-mark:hover {
 }
 
 .brand-mark-large {
-  font-size: 34px;
-  letter-spacing: 0.28em;
+  font-size: 36px;
+  letter-spacing: 0.06em;
   color: var(--text);
 }
 
 /*
- * AVENTRA watermark on the front pages: fixed across the viewport, faint,
+ * Evectorize watermark on the front pages: fixed across the viewport, faint,
  * above the content so cards do not hide it, and never in the way - no
  * pointer events, no selection, hidden from assistive technology.
  */
@@ -517,8 +517,9 @@ a.brand-mark:hover {
   z-index: 50;
   overflow: hidden;
   font-weight: 900;
-  font-size: clamp(72px, 16vw, 240px);
-  letter-spacing: 0.18em;
+  /* Sized so the 10-letter name fits along the diagonal on any screen width. */
+  font-size: clamp(48px, 11vw, 190px);
+  letter-spacing: 0.08em;
   color: var(--text);
   opacity: 0.045;
   transform: rotate(-24deg);

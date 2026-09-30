@@ -28,20 +28,20 @@ function setup(env: Record<string, string>, users: Array<{ email: string; role: 
 }
 
 describe('AdminBootstrapService', () => {
-  const env = { BOOTSTRAP_ADMIN_EMAIL: 'ops@aventra.example', BOOTSTRAP_ADMIN_PASSWORD: 'a-long-first-admin-secret' };
+  const env = { BOOTSTRAP_ADMIN_EMAIL: 'ops@evectorize.example', BOOTSTRAP_ADMIN_PASSWORD: 'a-long-first-admin-secret' };
 
   it('creates the first admin under an advisory lock, hashing the password and auditing it', async () => {
     const s = setup(env);
     await expect(s.service.run()).resolves.toBe('created');
     expect(s.query).toHaveBeenCalledWith('SELECT pg_advisory_xact_lock($1)', [BOOTSTRAP_LOCK_KEY]);
-    expect(s.table[0]).toEqual(expect.objectContaining({ email: 'ops@aventra.example', role: UserRole.ADMIN, fullName: 'Administrator' }));
+    expect(s.table[0]).toEqual(expect.objectContaining({ email: 'ops@evectorize.example', role: UserRole.ADMIN, fullName: 'Administrator' }));
     expect(await bcrypt.compare(env.BOOTSTRAP_ADMIN_PASSWORD, String(s.table[0].passwordHash))).toBe(true);
-    expect(s.audit).toEqual([expect.objectContaining({ method: 'SYSTEM', path: 'bootstrap/first-admin', requestSummary: { email: 'ops@aventra.example', role: 'admin', passwordFrom: 'BOOTSTRAP_ADMIN_PASSWORD' } })]);
+    expect(s.audit).toEqual([expect.objectContaining({ method: 'SYSTEM', path: 'bootstrap/first-admin', requestSummary: { email: 'ops@evectorize.example', role: 'admin', passwordFrom: 'BOOTSTRAP_ADMIN_PASSWORD' } })]);
     expect(JSON.stringify(s.audit)).not.toContain(env.BOOTSTRAP_ADMIN_PASSWORD);
   });
 
   it('does nothing once an admin exists, and reads no settings', async () => {
-    const s = setup({ BOOTSTRAP_ADMIN_EMAIL: 'x@y.z' }, [{ email: 'boss@aventra.example', role: UserRole.ADMIN }]);
+    const s = setup({ BOOTSTRAP_ADMIN_EMAIL: 'x@y.z' }, [{ email: 'boss@evectorize.example', role: UserRole.ADMIN }]);
     await expect(s.service.run()).resolves.toBe('admin-exists');
     expect(s.table).toHaveLength(1);
   });
@@ -51,7 +51,7 @@ describe('AdminBootstrapService', () => {
   });
 
   it('never takes over an existing account', async () => {
-    const s = setup(env, [{ email: 'OPS@aventra.example', role: UserRole.ARCHITECT }]);
+    const s = setup(env, [{ email: 'OPS@evectorize.example', role: UserRole.ARCHITECT }]);
     await expect(s.service.run()).rejects.toThrow(/will not take over an existing account/);
     expect(s.table).toHaveLength(1);
   });
