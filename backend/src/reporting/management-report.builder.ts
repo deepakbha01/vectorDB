@@ -238,9 +238,13 @@ function executiveSummary(project: Project, parts: ManagementReportParts, perfor
     : `The ${project.name} assessment has completed ${phases.done} of ${phases.total} phases. Outstanding: ${joinAnd(phases.outstanding)}.`;
 
   // Recommended architecture and confidence.
+  const retrieval = parts.adr?.retrievalStrategy;
   const architectureText = !platform
     ? 'A vector platform has not yet been recommended. Complete the Vector DB Selection to obtain a recommendation.'
-    : `${platform} is the recommended vector platform for the assessed workload, with ${confidence ?? 'unrated'} decision confidence.` +
+    : retrieval && !retrieval.vectorDatabaseRequired
+      ? `The Retrieval Strategy Assessment found that the workload does not need a dedicated vector database: ${retrieval.approaches[0].label} is recommended, ` +
+        `to be confirmed with a golden-set evaluation. ${platform} is the fallback vector platform, with ${confidence ?? 'unrated'} decision confidence.`
+      : `${platform} is the recommended vector platform for the assessed workload, with ${confidence ?? 'unrated'} decision confidence.` +
       (parts.adr?.decisionStatus === 'conditional'
         ? ' The recommendation is conditional on validations recorded in the Vector DB Selection.'
         : confidence === 'high'
@@ -576,7 +580,20 @@ export function buildManagementReport(project: Project, parts: ManagementReportP
         {
           headers: ['Decision area', 'Recommendation', 'Confidence / status'],
           rows: [
-            ['Vector database', parts.adr ? PLATFORM_NAME[parts.adr.decision] ?? parts.adr.decision : NOT_AVAILABLE, parts.adr ? `${parts.adr.confidence} - ${parts.adr.decisionStatus}` : '-'],
+            ...(parts.adr?.retrievalStrategy
+              ? [[
+                  'Retrieval strategy',
+                  parts.adr.retrievalStrategy.vectorDatabaseRequired
+                    ? parts.adr.retrievalStrategy.approaches[0].label
+                    : `${parts.adr.retrievalStrategy.approaches[0].label} - no dedicated vector database`,
+                  `fit ${parts.adr.retrievalStrategy.approaches[0].score}/100${parts.adr.retrievalStrategy.closeCall ? ' - close call, confirm by evaluation' : ''}`,
+                ]]
+              : []),
+            [
+              parts.adr?.retrievalStrategy && !parts.adr.retrievalStrategy.vectorDatabaseRequired ? 'Vector database (fallback)' : 'Vector database',
+              parts.adr ? PLATFORM_NAME[parts.adr.decision] ?? parts.adr.decision : NOT_AVAILABLE,
+              parts.adr ? `${parts.adr.confidence} - ${parts.adr.decisionStatus}` : '-',
+            ],
             ['Index strategy', parts.indexDesign?.label ?? NOT_AVAILABLE, parts.indexDesign ? `rules v${parts.indexDesign.rulesVersion}` : '-'],
             ['Embedding model', parts.dataPipeline ? `${parts.dataPipeline.embeddingModelId} (${parts.dataPipeline.qualityTier} tier)` : NOT_AVAILABLE, parts.dataPipeline ? `$${parts.dataPipeline.costPerMillionTokens} per 1M tokens` : '-'],
             ['Scaling / sharding', parts.capacityPlan?.shardingRecommendation.strategy ?? NOT_AVAILABLE, '-'],

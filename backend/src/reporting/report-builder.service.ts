@@ -113,6 +113,45 @@ export class ReportBuilderService {
       });
     }
 
+    const rs = adr.retrievalStrategy;
+    if (rs) {
+      const money = (n: number) => `$${n < 1 ? n.toFixed(4) : Math.round(n).toLocaleString('en-US')}`;
+      sections.push({
+        heading: 'Retrieval Strategy - is a vector database needed?',
+        fields: [
+          { label: 'Recommendation', value: rs.headline },
+          { label: 'Vector database required', value: rs.vectorDatabaseRequired ? 'Yes' : `No - ${adr.decision} is the fallback if the evaluation does not confirm the vectorless approach` },
+          { label: 'Why', value: rs.rationale },
+          { label: 'Corpus size', value: `${rs.corpusTokens.toLocaleString('en-US')} tokens` },
+          ...(rs.closeCall ? [{ label: 'Close call', value: `${rs.approaches[0].label} and ${rs.approaches[1].label} are within a few points - decide with the evaluation below.` }] : []),
+        ],
+        tables: [
+          {
+            title: 'Approach fit, cost and latency (directional)',
+            headers: ['Approach', 'Family', 'Fit', 'Cost / query', 'Monthly run', 'One-time build', 'Latency', 'Notes'],
+            rows: rs.approaches.map((a) => [
+              a.label, a.family, String(a.score), money(a.costPerQueryUsd), money(a.monthlyRunCostUsd),
+              a.oneTimeBuildCostUsd ? money(a.oneTimeBuildCostUsd) : '-', `${a.estimatedLatencySeconds}s`, a.feasibilityNotes.join(' ') || 'Feasible',
+            ]),
+          },
+          {
+            title: 'How each factor leans',
+            headers: ['Factor', 'Input', 'Leans to', 'Weight'],
+            rows: rs.factors.map((f) => [f.factor, f.input, f.leansTo, String(f.weight)]),
+          },
+          {
+            title: 'Reference architecture - recommended approach',
+            headers: ['Layer', 'Design'],
+            rows: rs.referenceArchitecture.map((l) => [l.layer, l.detail]),
+          },
+        ],
+        lists: [
+          { title: 'Evaluation plan - decide on evidence', items: rs.evaluationPlan },
+          ...(rs.additionalRoutes.length ? [{ title: 'Additional routes the query mix needs', items: rs.additionalRoutes }] : []),
+        ],
+      });
+    }
+
     sections.push(
         {
           heading: 'Decision status & confidence',
@@ -201,6 +240,20 @@ export class ReportBuilderService {
             { label: 'Tenancy model', value: assessment.tenancyModel },
             { label: 'Availability target', value: `${assessment.availabilityTargetPercent}%` },
             { label: 'RPO / RTO', value: `${assessment.rpoMinutes}min / ${assessment.rtoMinutes}min` },
+            ...(rs
+              ? [
+                  {
+                    label: 'Query mix (exact / multi-hop / semantic / analytics / relationships)',
+                    value: [assessment.queryMixExactPercent, assessment.queryMixMultiHopPercent, assessment.queryMixSemanticPercent, assessment.queryMixAnalyticsPercent, assessment.queryMixRelationshipPercent]
+                      .map((v) => `${v ?? 0}%`).join(' / '),
+                  },
+                  { label: 'Document structure', value: assessment.documentStructure?.replace(/_/g, ' ') ?? 'Not specified' },
+                  { label: 'Content type', value: assessment.contentModality?.replace(/_/g, ' ') ?? 'Not specified' },
+                  { label: 'Content change frequency', value: assessment.contentChangeFrequency ?? 'Not specified' },
+                  { label: 'Explainability need', value: assessment.explainabilityNeed ?? 'Not specified' },
+                  { label: 'Multilingual', value: String(assessment.isMultilingual ?? false) },
+                ]
+              : []),
           ],
         },
         {

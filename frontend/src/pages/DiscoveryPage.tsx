@@ -64,6 +64,7 @@ const DEFAULT_FORM: DiscoveryAssessmentInput = {
   dataResidencyRequirement: '',
   containsPii: false,
   regulatoryRequirements: '',
+  isMultilingual: false,
 };
 
 type FieldKey = keyof DiscoveryAssessmentInput;
@@ -73,6 +74,8 @@ interface FieldMeta {
   help: string;
   /** True if this input changes which platform wins the Phase 4 (Vector DB Selection) score. */
   scored: boolean;
+  /** True if this input feeds the Retrieval Strategy Assessment ("is a vector database needed at all?"). */
+  retrieval?: boolean;
 }
 
 /**
@@ -366,7 +369,93 @@ const FIELD_META: Record<FieldKey, FieldMeta> = {
     help: 'Free-text list of applicable regulations, e.g. "HIPAA, GDPR". Captured for the ADR’s risk section.',
     scored: false,
   },
+  queryMixExactPercent: {
+    label: 'Exact terms (IDs, codes, names) %',
+    help: 'Share of questions that hinge on exact wording - part numbers, clause IDs, error codes, names. Keyword (full-text) search handles these well; pure vector similarity often misses them.',
+    scored: false,
+    retrieval: true,
+  },
+  queryMixMultiHopPercent: {
+    label: 'Multi-hop / cross-reference %',
+    help: 'Share of questions that need several sections or follow references ("as defined in section 4.2"). Reasoning-based navigation follows them; similarity search breaks documents into unrelated fragments.',
+    scored: false,
+    retrieval: true,
+  },
+  queryMixSemanticPercent: {
+    label: 'Fuzzy / paraphrased semantic %',
+    help: 'Share of questions asked in different words from the source text. This is where vector embeddings are strongest.',
+    scored: false,
+    retrieval: true,
+  },
+  queryMixAnalyticsPercent: {
+    label: 'Aggregation / analytics %',
+    help: 'Share of questions that count, sum or compare ("total claims in Q3 by region"). From 15% upwards the assessment recommends a text-to-SQL route - document retrieval cannot answer these reliably.',
+    scored: false,
+    retrieval: true,
+  },
+  queryMixRelationshipPercent: {
+    label: 'Relationships between entities %',
+    help: 'Share of questions about how entities connect ("which suppliers are linked to..."). From 15% upwards the assessment recommends a knowledge-graph route.',
+    scored: false,
+    retrieval: true,
+  },
+  documentStructure: {
+    label: 'Document structure',
+    help: 'Long, structured documents (headings, sections, a table of contents) suit reasoning-based navigation; short, unstructured snippets (tickets, chats) suit vector search.',
+    scored: false,
+    retrieval: true,
+  },
+  contentModality: {
+    label: 'Content type',
+    help: 'Text, text with tables, or multi-modal (images, audio, video). Keyword search cannot match multi-modal content; tables favour approaches that keep sections intact.',
+    scored: false,
+    retrieval: true,
+  },
+  contentChangeFrequency: {
+    label: 'How often content changes',
+    help: 'Frequent changes mean frequent re-indexing: re-embedding for vector search, rebuilding section trees for reasoning-based navigation. Full-text indexes update most cheaply.',
+    scored: false,
+    retrieval: true,
+  },
+  explainabilityNeed: {
+    label: 'Explainability need',
+    help: 'How strongly every answer must be traceable to a section and page. Regulated or audited answers favour reasoning-based navigation, which records its path through the document.',
+    scored: false,
+    retrieval: true,
+  },
+  isMultilingual: {
+    label: 'Several languages',
+    help: 'Questions and documents span several languages. Keyword search struggles across languages; embeddings and LLMs handle it.',
+    scored: false,
+    retrieval: true,
+  },
 };
+
+const QUERY_MIX_FIELDS: FieldKey[] = ['queryMixExactPercent', 'queryMixMultiHopPercent', 'queryMixSemanticPercent', 'queryMixAnalyticsPercent', 'queryMixRelationshipPercent'];
+
+/** A dropdown whose value may be left unset (sent as null) - for the optional Retrieval Strategy choices. */
+function OptionalSelectField({ id, form, setForm, activeField, setActiveField, options }: FieldProps & { options: Array<{ value: string; label: string }> }) {
+  const meta = FIELD_META[id];
+  const current = (form[id] as string | null | undefined) ?? '';
+  return (
+    <div className={`field${activeField === id ? ' field-active' : ''}`}>
+      <label htmlFor={id}>{meta.label} (optional)</label>
+      <select
+        id={id}
+        value={current}
+        onChange={(e) => setForm({ ...form, [id]: e.target.value === '' ? null : e.target.value })}
+        onFocus={() => setActiveField(id)}
+      >
+        <option value="">Not specified</option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
 interface FieldProps {
   id: FieldKey;
@@ -583,8 +672,8 @@ function HelpPanel({ activeField }: { activeField: FieldKey | null }) {
         <>
           <div className="help-panel-field">{meta.label}</div>
           <p className="help-panel-desc">{meta.help}</p>
-          <span className={`status-pill${meta.scored ? ' validated' : ''}`}>
-            {meta.scored ? 'Used in platform scoring' : 'Captured for the record'}
+          <span className={`status-pill${meta.scored || meta.retrieval ? ' validated' : ''}`}>
+            {meta.scored ? 'Used in platform scoring' : meta.retrieval ? 'Used in the Retrieval Strategy Assessment' : 'Captured for the record'}
           </span>
         </>
       ) : (
@@ -954,6 +1043,76 @@ export function DiscoveryPage() {
                 <div className="field-grid">
                   <TextField id="dataResidencyRequirement" {...fieldProps} />
                   <TextField id="regulatoryRequirements" {...fieldProps} />
+                </div>
+              </section>
+
+              <section className="discovery-section">
+                <div className="discovery-section-header">
+                  <span className="discovery-section-index">6</span>
+                  <h2 className="discovery-section-title">Retrieval strategy (optional)</h2>
+                </div>
+                <p className="discovery-section-sub">
+                  Does this workload need a vector database at all? Describe the questions people will ask and the documents
+                  they ask about. Phase 4 then compares vectorless retrieval (long-context, reasoning-based navigation, full-text
+                  search) with vector and hybrid retrieval. Leave this section blank to skip it - the platform recommendation
+                  is unaffected either way.
+                </p>
+                <div className="field-grid">
+                  {QUERY_MIX_FIELDS.map((key) => (
+                    <OptionalNumberField key={key} id={key} {...fieldProps} step={1} min={0} max={100} />
+                  ))}
+                </div>
+                {(() => {
+                  const total = QUERY_MIX_FIELDS.reduce((sum, key) => sum + (Number(form[key]) || 0), 0);
+                  return (
+                    <p className="discovery-section-sub" style={{ marginTop: 4, marginBottom: 14 }} data-testid="query-mix-total">
+                      {total === 0
+                        ? 'Query mix not given - the Retrieval Strategy Assessment will not run.'
+                        : `Query mix total: ${Math.round(total)}%${Math.round(total) === 100 ? '' : ' - it will be scaled to 100%'}. The Retrieval Strategy Assessment will run in Phase 4.`}
+                    </p>
+                  );
+                })()}
+                <div className="field-grid">
+                  <OptionalSelectField
+                    id="documentStructure"
+                    {...fieldProps}
+                    options={[
+                      { value: 'structured', label: 'Long, structured (headings, table of contents)' },
+                      { value: 'semi_structured', label: 'Semi-structured' },
+                      { value: 'short_snippets', label: 'Short, unstructured snippets (tickets, chats)' },
+                    ]}
+                  />
+                  <OptionalSelectField
+                    id="contentModality"
+                    {...fieldProps}
+                    options={[
+                      { value: 'text', label: 'Text' },
+                      { value: 'text_and_tables', label: 'Text and tables' },
+                      { value: 'multimodal', label: 'Multi-modal (images, audio, video)' },
+                    ]}
+                  />
+                  <OptionalSelectField
+                    id="contentChangeFrequency"
+                    {...fieldProps}
+                    options={[
+                      { value: 'static', label: 'Rarely / static' },
+                      { value: 'weekly', label: 'Weekly' },
+                      { value: 'daily', label: 'Daily' },
+                      { value: 'realtime', label: 'Continuously (real time)' },
+                    ]}
+                  />
+                  <OptionalSelectField
+                    id="explainabilityNeed"
+                    {...fieldProps}
+                    options={[
+                      { value: 'standard', label: 'Standard' },
+                      { value: 'high', label: 'High - cite section and page' },
+                      { value: 'regulated', label: 'Regulated / audited' },
+                    ]}
+                  />
+                </div>
+                <div className="checkbox-grid">
+                  <BoolField id="isMultilingual" {...fieldProps} />
                 </div>
               </section>
 

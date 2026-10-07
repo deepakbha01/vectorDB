@@ -15,6 +15,7 @@ import {
   ScoredOption,
 } from '../api/client';
 import { ExecutiveSummaryCard } from '../components/ExecutiveSummaryCard';
+import { RetrievalStrategyCard } from '../components/RetrievalStrategyCard';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
@@ -275,6 +276,13 @@ function AdrView({ adr, projectId }: { adr: ArchitectureDecisionRecord; projectI
             This assessment was run before the plain-English summary existed. Re-run the assessment to get one.
           </p>
         </div>
+      )}
+
+      {adr.retrievalStrategy && (
+        <RetrievalStrategyCard
+          strategy={adr.retrievalStrategy}
+          fallbackPlatform={adr.options.find((o) => o.platformId === adr.decision)?.label ?? adr.decision}
+        />
       )}
 
       {adr.decisionStatus !== undefined && <DecisionStatusCard adr={adr} />}

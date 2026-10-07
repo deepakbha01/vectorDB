@@ -144,3 +144,78 @@ decisionModel:
     excellentFitMin: 0.85
     goodFitMin: 0.7
     workableFitMin: 0.55
+
+# Retrieval Strategy Assessment - "does this workload need a vector database at all?"
+# Runs only when the Discovery assessment includes a query mix. Scores five
+# retrieval approaches - three vectorless (long-context, reasoning-based
+# navigation, lexical/BM25), vector RAG and hybrid - and never replaces the
+# platform ranking: when vectorless wins, the platform decision is kept as the
+# fallback. Directional heuristics; every number here is configurable.
+retrievalStrategy:
+  # Corpus size in tokens = documentCount x avgDocumentSizeKb x tokensPerKb
+  tokensPerKb: 256
+  # The long-context model's window; a corpus larger than this gates long-context out
+  contextWindowTokens: 1000000
+  # Factor weights (sum need not be 100; scores are normalised)
+  weights:
+    corpusSize: 20
+    queryMix: 25
+    documentStructure: 15
+    contentModality: 10
+    latency: 10
+    explainability: 10
+    changeFrequency: 5
+    peakLoad: 5
+    dataSensitivity: 5
+    existingSearch: 5
+    multilingual: 5
+  # Hard gates multiply an approach's score by `factor` when they trip
+  gates:
+    contextWindowExceededFactor: 0.45
+    realtimeLatencyMs: 300          # below this P95 target, no LLM call fits inside retrieval
+    realtimeLatencyFactor: 0.6
+    multimodalLexicalFactor: 0.6
+    highPeakQps: 25                 # above this, multi-call reasoning strains LLM rate limits
+    highPeakQpsReasoningFactor: 0.7
+  # Within this many points of each other the top two are a "close call" - decide by evaluation
+  closeCallPoints: 5
+  # Route analytics / relationship questions elsewhere when their share reaches this
+  structuredRouteSharePercent: 15
+  # Directional per-query token assumptions and list prices (USD) for the cost comparison
+  costModel:
+    llmInputPerMillionTokens: 3.0
+    llmOutputPerMillionTokens: 15.0
+    cachedInputDiscount: 0.9
+    cacheWritesPerMonth: 8640       # a long-context prompt cache refreshed about every 5 minutes
+    embeddingPerMillionTokens: 0.02
+    embeddingDimension: 1536
+    chunkTokens: 400
+    vectorStorePerGbMonth: 25
+    vectorStoreMinimumMonthly: 50
+    searchServiceMonthly: 150       # only when no full-text search platform is already in place
+    rerankPerThousandQueries: 2
+    outputTokensPerAnswer: 600
+    # Monthly queries = sustained QPS x 3600 x activeHoursPerDay x 30 (sustained QPS rarely runs 24 hours a day)
+    activeHoursPerDay: 10
+    inputTokens:
+      reasoningNavigation: 19000    # ~3 navigation calls + reading the chosen sections
+      lexical: 8000
+      vector: 6000
+      hybrid: 6000
+    extraOutputTokens:
+      reasoningNavigation: 600      # the navigation calls' own outputs
+    indexBuild:
+      reasoningInputMultiplier: 1.1 # one LLM pass over every document to build the section tree
+      reasoningOutputShare: 0.05
+    latencySeconds:
+      longContextBase: 2
+      longContextTokensPerSecond: 60000
+      reasoningNavigation: 6.5
+      lexical: 1.6
+      vector: 1.5
+      hybrid: 1.9
+    monthlyChurn:                   # share of the corpus re-indexed per month
+      static: 0.02
+      weekly: 0.1
+      daily: 0.3
+      realtime: 0.6

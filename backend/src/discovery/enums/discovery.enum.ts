@@ -49,3 +49,34 @@ export enum SimilarityMetric {
   DOT_PRODUCT = 'dot_product',
   EUCLIDEAN = 'euclidean',
 }
+
+// ---- Retrieval Strategy Assessment ("does this need a vector database at all?") ----
+
+/** How the documents are organised - reasoning-based navigation needs headings / a table of contents to navigate. */
+export enum DocumentStructure {
+  STRUCTURED = 'structured', // long documents with headings, sections, a table of contents
+  SEMI_STRUCTURED = 'semi_structured',
+  SHORT_SNIPPETS = 'short_snippets', // tickets, chats, emails - little structure to navigate
+}
+
+/** What the content is made of - lexical search cannot match images or audio. */
+export enum ContentModality {
+  TEXT = 'text',
+  TEXT_AND_TABLES = 'text_and_tables',
+  MULTIMODAL = 'multimodal', // images, audio, video
+}
+
+/** How often the corpus changes - drives re-indexing / re-embedding effort. */
+export enum ContentChangeFrequency {
+  STATIC = 'static',
+  WEEKLY = 'weekly',
+  DAILY = 'daily',
+  REALTIME = 'realtime',
+}
+
+/** How strongly answers must be traceable to a section / page. */
+export enum ExplainabilityNeed {
+  STANDARD = 'standard',
+  HIGH = 'high', // cite section and page
+  REGULATED = 'regulated', // audited, regulator-facing
+}

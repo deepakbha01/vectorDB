@@ -2,9 +2,13 @@ import { Column, CreateDateColumn, Entity, Index, ManyToOne, PrimaryGeneratedCol
 import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
 import {
+  ContentChangeFrequency,
+  ContentModality,
   DataReplicationModel,
   DeploymentEnvironment,
+  DocumentStructure,
   Environment,
+  ExplainabilityNeed,
   OperationalCapability,
   QpsScope,
   SimilarityMetric,
@@ -205,6 +209,46 @@ export class DiscoveryAssessment {
 
   @Column({ nullable: true })
   regulatoryRequirements?: string;
+
+  // ---- Retrieval Strategy Assessment (all optional) ----
+  // Stored as plain strings rather than Postgres enum types, so adding a value
+  // later needs no type migration. The assessment runs only when a query mix
+  // is given; with every field blank, Phase 4 behaves exactly as before.
+
+  @Column({ type: 'varchar', length: 24, nullable: true })
+  documentStructure?: DocumentStructure | null;
+
+  @Column({ type: 'varchar', length: 24, nullable: true })
+  contentModality?: ContentModality | null;
+
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  contentChangeFrequency?: ContentChangeFrequency | null;
+
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  explainabilityNeed?: ExplainabilityNeed | null;
+
+  /** Share of questions (0-100) that use exact terms - IDs, codes, names. */
+  @Column('float', { nullable: true })
+  queryMixExactPercent?: number | null;
+
+  /** Share of questions (0-100) that need multi-hop reasoning or follow cross-references. */
+  @Column('float', { nullable: true })
+  queryMixMultiHopPercent?: number | null;
+
+  /** Share of questions (0-100) that are paraphrased / fuzzy semantic. */
+  @Column('float', { nullable: true })
+  queryMixSemanticPercent?: number | null;
+
+  /** Share of questions (0-100) that aggregate or analyse (better served by text-to-SQL). */
+  @Column('float', { nullable: true })
+  queryMixAnalyticsPercent?: number | null;
+
+  /** Share of questions (0-100) about relationships between entities (better served by a knowledge graph). */
+  @Column('float', { nullable: true })
+  queryMixRelationshipPercent?: number | null;
+
+  @Column({ default: false })
+  isMultilingual: boolean;
 
   @CreateDateColumn()
   createdAt: Date;

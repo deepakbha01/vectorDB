@@ -75,6 +75,7 @@ export class VectorDbSelectionService {
         openValidations: result.openValidations,
         budgetFeasibility: result.budgetFeasibility,
         complianceGate: result.complianceGate,
+        retrievalStrategy: result.retrievalStrategy,
       }),
     );
 
