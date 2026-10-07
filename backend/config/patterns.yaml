@@ -39,8 +39,8 @@ patterns:
     typicalRetrievalMethod: "Dense semantic search, optional hybrid with keyword"
     securityComplianceConsiderations: ["RBAC on source ACLs", "Audit logging of queries"]
     recommendedDesignConsiderations: ["Preserve document hierarchy/headings in chunking", "Metadata filtering by department/source"]
-    candidateTechnologyCategories: ["Embedded/SQL-based (small corpus)", "Dedicated vector DB (larger corpus)"]
-    validationRequirements: ["Recall@K against a labeled internal QA set"]
+    candidateTechnologyCategories: ["Embedded/SQL-based (small corpus)", "Dedicated vector DB (larger corpus)", "Vectorless - reasoning-based navigation or long-context (bounded, well-structured corpus)"]
+    validationRequirements: ["Recall@K against a labeled internal QA set", "Compare against a vectorless baseline (reasoning-based or full-text) on the same QA set"]
     tokenObservabilityProfile:
       workloadType: rag
       llmUsage: required
@@ -123,8 +123,8 @@ patterns:
     typicalRetrievalMethod: "Dense semantic search with metadata filtering by entity/date"
     securityComplianceConsiderations: ["SOC 2", "PCI DSS (if payment data present)", "Long-term audit retention"]
     recommendedDesignConsiderations: ["Version/lineage tracking for restated filings", "Long retention (multi-year) with secure deletion policy"]
-    candidateTechnologyCategories: ["Dedicated vector DB", "Search platform with vector support (for full-text + vector)"]
-    validationRequirements: ["Audit trail completeness review", "Retention/deletion policy sign-off"]
+    candidateTechnologyCategories: ["Dedicated vector DB", "Search platform with vector support (for full-text + vector)", "Vectorless reasoning-based navigation (long, structured filings where section-level traceability matters)"]
+    validationRequirements: ["Audit trail completeness review", "Retention/deletion policy sign-off", "Compare against a vectorless baseline on multi-hop and cross-reference questions"]
     tokenObservabilityProfile:
       workloadType: rag
       llmUsage: required
@@ -444,6 +444,49 @@ patterns:
       requiresFullTextSearch: true
       requiresMetadataFiltering: true
       requiresReranking: true
+
+  - id: vectorless-document-reasoning
+    name: "Vectorless Document Reasoning"
+    description: >-
+      Retrieval without embeddings or a vector index: an LLM navigates a
+      document's own structure (table-of-contents tree, PageIndex-style),
+      reads long-context, or uses full-text search over a bounded corpus of
+      long, well-structured documents where traceable answers matter more
+      than millisecond latency.
+    industry: "Cross-industry / Regulated document workloads"
+    suggestion:
+      keywords: ["vectorless", "pageindex", "page index", "no vector", "without vector", "long-context", "long context", "reasoning", "tree search", "rulebook", "handbook", "manual", "annual report", "prospectus", "sop"]
+      useCase: "{name} answers questions over long, structured documents (manuals, contracts, regulations and reports) by navigating their sections the way an analyst would, without a vector database, and cites the exact section and page for every answer."
+    typicalDataTypes: ["Long structured PDFs", "Manuals and handbooks", "Contracts and regulations", "Annual reports and filings"]
+    typicalIngestionRate: "Low, document-at-a-time; an LLM builds a section tree per document"
+    typicalVectorVolume: "None - no embeddings or vector index"
+    typicalQueryProfile: "Analyst / agent questions, multi-hop and cross-reference heavy, low concurrency"
+    typicalLatencyRequirements: "Seconds per answer (several LLM calls), not milliseconds"
+    typicalRetrievalMethod: "Reasoning-based tree navigation, long-context or full-text (BM25), with a metadata / keyword pre-filter across many documents"
+    securityComplianceConsiderations: ["More raw text reaches the LLM per query - confirm model data residency and retention", "Navigation trace kept for audit"]
+    recommendedDesignConsiderations: ["Parse documents into sections, tables and pages with page numbers preserved", "Pre-filter by metadata or full-text before navigating when there are many documents", "Route aggregations to text-to-SQL rather than document retrieval", "Keep a vector or hybrid fallback if many questions are paraphrased"]
+    candidateTechnologyCategories: ["No dedicated vector DB - reasoning-based navigation (PageIndex-style)", "Long-context LLM with prompt caching (corpus fits the context window)", "Existing database or search platform full-text search (BM25)"]
+    validationRequirements: ["Golden-set evaluation against a vector RAG baseline - accuracy, citation correctness, latency, cost per query", "Check LLM rate limits at peak query load"]
+    tokenObservabilityProfile:
+      workloadType: rag
+      llmUsage: required
+      llmRequestSharePercent: 100
+      llmCallsPerRequest: null
+      agentStepsPerRequest: null
+      guidance:
+        - "Tree navigation makes several LLM calls per question (choose sections, then read) - set calls per request from traced runs, not a guess."
+        - "Long-context reads send whole documents: prompt caching decides the cost, so measure the cache hit rate."
+        - "Index build is a one-time LLM pass over every document - count it separately from per-query tokens."
+    defaultAssessment:
+      documentCount: 300
+      qps: 1
+      peakQps: 3
+      targetP95LatencyMs: 8000
+      recallTarget: 0.95
+      requiresFullTextSearch: true
+      requiresMetadataFiltering: true
+      requiresHybridSearch: false
+      requiresAuditLogging: true
 
   - id: high-qps-enterprise-search
     name: "High-QPS Enterprise Search"
