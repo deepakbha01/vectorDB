@@ -487,6 +487,16 @@ patterns:
       requiresMetadataFiltering: true
       requiresHybridSearch: false
       requiresAuditLogging: true
+      # Retrieval Strategy Assessment inputs - seed the "is a vector database needed?" check
+      documentStructure: structured
+      contentModality: text_and_tables
+      contentChangeFrequency: weekly
+      explainabilityNeed: high
+      queryMixExactPercent: 30
+      queryMixMultiHopPercent: 35
+      queryMixSemanticPercent: 20
+      queryMixAnalyticsPercent: 10
+      queryMixRelationshipPercent: 5
 
   - id: high-qps-enterprise-search
     name: "High-QPS Enterprise Search"

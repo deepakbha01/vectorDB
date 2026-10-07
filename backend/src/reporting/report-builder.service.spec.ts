@@ -3,6 +3,8 @@ import { VectorPlatform } from '../projects/enums/platform.enum';
 import { IndexType } from '../index-recommendation-engine/enums/index-type.enum';
 import { ChunkingStrategy } from '../chunking/enums/chunking-strategy.enum';
 import { Environment } from '../discovery/enums/discovery.enum';
+import { PlatformConfigService } from '../common/config/platform-config.service';
+import { evaluateRetrievalStrategy } from '../recommendation-engine/retrieval-strategy';
 
 describe('ReportBuilderService', () => {
   let service: ReportBuilderService;
@@ -126,6 +128,29 @@ describe('ReportBuilderService', () => {
     expect(doc.sections.find((s) => s.heading === 'Risk Register')?.tables?.[0].rows).toEqual([
       ['risk-1', 'operations', 'risk 1', 'medium', 'medium', 'Monitor closely.', 'open', 'No'],
     ]);
+    // No query mix -> no Retrieval Strategy section, exactly as before
+    expect(doc.sections.some((s) => s.heading.startsWith('Retrieval Strategy'))).toBe(false);
+
+    // With a Retrieval Strategy Assessment that recommends going vectorless
+    const config = new PlatformConfigService({ get: () => undefined } as any);
+    config.onModuleInit();
+    const withMix = {
+      ...assessment, hasExistingPostgres: true, existingPlatforms: [], containsPii: false, documentCount: 300, avgDocumentSizeKb: 120,
+      targetP95LatencyMs: 8000, qps: 1, peakQps: 3, documentStructure: 'structured', contentModality: 'text_and_tables', explainabilityNeed: 'high',
+      queryMixExactPercent: 30, queryMixMultiHopPercent: 35, queryMixSemanticPercent: 20, queryMixAnalyticsPercent: 10, queryMixRelationshipPercent: 5,
+    };
+    const retrievalStrategy = evaluateRetrievalStrategy(withMix, config.getThresholds().retrievalStrategy)!;
+    const vectorless = service.buildVectorDbSelectionReport(withMix, { ...adr, retrievalStrategy });
+    const section = vectorless.sections.find((s) => s.heading === 'Retrieval Strategy - is a vector database needed?')!;
+    expect(section).toBeDefined();
+    expect(vectorless.sections.indexOf(section)).toBeLessThan(vectorless.sections.findIndex((s) => s.heading === 'Decision status & confidence'));
+    expect(section.fields).toContainEqual({ label: 'Vector database required', value: expect.stringContaining('postgres_pgvector is the fallback') });
+    expect(section.tables![0].rows).toHaveLength(5); // all five approaches priced
+    expect(section.lists![0].title).toBe('Evaluation plan - decide on evidence');
+    expect(vectorless.sections.find((s) => s.heading === 'Requirements considered')!.fields).toContainEqual({
+      label: 'Query mix (exact / multi-hop / semantic / analytics / relationships)',
+      value: '30% / 35% / 20% / 10% / 5%',
+    });
   });
 
   it('builds a Data Pipeline Design report including the pipeline stage table, metadata fields, and every generated schema', () => {

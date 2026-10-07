@@ -2414,6 +2414,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
       "reason": "Milvus (Kubernetes) scored 0.32 vs. Oracle Database (Vector)'s 0.95 - weakest on vectorCount (gap 1.00).",
     },
   ],
+  "retrievalStrategy": null,
   "risks": [
     {
       "category": "operations",
@@ -3103,6 +3104,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
       "reason": "Milvus (Kubernetes) scored 0.36 vs. PostgreSQL + pgvector's 0.98 - weakest on qps (gap 1.00).",
     },
   ],
+  "retrievalStrategy": null,
   "risks": [
     {
       "category": "operations",
@@ -3812,6 +3814,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
       "reason": "Milvus (Kubernetes) scored 0.36 vs. PostgreSQL + pgvector's 0.88 - weakest on qps (gap 1.00).",
     },
   ],
+  "retrievalStrategy": null,
   "risks": [
     {
       "category": "operations",
@@ -4502,6 +4505,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
       "reason": "Oracle Database (Vector) scored 0.33 vs. Qdrant's 0.89 - weakest on vectorCount (gap 1.00).",
     },
   ],
+  "retrievalStrategy": null,
   "risks": [
     {
       "category": "performance",
@@ -5205,6 +5209,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
       "reason": "Oracle Database (Vector) scored 0.40 vs. Pinecone's 0.86 - weakest on vectorCount (gap 1.00).",
     },
   ],
+  "retrievalStrategy": null,
   "risks": [
     {
       "category": "operations",
@@ -5973,6 +5978,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
       "reason": "Oracle Database (Vector) scored 0.41 vs. Pinecone's 0.86 - weakest on vectorCount (gap 1.00).",
     },
   ],
+  "retrievalStrategy": null,
   "risks": [
     {
       "category": "availability",
@@ -6675,6 +6681,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
       "reason": "Milvus (Kubernetes) scored 0.36 vs. Chroma's 0.91 - weakest on qps (gap 1.00).",
     },
   ],
+  "retrievalStrategy": null,
   "risks": [
     {
       "category": "operations",
@@ -7374,6 +7381,7 @@ exports[`Golden master - existing VectorDB workflow (must not change unintention
       "reason": "Oracle Database (Vector) scored 0.41 vs. Pinecone's 0.86 - weakest on vectorCount (gap 1.00).",
     },
   ],
+  "retrievalStrategy": null,
   "risks": [
     {
       "category": "operations",

@@ -12,6 +12,7 @@ import {
 import { buildComparativeReason, ramp } from '../common/scoring-utils';
 import { OperationalCapability } from '../discovery/enums/discovery.enum';
 import { buildPlainLanguageSummary } from './plain-language-summary';
+import { evaluateRetrievalStrategy } from './retrieval-strategy';
 import {
   AlternativeBucket,
   AssessmentInput,
@@ -27,6 +28,7 @@ import {
   InfrastructureEstimate,
   RankedAlternative,
   RecommendationResult,
+  RetrievalStrategyResult,
   RiskEntry,
   ScoredOption,
   SensitivityResult,
@@ -117,33 +119,58 @@ export class RecommendationEngineService {
 
     const budgetFeasibility = this.buildBudgetFeasibility(winner.platformId, input);
     const complianceGate = this.buildComplianceGate(input);
-    const risks = this.buildRisks(winner.platformId, input, thresholds, eligibleOptions.length === 0);
+    // "Does this need a vector database at all?" - null unless the Discovery assessment has a query mix
+    const retrievalStrategy = evaluateRetrievalStrategy(input, thresholds.retrievalStrategy);
+    const risks = [
+      ...this.buildRisks(winner.platformId, input, thresholds, eligibleOptions.length === 0),
+      ...this.buildRetrievalStrategyRisks(retrievalStrategy, input),
+    ];
 
     const decisionStatus = this.buildDecisionStatus(tied, winner, complianceGate);
     const openValidations = this.buildOpenValidations(input, budgetFeasibility, complianceGate, winner);
+    if (retrievalStrategy && (!retrievalStrategy.vectorDatabaseRequired || retrievalStrategy.closeCall)) {
+      openValidations.push(
+        `Retrieval strategy: confirm ${retrievalStrategy.approaches[0].label} against ${retrievalStrategy.approaches[1].label} with the golden-set evaluation before committing to ${retrievalStrategy.vectorDatabaseRequired ? 'the platform' : 'running without a vector database'}`,
+      );
+    }
     const confidence = this.buildConfidence(decisionStatus, openValidations.length, winner.eligibilityStatus, tieBreakStage);
+
+    const plainLanguageSummary = buildPlainLanguageSummary(
+      winner.label,
+      winner.totalScore,
+      winner.criteriaScores,
+      risks,
+      thresholds.decisionModel.verdict,
+      openValidations,
+      decisionStatus,
+      tied.length > 1 ? tied.map((o) => o.label) : [],
+      tieBreakStage,
+    );
+    let rationale = this.buildRationale(winner, input, tied);
+    if (retrievalStrategy && !retrievalStrategy.vectorDatabaseRequired) {
+      // The platform ranking still runs (Phases 2-7 depend on it) but becomes the fallback
+      rationale =
+        `Retrieval strategy: ${retrievalStrategy.headline} (fit ${retrievalStrategy.approaches[0].score}/100). ` +
+        `If the evaluation does not confirm it, the fallback platform is ${winner.label}. ` +
+        rationale;
+      plainLanguageSummary.headline = `${retrievalStrategy.headline}. ${winner.label} is the fallback if a vector database turns out to be needed.`;
+      plainLanguageSummary.bottomLine =
+        `Start without a dedicated vector database: ${retrievalStrategy.approaches[0].label}. Prove it with the golden-set evaluation; ` +
+        `if it falls short, ${winner.label} is the recommended platform. ` +
+        plainLanguageSummary.bottomLine;
+    }
 
     return {
       rulesVersion: this.platformConfig.getRulesVersion(),
       decision: winner.platformId,
-      rationale: this.buildRationale(winner, input, tied),
+      rationale,
       options,
       rejectedAlternatives: rejected,
-      assumptions: this.buildAssumptions(input),
+      assumptions: [...this.buildAssumptions(input), ...this.buildRetrievalStrategyAssumptions(retrievalStrategy, thresholds)],
       risks,
       infrastructureEstimate: this.estimateInfrastructure(input, thresholds),
       operationalComplexity: catalog.find((c) => c.id === winner.platformId)?.operationalComplexity ?? 'unknown',
-      plainLanguageSummary: buildPlainLanguageSummary(
-        winner.label,
-        winner.totalScore,
-        winner.criteriaScores,
-        risks,
-        thresholds.decisionModel.verdict,
-        openValidations,
-        decisionStatus,
-        tied.length > 1 ? tied.map((o) => o.label) : [],
-        tieBreakStage,
-      ),
+      plainLanguageSummary,
       criteriaWeights: weights,
       decisionStatus,
       confidence,
@@ -152,7 +179,95 @@ export class RecommendationEngineService {
       openValidations,
       budgetFeasibility,
       complianceGate,
+      retrievalStrategy,
     };
+  }
+
+  /** Risk Register entries from the Retrieval Strategy Assessment (none when it did not run). */
+  private buildRetrievalStrategyRisks(rs: RetrievalStrategyResult | null, input: AssessmentInput): RiskEntry[] {
+    if (!rs) return [];
+    const risks: RiskEntry[] = [];
+    const top = rs.approaches[0];
+    const mix = rs.normalizedQueryMix;
+    if (!rs.vectorDatabaseRequired && mix.semantic >= 0.35) {
+      risks.push({
+        id: 'risk-vectorless-semantic-recall',
+        category: 'search_quality',
+        description: `${Math.round(mix.semantic * 100)}% of questions are paraphrased / semantic; vectorless retrieval may miss answers that do not share wording with the source.`,
+        impact: 'medium', likelihood: 'medium',
+        mitigation: 'Include paraphrased questions in the golden set and keep a vector or hybrid fallback ready.',
+        status: 'open', validationRequired: true,
+      });
+    }
+    if (rs.vectorDatabaseRequired && mix.exact >= 0.3) {
+      risks.push({
+        id: 'risk-vector-exact-terms',
+        category: 'search_quality',
+        description: `${Math.round(mix.exact * 100)}% of questions use exact terms (IDs, codes, names), which pure vector similarity often misses.`,
+        impact: 'medium', likelihood: 'high',
+        mitigation: 'Keep a lexical (full-text) leg in retrieval - hybrid search - or route exact-term questions to keyword search.',
+        status: 'open', validationRequired: true,
+      });
+    }
+    if (top.approach === 'reasoning_navigation' || top.approach === 'long_context') {
+      risks.push({
+        id: 'risk-vectorless-llm-dependency',
+        category: 'cost',
+        description: `${top.label} spends LLM tokens on retrieval itself (~$${top.costPerQueryUsd} per query, ~$${Math.round(top.monthlyRunCostUsd).toLocaleString('en-US')} per month) and depends on model rate limits.`,
+        impact: 'medium', likelihood: 'medium',
+        mitigation: 'Measure calls and tokens per question on traced runs, use prompt caching, and set Token Observability alerts.',
+        status: 'open', validationRequired: true,
+      });
+      if (input.containsPii) {
+        risks.push({
+          id: 'risk-vectorless-data-to-llm',
+          category: 'compliance',
+          description: 'Vectorless retrieval sends more raw document text to the LLM on every query, and the data contains PII.',
+          impact: 'high', likelihood: 'medium',
+          mitigation: 'Confirm the model provider\'s data residency, retention and training terms; redact PII before prompting where possible.',
+          status: 'open', validationRequired: true,
+        });
+      }
+    }
+    if (rs.additionalRoutes.length) {
+      risks.push({
+        id: 'risk-retrieval-structured-questions',
+        category: 'search_quality',
+        description: `Document retrieval cannot reliably answer the analytics or relationship share of the questions; the query mix needs ${rs.additionalRoutes.join(' and ')}.`,
+        impact: 'medium', likelihood: 'high',
+        mitigation: 'Route those questions to a structured path (text-to-SQL or a knowledge graph) rather than document retrieval.',
+        status: 'open', validationRequired: false,
+      });
+    }
+    return risks;
+  }
+
+  /** Assumption Register entries recording how the Retrieval Strategy Assessment reached its numbers. */
+  private buildRetrievalStrategyAssumptions(rs: RetrievalStrategyResult | null, thresholds: Record<string, any>): AssumptionEntry[] {
+    if (!rs) return [];
+    const cfg = thresholds.retrievalStrategy;
+    return [
+      {
+        id: 'assumption-retrieval-corpus-tokens',
+        parameter: 'Corpus size in tokens',
+        value: `${rs.corpusTokens.toLocaleString('en-US')} tokens (documents x average KB x ${cfg.tokensPerKb} tokens per KB)`,
+        source: 'Calculated from the Discovery assessment',
+        type: 'calculated',
+        confidence: 'medium',
+        impact: `Decides whether long-context retrieval fits the ${cfg.contextWindowTokens.toLocaleString('en-US')}-token context window and drives index-build cost.`,
+        validationRequired: false,
+      },
+      {
+        id: 'assumption-retrieval-cost-directional',
+        parameter: 'Retrieval cost per query',
+        value: `List prices: LLM $${cfg.costModel.llmInputPerMillionTokens} / $${cfg.costModel.llmOutputPerMillionTokens} per million input / output tokens; ${cfg.costModel.activeHoursPerDay} active hours a day`,
+        source: 'thresholds.yaml retrievalStrategy.costModel',
+        type: 'directional',
+        confidence: 'low',
+        impact: 'Cost and latency per approach are directional comparisons, not quotes; replace with contracted model prices and measured token counts.',
+        validationRequired: true,
+      },
+    ];
   }
 
   /**

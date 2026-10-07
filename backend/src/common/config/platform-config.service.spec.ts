@@ -43,6 +43,11 @@ describe('PlatformConfigService', () => {
     expect(p.defaultAssessment.requiresHybridSearch).toBe(false);
     // Several navigation calls per question - left for the project to measure, not invented here
     expect(p.tokenObservabilityProfile.llmCallsPerRequest).toBeNull();
+    // Seeds the Retrieval Strategy Assessment so choosing the pattern runs the "is a vector DB needed?" check
+    expect(p.defaultAssessment.documentStructure).toBe('structured');
+    const mix = ['queryMixExactPercent', 'queryMixMultiHopPercent', 'queryMixSemanticPercent', 'queryMixAnalyticsPercent', 'queryMixRelationshipPercent']
+      .map((k) => p.defaultAssessment[k] as number);
+    expect(mix.reduce((a, b) => a + b, 0)).toBe(100);
   });
 
   it("does not fabricate a decision - every pattern's defaultAssessment is a partial input, never a platform pick", () => {

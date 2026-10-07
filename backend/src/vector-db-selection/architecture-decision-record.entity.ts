@@ -12,6 +12,7 @@ import {
   InfrastructureEstimate,
   PlainLanguageSummary,
   RankedAlternative,
+  RetrievalStrategyResult,
   RiskEntry,
   ScoredOption,
 } from '../recommendation-engine/recommendation.types';
@@ -93,6 +94,10 @@ export class ArchitectureDecisionRecord {
 
   @Column({ type: 'jsonb', nullable: true })
   complianceGate: ComplianceGateResult | null;
+
+  /** Retrieval Strategy Assessment ("is a vector database needed at all?"); null when Discovery had no query mix. */
+  @Column({ type: 'jsonb', nullable: true })
+  retrievalStrategy: RetrievalStrategyResult | null;
 
   @CreateDateColumn()
   createdAt: Date;

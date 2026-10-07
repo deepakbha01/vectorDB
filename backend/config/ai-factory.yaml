@@ -201,9 +201,11 @@ parameterImpact:
   # hasGpu, regulatoryRequirements).
   # corpus & scale
   environment: none
-  documentCount: [workload_profile, performance_benchmark, finops, token_observability]
+  # documentCount and avgDocumentSizeKb give the corpus size in tokens for the
+  # Retrieval Strategy Assessment, which runs inside vector_db_selection.
+  documentCount: [vector_db_selection, workload_profile, performance_benchmark, finops, token_observability]
   documentGrowthPercentPerMonth: [capacity, workload_profile, finops, token_observability]
-  avgDocumentSizeKb: none
+  avgDocumentSizeKb: [vector_db_selection]
   chunksPerDocument: [performance_benchmark, finops, token_observability]
   estimatedVectorCount: [data_embeddings, vector_db_selection, workload_profile, performance_benchmark]
   embeddingDimension: [data_embeddings, vector_db_selection]
@@ -261,7 +263,18 @@ parameterImpact:
   requiresAuditLogging: [vector_db_selection, security_governance]
   dataResidencyRequirement: [vector_db_selection, inference, workload_profile, infrastructure_design, security_governance]
   containsPii: [vector_db_selection, inference, workload_profile, rag_agent_architecture, security_governance]
-  regulatoryRequirements: [workload_profile, security_governance]
+  regulatoryRequirements: [vector_db_selection, workload_profile, security_governance]
+  # retrieval strategy - read by the Retrieval Strategy Assessment in vector_db_selection
+  documentStructure: [vector_db_selection]
+  contentModality: [vector_db_selection]
+  contentChangeFrequency: [vector_db_selection]
+  explainabilityNeed: [vector_db_selection]
+  queryMixExactPercent: [vector_db_selection]
+  queryMixMultiHopPercent: [vector_db_selection]
+  queryMixSemanticPercent: [vector_db_selection]
+  queryMixAnalyticsPercent: [vector_db_selection]
+  queryMixRelationshipPercent: [vector_db_selection]
+  isMultilingual: [vector_db_selection]
 
 # ---------------------------------------------------------------------------
 # Guided workflow (spec §20). `phases` are the existing deliverables backing a

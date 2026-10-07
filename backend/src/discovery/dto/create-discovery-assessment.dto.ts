@@ -12,9 +12,13 @@ import {
   Min,
 } from 'class-validator';
 import {
+  ContentChangeFrequency,
+  ContentModality,
   DataReplicationModel,
   DeploymentEnvironment,
+  DocumentStructure,
   Environment,
+  ExplainabilityNeed,
   OperationalCapability,
   QpsScope,
   SimilarityMetric,
@@ -306,4 +310,69 @@ export class CreateDiscoveryAssessmentDto {
   @IsString()
   @MaxLength(500)
   regulatoryRequirements?: string;
+
+  // ---- Retrieval Strategy Assessment (optional) ----
+  // Answers "does this workload need a vector database at all?". It runs only
+  // when at least one query-mix share is above zero; leave the section blank
+  // and Phase 4 behaves exactly as before.
+
+  @ApiProperty({ required: false, enum: DocumentStructure })
+  @IsOptional()
+  @IsEnum(DocumentStructure)
+  documentStructure?: DocumentStructure | null;
+
+  @ApiProperty({ required: false, enum: ContentModality })
+  @IsOptional()
+  @IsEnum(ContentModality)
+  contentModality?: ContentModality | null;
+
+  @ApiProperty({ required: false, enum: ContentChangeFrequency })
+  @IsOptional()
+  @IsEnum(ContentChangeFrequency)
+  contentChangeFrequency?: ContentChangeFrequency | null;
+
+  @ApiProperty({ required: false, enum: ExplainabilityNeed })
+  @IsOptional()
+  @IsEnum(ExplainabilityNeed)
+  explainabilityNeed?: ExplainabilityNeed | null;
+
+  @ApiProperty({ required: false, description: 'Share of questions (0-100) using exact terms - IDs, codes, names' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  queryMixExactPercent?: number | null;
+
+  @ApiProperty({ required: false, description: 'Share of questions (0-100) needing multi-hop reasoning or cross-references' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  queryMixMultiHopPercent?: number | null;
+
+  @ApiProperty({ required: false, description: 'Share of questions (0-100) that are paraphrased / fuzzy semantic' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  queryMixSemanticPercent?: number | null;
+
+  @ApiProperty({ required: false, description: 'Share of questions (0-100) that aggregate or analyse data' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  queryMixAnalyticsPercent?: number | null;
+
+  @ApiProperty({ required: false, description: 'Share of questions (0-100) about relationships between entities' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  queryMixRelationshipPercent?: number | null;
+
+  @ApiProperty({ required: false, description: 'Questions and documents span several languages' })
+  @IsOptional()
+  @IsBoolean()
+  isMultilingual?: boolean;
 }

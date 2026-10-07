@@ -1,5 +1,14 @@
 import { VectorPlatform } from '../projects/enums/platform.enum';
-import { DataReplicationModel, OperationalCapability, QpsScope, TenancyModel } from '../discovery/enums/discovery.enum';
+import {
+  ContentChangeFrequency,
+  ContentModality,
+  DataReplicationModel,
+  DocumentStructure,
+  ExplainabilityNeed,
+  OperationalCapability,
+  QpsScope,
+  TenancyModel,
+} from '../discovery/enums/discovery.enum';
 import { FitRating, PlainLanguageScorecardRow } from '../common/plain-language.types';
 
 export { FitRating, PlainLanguageScorecardRow } from '../common/plain-language.types';
@@ -53,6 +62,75 @@ export interface AssessmentInput {
   rpoMinutes: number;
   rtoMinutes: number;
   retentionDays: number;
+  // ---- Retrieval Strategy Assessment inputs (all optional; see retrieval-strategy.ts) ----
+  documentCount?: number;
+  avgDocumentSizeKb?: number;
+  regulatoryRequirements?: string | null;
+  documentStructure?: DocumentStructure | null;
+  contentModality?: ContentModality | null;
+  contentChangeFrequency?: ContentChangeFrequency | null;
+  explainabilityNeed?: ExplainabilityNeed | null;
+  queryMixExactPercent?: number | null;
+  queryMixMultiHopPercent?: number | null;
+  queryMixSemanticPercent?: number | null;
+  queryMixAnalyticsPercent?: number | null;
+  queryMixRelationshipPercent?: number | null;
+  isMultilingual?: boolean;
+}
+
+/** The five retrieval approaches the Retrieval Strategy Assessment compares. */
+export type RetrievalApproachId = 'long_context' | 'reasoning_navigation' | 'lexical' | 'vector_rag' | 'hybrid';
+/** Vectorless = no embeddings or vector index at all. */
+export type RetrievalFamily = 'vectorless' | 'vector' | 'hybrid';
+
+export interface RetrievalApproachScore {
+  approach: RetrievalApproachId;
+  label: string;
+  family: RetrievalFamily;
+  /** 0-100 fit score after any hard gate. */
+  score: number;
+  /** Set when a hard gate reduced the score (e.g. corpus larger than the context window). */
+  gate: { factor: number; reason: string } | null;
+  /** Directional cost and latency - list-price assumptions from thresholds.yaml. */
+  costPerQueryUsd: number;
+  monthlyRunCostUsd: number;
+  oneTimeBuildCostUsd: number;
+  estimatedLatencySeconds: number;
+  /** Why this approach is (or is not) feasible against the latency target and load. */
+  feasibilityNotes: string[];
+}
+
+export interface RetrievalFactor {
+  factor: string;
+  /** The project's input for this factor, in words. */
+  input: string;
+  weight: number;
+  /** Which family this factor favours for this project. */
+  leansTo: 'vectorless' | 'vector' | 'neutral';
+}
+
+/**
+ * Result of the Retrieval Strategy Assessment. It sits beside the platform
+ * ranking and never replaces it: when `vectorDatabaseRequired` is false the
+ * platform decision is the fallback if the vectorless evaluation fails.
+ */
+export interface RetrievalStrategyResult {
+  recommendedApproach: RetrievalApproachId;
+  recommendedFamily: RetrievalFamily;
+  /** false when a vectorless approach wins - no dedicated vector database is needed. */
+  vectorDatabaseRequired: boolean;
+  headline: string;
+  rationale: string;
+  /** Additional routes the query mix needs, e.g. text-to-SQL for analytics questions. */
+  additionalRoutes: string[];
+  /** True when the top two approaches are within `closeCallPoints` - decide by evaluation. */
+  closeCall: boolean;
+  approaches: RetrievalApproachScore[];
+  factors: RetrievalFactor[];
+  corpusTokens: number;
+  normalizedQueryMix: { exact: number; multiHop: number; semantic: number; analytics: number; relationship: number };
+  referenceArchitecture: Array<{ layer: string; detail: string }>;
+  evaluationPlan: string[];
 }
 
 export interface CriteriaScores {
@@ -231,6 +309,8 @@ export interface RecommendationResult {
   openValidations: string[];
   budgetFeasibility: BudgetFeasibility | null;
   complianceGate: ComplianceGateResult;
+  /** "Does this need a vector database at all?" - null when the Discovery assessment has no query mix. */
+  retrievalStrategy: RetrievalStrategyResult | null;
 }
 
 export interface SensitivityScenario {

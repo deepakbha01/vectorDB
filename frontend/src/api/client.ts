@@ -187,6 +187,10 @@ export type TenancyModel = 'single_tenant' | 'shared_multi_tenant' | 'dedicated_
 export type DataReplicationModel = 'none' | 'active_passive' | 'active_active';
 export type QpsScope = 'aggregate' | 'per_region' | 'per_index';
 export type SimilarityMetric = 'cosine' | 'dot_product' | 'euclidean';
+export type DocumentStructure = 'structured' | 'semi_structured' | 'short_snippets';
+export type ContentModality = 'text' | 'text_and_tables' | 'multimodal';
+export type ContentChangeFrequency = 'static' | 'weekly' | 'daily' | 'realtime';
+export type ExplainabilityNeed = 'standard' | 'high' | 'regulated';
 
 export interface DiscoveryAssessmentInput {
   environment: Environment;
@@ -246,6 +250,17 @@ export interface DiscoveryAssessmentInput {
   dataResidencyRequirement?: string;
   containsPii: boolean;
   regulatoryRequirements?: string;
+  // Retrieval Strategy Assessment (optional) - runs only when a query mix is given
+  documentStructure?: DocumentStructure | null;
+  contentModality?: ContentModality | null;
+  contentChangeFrequency?: ContentChangeFrequency | null;
+  explainabilityNeed?: ExplainabilityNeed | null;
+  queryMixExactPercent?: number | null;
+  queryMixMultiHopPercent?: number | null;
+  queryMixSemanticPercent?: number | null;
+  queryMixAnalyticsPercent?: number | null;
+  queryMixRelationshipPercent?: number | null;
+  isMultilingual?: boolean;
 }
 
 export interface DiscoveryAssessment extends DiscoveryAssessmentInput {
@@ -404,7 +419,41 @@ export interface ArchitectureDecisionRecord {
   openValidations: string[];
   budgetFeasibility: BudgetFeasibility | null;
   complianceGate: ComplianceGateResult | null;
+  /** "Is a vector database needed at all?" - null/absent when Discovery had no query mix or the ADR predates it. */
+  retrievalStrategy?: RetrievalStrategyResult | null;
   createdAt: string;
+}
+
+export type RetrievalApproachId = 'long_context' | 'reasoning_navigation' | 'lexical' | 'vector_rag' | 'hybrid';
+export type RetrievalFamily = 'vectorless' | 'vector' | 'hybrid';
+
+export interface RetrievalApproachScore {
+  approach: RetrievalApproachId;
+  label: string;
+  family: RetrievalFamily;
+  score: number;
+  gate: { factor: number; reason: string } | null;
+  costPerQueryUsd: number;
+  monthlyRunCostUsd: number;
+  oneTimeBuildCostUsd: number;
+  estimatedLatencySeconds: number;
+  feasibilityNotes: string[];
+}
+
+export interface RetrievalStrategyResult {
+  recommendedApproach: RetrievalApproachId;
+  recommendedFamily: RetrievalFamily;
+  vectorDatabaseRequired: boolean;
+  headline: string;
+  rationale: string;
+  additionalRoutes: string[];
+  closeCall: boolean;
+  approaches: RetrievalApproachScore[];
+  factors: Array<{ factor: string; input: string; weight: number; leansTo: 'vectorless' | 'vector' | 'neutral' }>;
+  corpusTokens: number;
+  normalizedQueryMix: { exact: number; multiHop: number; semantic: number; analytics: number; relationship: number };
+  referenceArchitecture: Array<{ layer: string; detail: string }>;
+  evaluationPlan: string[];
 }
 
 export interface DiscoveryOutcome {
