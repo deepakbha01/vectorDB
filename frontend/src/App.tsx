@@ -33,6 +33,7 @@ import { TokenObservabilityPage } from './pages/TokenObservabilityPage';
 import { DataExplorerPage } from './pages/DataExplorerPage';
 import { AzureConnectPage } from './pages/AzureConnectPage';
 import { AzureDiscoverPage } from './pages/AzureDiscoverPage';
+import { AzureIntakePage } from './pages/AzureIntakePage';
 
 export function App() {
   return (
@@ -72,6 +73,7 @@ export function App() {
           <Route path="/projects/:id/data-explorer" element={<DataExplorerPage />} />
           <Route path="/projects/:id/azure-builder/connect" element={<AzureConnectPage />} />
           <Route path="/projects/:id/azure-builder/discover" element={<AzureDiscoverPage />} />
+          <Route path="/projects/:id/azure-builder/intake" element={<AzureIntakePage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

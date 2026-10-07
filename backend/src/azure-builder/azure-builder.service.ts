@@ -11,6 +11,11 @@ import { AzureRole, ConnectionSource, ProfileSource } from './azure-builder.enum
 import { DISCOVERY_QUERIES, SAMPLE_FORM_INPUT, SAMPLE_RESOURCE_GRAPH_ROWS, SAMPLE_SUBSCRIPTION_ID } from './discovery-queries';
 import { buildEnvironmentProfile, deriveConstraints, ProfileFormInput, readResourceGraphRows, validateEnvironmentProfile } from './environment-profile';
 import { CreateAzureConnectionDto, CreateEnvironmentProfileDto } from './dto/azure-builder.dto';
+import { CreateUseCaseDto, OverridePatternDto } from './dto/use-case.dto';
+import { AzureUseCase } from './azure-use-case.entity';
+import { DiscoveryService } from '../discovery/discovery.service';
+import { buildUseCaseSpec, classifyUseCase, IntakeAnswers, SolutionPattern, SOLUTION_PATTERNS, validateIntake } from './use-case-spec';
+import { prefillIntake } from './use-case-prefill';
 
 /** What the declared role allows. Offline it is the user's word; the live wave reads Microsoft.Authorization. */
 export interface PermissionLevel {
@@ -37,6 +42,8 @@ export interface AzureBuilderState {
   environmentProfile: AzureEnvironmentProfile | null;
   /** True when the latest profile was taken for an older connection (e.g. the region changed) - re-run Discover. */
   profileStale: boolean;
+  /** Latest UseCaseSpec version (Phase 2), or null before intake. */
+  useCase: AzureUseCase | null;
 }
 
 /**
@@ -50,7 +57,9 @@ export class AzureBuilderService {
   constructor(
     @InjectRepository(AzureConnection) private readonly connections: Repository<AzureConnection>,
     @InjectRepository(AzureEnvironmentProfile) private readonly profiles: Repository<AzureEnvironmentProfile>,
+    @InjectRepository(AzureUseCase) private readonly useCases: Repository<AzureUseCase>,
     private readonly projectsService: ProjectsService,
+    private readonly discoveryService: DiscoveryService,
   ) {}
 
   async getState(projectId: string, user: AuthenticatedUser): Promise<AzureBuilderState> {
@@ -62,6 +71,77 @@ export class AzureBuilderService {
       connection: active ? { ...active, permission: permissionFor(active.role, active.source) } : null,
       environmentProfile,
       profileStale: !!(active && environmentProfile && environmentProfile.connectionVersion !== active.version),
+      useCase: await this.latestUseCase(projectId),
+    };
+  }
+
+  // ---- Phase 2 - Use case intake ----
+
+  /** Wizard defaults from what the project already knows (name, use case, connection, Evectorize Discovery). */
+  async intakePrefill(projectId: string, user: AuthenticatedUser) {
+    const project = await this.projectsService.findOne(projectId, user);
+    const connection = await this.latestConnection(projectId);
+    const discovery = await this.discoveryService.getLatest(projectId, user).catch(() => null);
+    return {
+      ...prefillIntake(project, connection?.active ? connection : null, discovery?.assessment ?? null),
+      patterns: SOLUTION_PATTERNS,
+    };
+  }
+
+  /** Classifies the answers and stores a new UseCaseSpec version (spec 4.3). */
+  async submitUseCase(projectId: string, user: AuthenticatedUser, dto: CreateUseCaseDto) {
+    await this.projectsService.findOne(projectId, user);
+    const answers = this.toAnswers(dto);
+    const problems = validateIntake(answers);
+    if (problems.length) throw new BadRequestException(problems);
+    const classification = classifyUseCase(answers);
+    const saved = await this.saveUseCase(projectId, user, buildUseCaseSpec(answers, classification, user.email), classification);
+    this.logger.log(`user=${user.email} action=azure_builder_intake projectId=${projectId} version=${saved.version} pattern=${classification.pattern} risk=${classification.riskClass}`);
+    return saved;
+  }
+
+  /** Records an architect's override of the classified pattern as a new version; the classifier's output is kept. */
+  async overridePattern(projectId: string, user: AuthenticatedUser, dto: OverridePatternDto) {
+    await this.projectsService.findOne(projectId, user);
+    const latest = await this.latestUseCase(projectId);
+    if (!latest) throw new BadRequestException('Complete the use case intake before overriding its pattern.');
+    const { pattern: _pattern, owner, ...answers } = latest.spec;
+    const spec = buildUseCaseSpec(answers, latest.classification, owner, { pattern: dto.pattern as SolutionPattern, reason: dto.reason.trim(), by: user.email });
+    const saved = await this.saveUseCase(projectId, user, spec, latest.classification);
+    this.logger.log(`user=${user.email} action=azure_builder_pattern_override projectId=${projectId} version=${saved.version} from=${latest.classification.pattern} to=${dto.pattern}`);
+    return saved;
+  }
+
+  async useCaseHistory(projectId: string, user: AuthenticatedUser) {
+    await this.projectsService.findOne(projectId, user);
+    return this.useCases.find({ where: { project: { id: projectId } }, order: { version: 'DESC' } });
+  }
+
+  private async saveUseCase(projectId: string, user: AuthenticatedUser, spec: AzureUseCase['spec'], classification: AzureUseCase['classification']) {
+    const version = (await this.useCases.count({ where: { project: { id: projectId } } })) + 1;
+    return this.useCases.save(this.useCases.create({ project: { id: projectId } as Project, createdBy: { id: user.id } as User, version, spec, classification }));
+  }
+
+  private latestUseCase(projectId: string) {
+    return this.useCases.findOne({ where: { project: { id: projectId } }, order: { version: 'DESC' } });
+  }
+
+  /** Normalises the DTO: trims text, lower-cases regions, drops blank KPIs. */
+  private toAnswers(dto: CreateUseCaseDto): IntakeAnswers {
+    return {
+      name: dto.name.trim(),
+      business: { problem: dto.business.problem.trim(), kpis: dto.business.kpis.map((k) => k.trim()).filter(Boolean), sponsor: dto.business.sponsor.trim(), costCenter: dto.business.costCenter.trim() },
+      users: { type: dto.users.type, count: dto.users.count, peakConcurrent: dto.users.peakConcurrent, channels: [...new Set(dto.users.channels)] },
+      data: dto.data.map((d) => ({ ...d, source: d.source.trim(), format: d.format.trim() })),
+      constraints: {
+        regions: [...new Set(dto.constraints.regions.map((r) => r.trim().toLowerCase().replace(/\s+/g, '')).filter(Boolean))],
+        dataResidency: dto.constraints.dataResidency?.trim() || null,
+        compliance: dto.constraints.compliance.map((c) => c.trim()).filter(Boolean),
+        latencyMs: dto.constraints.latencyMs ?? null,
+        availability: dto.constraints.availability?.trim() || null,
+        monthlyBudgetUsd: dto.constraints.monthlyBudgetUsd ?? null,
+      },
+      environment: dto.environment,
     };
   }
 

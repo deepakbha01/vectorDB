@@ -1,15 +1,17 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { DiscoveryModule } from '../discovery/discovery.module';
 import { ProjectsModule } from '../projects/projects.module';
 import { AzureBuilderController } from './azure-builder.controller';
 import { AzureBuilderEnabledGuard } from './azure-builder-enabled.guard';
 import { AzureBuilderService } from './azure-builder.service';
 import { AzureConnection } from './azure-connection.entity';
 import { AzureEnvironmentProfile } from './azure-environment-profile.entity';
+import { AzureUseCase } from './azure-use-case.entity';
 
-/** Azure AI Factory Builder (Wave 1: Phase 0 Connect, Phase 1 Discover). Behind AZURE_BUILDER_ENABLED. */
+/** Azure AI Factory Builder (Wave 1: Connect, Discover; Wave 2: Use case intake). Behind AZURE_BUILDER_ENABLED. */
 @Module({
-  imports: [TypeOrmModule.forFeature([AzureConnection, AzureEnvironmentProfile]), ProjectsModule],
+  imports: [TypeOrmModule.forFeature([AzureConnection, AzureEnvironmentProfile, AzureUseCase]), ProjectsModule, DiscoveryModule],
   controllers: [AzureBuilderController],
   providers: [AzureBuilderService, AzureBuilderEnabledGuard],
 })
