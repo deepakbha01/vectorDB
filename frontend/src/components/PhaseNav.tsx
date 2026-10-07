@@ -18,7 +18,7 @@ const PHASES: Array<{ key: ProjectPhase; label: string; path?: (projectId: strin
 const AZURE_BUILDER_PHASES: Array<{ label: string; path?: string; wave?: string }> = [
   { label: '0 · Connect', path: 'connect' },
   { label: '1 · Discover', path: 'discover' },
-  { label: '2 · Use case intake', wave: 'Wave 2' },
+  { label: '2 · Use case intake', path: 'intake' },
   { label: '3 · Architect', wave: 'Wave 3' },
   { label: '4 · Generate IaC', wave: 'Wave 4' },
   { label: '5 · Validate & approve', wave: 'Wave 5' },

@@ -35,6 +35,7 @@ import { AiIngestKey } from './ai-factory/token-observability/ingest-key.entity'
 import { ProjectConnectionProfile } from './database-adapters/connection/project-connection-profile.entity';
 import { AzureConnection } from './azure-builder/azure-connection.entity';
 import { AzureEnvironmentProfile } from './azure-builder/azure-environment-profile.entity';
+import { AzureUseCase } from './azure-builder/azure-use-case.entity';
 import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entity';
 
 config();
@@ -94,6 +95,7 @@ export const AppDataSource = new DataSource({
     ProjectConnectionProfile,
     AzureConnection,
     AzureEnvironmentProfile,
+    AzureUseCase,
     AiTokenAlert,
   ],
   migrations: ['src/migrations/*.ts'],

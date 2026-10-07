@@ -9,6 +9,7 @@ import { UserRole } from '../users/user.entity';
 import { AzureBuilderEnabledGuard } from './azure-builder-enabled.guard';
 import { AzureBuilderService } from './azure-builder.service';
 import { CreateAzureConnectionDto, CreateEnvironmentProfileDto } from './dto/azure-builder.dto';
+import { CreateUseCaseDto, OverridePatternDto } from './dto/use-case.dto';
 
 /**
  * Azure AI Factory Builder, scoped to a project. Reads are open to project
@@ -64,5 +65,32 @@ export class AzureBuilderController {
   @Get('discovery-queries')
   queries() {
     return this.service.discoveryQueries();
+  }
+
+  // ---- Phase 2 - Use case intake ----
+
+  /** Wizard defaults from the project, its connection and its Evectorize Discovery, with where each came from. */
+  @Get('use-cases/prefill')
+  prefill(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.intakePrefill(projectId, user);
+  }
+
+  /** Classifies the wizard answers and stores a new UseCaseSpec version. */
+  @Post('use-cases')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  submitUseCase(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: CreateUseCaseDto) {
+    return this.service.submitUseCase(projectId, user, dto);
+  }
+
+  /** Overrides the classified pattern with a reason; recorded as a new version. */
+  @Post('use-cases/override')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  overridePattern(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: OverridePatternDto) {
+    return this.service.overridePattern(projectId, user, dto);
+  }
+
+  @Get('use-cases')
+  useCases(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.useCaseHistory(projectId, user);
   }
 }
