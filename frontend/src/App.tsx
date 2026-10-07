@@ -31,6 +31,8 @@ import { OperationsModelPage } from './pages/OperationsModelPage';
 import { FinalRecommendationPage } from './pages/FinalRecommendationPage';
 import { TokenObservabilityPage } from './pages/TokenObservabilityPage';
 import { DataExplorerPage } from './pages/DataExplorerPage';
+import { AzureConnectPage } from './pages/AzureConnectPage';
+import { AzureDiscoverPage } from './pages/AzureDiscoverPage';
 
 export function App() {
   return (
@@ -68,6 +70,8 @@ export function App() {
           <Route path="/projects/:id/final-recommendation" element={<FinalRecommendationPage />} />
           <Route path="/projects/:id/token-observability" element={<TokenObservabilityPage />} />
           <Route path="/projects/:id/data-explorer" element={<DataExplorerPage />} />
+          <Route path="/projects/:id/azure-builder/connect" element={<AzureConnectPage />} />
+          <Route path="/projects/:id/azure-builder/discover" element={<AzureDiscoverPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

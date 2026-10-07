@@ -9,6 +9,8 @@ export interface FeatureFlags {
   tokenObservability: boolean;
   /** Data Explorer: read-only view into the project's target vector database. Independent of the AI Factory. */
   dataExplorer: boolean;
+  /** Azure AI Factory Builder: use case -> Azure architecture -> Bicep. Independent of the AI Factory flag. */
+  azureBuilder: boolean;
 }
 
 const TRUTHY = new Set(['1', 'true', 'yes', 'on']);
@@ -34,6 +36,7 @@ export class FeaturesController {
       aiFactory,
       tokenObservability: aiFactory && this.on('TOKEN_OBSERVABILITY_ENABLED'),
       dataExplorer: this.on('DATA_EXPLORER_ENABLED'),
+      azureBuilder: this.on('AZURE_BUILDER_ENABLED'),
     };
   }
 }

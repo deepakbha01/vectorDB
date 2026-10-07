@@ -7,9 +7,11 @@ export interface FeatureFlags {
   tokenObservability: boolean;
   /** Data Explorer - read-only view into the target vector database; independent of the AI Factory. */
   dataExplorer: boolean;
+  /** Azure AI Factory Builder - use case to Azure architecture and Bicep; independent of the AI Factory. */
+  azureBuilder: boolean;
 }
 
-const OFF: FeatureFlags = { aiFactory: false, tokenObservability: false, dataExplorer: false };
+const OFF: FeatureFlags = { aiFactory: false, tokenObservability: false, dataExplorer: false, azureBuilder: false };
 let cached: Promise<FeatureFlags> | null = null;
 
 /** Fetched once per page load; any failure falls back to every flag off (the existing workflow). */

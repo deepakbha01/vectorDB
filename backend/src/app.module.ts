@@ -62,6 +62,9 @@ import { AiUsageRollup } from './ai-factory/token-observability/usage-rollup.ent
 import { AiSimulationRun } from './ai-factory/token-observability/simulation-run.entity';
 import { AiIngestKey } from './ai-factory/token-observability/ingest-key.entity';
 import { ProjectConnectionProfile } from './database-adapters/connection/project-connection-profile.entity';
+import { AzureConnection } from './azure-builder/azure-connection.entity';
+import { AzureEnvironmentProfile } from './azure-builder/azure-environment-profile.entity';
+import { AzureBuilderModule } from './azure-builder/azure-builder.module';
 import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entity';
 
 @Module({
@@ -110,6 +113,8 @@ import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entit
           AiSimulationRun,
           AiIngestKey,
           ProjectConnectionProfile,
+          AzureConnection,
+          AzureEnvironmentProfile,
           AiTokenAlert,
         ],
         // Sprint 1 uses schema sync for velocity. Replace with TypeORM migrations
@@ -155,6 +160,7 @@ import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entit
     AiFactoryModule,
     DataExplorerModule,
     ConnectionProfilesModule,
+    AzureBuilderModule,
   ],
   controllers: [HealthController, FeaturesController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
