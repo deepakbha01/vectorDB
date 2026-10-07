@@ -26,6 +26,8 @@ describe('suggestUseCase', () => {
     ['Incident Log Analyzer', 'log-observability-search', 'high'],
     ['Product Recommendation Service', 'recommendation-engine', 'high'],
     ['Agent Memory Store', 'agentic-ai-memory', 'high'],
+    ['PageIndex Annual Report Reader', 'vectorless-document-reasoning', 'high'],
+    ['Vectorless Maintenance Manual Navigator', 'vectorless-document-reasoning', 'high'],
   ])('matches "%s" to %s (%s confidence)', (name, patternId, confidence) => {
     const s = suggestUseCase(name, patterns);
     expect(s.patternId).toBe(patternId);

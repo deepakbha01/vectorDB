@@ -14,9 +14,9 @@ describe('PlatformConfigService', () => {
     expect(service.getSupportedPlatforms().length).toBeGreaterThan(0);
   });
 
-  it('loads the AI Factory Pattern Library with all 12 patterns and required fields', () => {
+  it('loads the AI Factory Pattern Library with all 13 patterns and required fields', () => {
     const patterns = service.getPatternCatalog();
-    expect(patterns).toHaveLength(12);
+    expect(patterns).toHaveLength(13);
 
     for (const pattern of patterns) {
       expect(typeof pattern.id).toBe('string');
@@ -33,6 +33,16 @@ describe('PlatformConfigService', () => {
     expect(ids).toContain('enterprise-document-rag');
     expect(ids).toContain('healthcare-rag');
     expect(ids).toContain('high-qps-enterprise-search');
+  });
+
+  it('includes a vectorless pattern that seeds no vector count and relies on full-text search', () => {
+    const p = service.getPatternCatalog().find((x) => x.id === 'vectorless-document-reasoning')!;
+    expect(p).toBeDefined();
+    expect(p.defaultAssessment.estimatedVectorCount).toBeUndefined();
+    expect(p.defaultAssessment.requiresFullTextSearch).toBe(true);
+    expect(p.defaultAssessment.requiresHybridSearch).toBe(false);
+    // Several navigation calls per question - left for the project to measure, not invented here
+    expect(p.tokenObservabilityProfile.llmCallsPerRequest).toBeNull();
   });
 
   it("does not fabricate a decision - every pattern's defaultAssessment is a partial input, never a platform pick", () => {
