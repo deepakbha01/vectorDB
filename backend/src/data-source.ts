@@ -36,6 +36,7 @@ import { ProjectConnectionProfile } from './database-adapters/connection/project
 import { AzureConnection } from './azure-builder/azure-connection.entity';
 import { AzureEnvironmentProfile } from './azure-builder/azure-environment-profile.entity';
 import { AzureUseCase } from './azure-builder/azure-use-case.entity';
+import { AzureArchitecture } from './azure-builder/azure-architecture.entity';
 import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entity';
 
 config();
@@ -96,6 +97,7 @@ export const AppDataSource = new DataSource({
     AzureConnection,
     AzureEnvironmentProfile,
     AzureUseCase,
+    AzureArchitecture,
     AiTokenAlert,
   ],
   migrations: ['src/migrations/*.ts'],

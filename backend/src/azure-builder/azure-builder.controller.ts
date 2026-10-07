@@ -10,6 +10,7 @@ import { AzureBuilderEnabledGuard } from './azure-builder-enabled.guard';
 import { AzureBuilderService } from './azure-builder.service';
 import { CreateAzureConnectionDto, CreateEnvironmentProfileDto } from './dto/azure-builder.dto';
 import { CreateUseCaseDto, OverridePatternDto } from './dto/use-case.dto';
+import { GenerateArchitectureDto } from './dto/architecture.dto';
 
 /**
  * Azure AI Factory Builder, scoped to a project. Reads are open to project
@@ -92,5 +93,19 @@ export class AzureBuilderController {
   @Get('use-cases')
   useCases(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.service.useCaseHistory(projectId, user);
+  }
+
+  // ---- Phase 3 - Architect ----
+
+  /** Designs the architecture from the latest use case and Environment Profile, with the architect's toggles. New version each call. */
+  @Post('architectures')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  generateArchitecture(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: GenerateArchitectureDto) {
+    return this.service.generateArchitecture(projectId, user, dto);
+  }
+
+  @Get('architectures')
+  architectures(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.architectureHistory(projectId, user);
   }
 }

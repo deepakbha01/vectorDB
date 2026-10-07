@@ -16,6 +16,10 @@ import { AzureUseCase } from './azure-use-case.entity';
 import { DiscoveryService } from '../discovery/discovery.service';
 import { buildUseCaseSpec, classifyUseCase, IntakeAnswers, SolutionPattern, SOLUTION_PATTERNS, validateIntake } from './use-case-spec';
 import { prefillIntake } from './use-case-prefill';
+import { AzureArchitecture } from './azure-architecture.entity';
+import { ArchitectureError, DEFAULT_OPTIONS, designArchitecture } from './architecture';
+import { loadAzureCatalog } from './architecture-catalog';
+import { GenerateArchitectureDto } from './dto/architecture.dto';
 
 /** What the declared role allows. Offline it is the user's word; the live wave reads Microsoft.Authorization. */
 export interface PermissionLevel {
@@ -44,10 +48,14 @@ export interface AzureBuilderState {
   profileStale: boolean;
   /** Latest UseCaseSpec version (Phase 2), or null before intake. */
   useCase: AzureUseCase | null;
+  /** Latest ArchitectureSpec version (Phase 3), or null before the first design. */
+  architecture: AzureArchitecture | null;
+  /** True when a newer use case or Environment Profile exists than the architecture was designed from. */
+  architectureStale: boolean;
 }
 
 /**
- * Azure AI Factory Builder - Phases 0 (Connect) and 1 (Discover).
+ * Azure AI Factory Builder - Phases 0 (Connect), 1 (Discover), 2 (Use case intake) and 3 (Architect).
  * Offline-first: no Azure call is made and no credential is accepted or stored.
  */
 @Injectable()
@@ -58,6 +66,7 @@ export class AzureBuilderService {
     @InjectRepository(AzureConnection) private readonly connections: Repository<AzureConnection>,
     @InjectRepository(AzureEnvironmentProfile) private readonly profiles: Repository<AzureEnvironmentProfile>,
     @InjectRepository(AzureUseCase) private readonly useCases: Repository<AzureUseCase>,
+    @InjectRepository(AzureArchitecture) private readonly architectures: Repository<AzureArchitecture>,
     private readonly projectsService: ProjectsService,
     private readonly discoveryService: DiscoveryService,
   ) {}
@@ -67,11 +76,15 @@ export class AzureBuilderService {
     const connection = await this.latestConnection(projectId);
     const environmentProfile = await this.profiles.findOne({ where: { project: { id: projectId } }, order: { version: 'DESC' } });
     const active = connection?.active ? connection : null;
+    const useCase = await this.latestUseCase(projectId);
+    const architecture = await this.latestArchitecture(projectId);
     return {
       connection: active ? { ...active, permission: permissionFor(active.role, active.source) } : null,
       environmentProfile,
       profileStale: !!(active && environmentProfile && environmentProfile.connectionVersion !== active.version),
-      useCase: await this.latestUseCase(projectId),
+      useCase,
+      architecture,
+      architectureStale: !!(architecture && (architecture.useCaseVersion !== useCase?.version || architecture.profileVersion !== environmentProfile?.version)),
     };
   }
 
@@ -143,6 +156,57 @@ export class AzureBuilderService {
       },
       environment: dto.environment,
     };
+  }
+
+  // ---- Phase 3 - Architect ----
+
+  /** Runs the rules engine on the latest use case and Environment Profile and stores a new ArchitectureSpec version. */
+  async generateArchitecture(projectId: string, user: AuthenticatedUser, dto: GenerateArchitectureDto) {
+    await this.projectsService.findOne(projectId, user);
+    const useCase = await this.latestUseCase(projectId);
+    if (!useCase) throw new BadRequestException('Complete the use case intake (Phase 2) before designing the architecture.');
+    const connection = await this.latestConnection(projectId);
+    if (!connection?.active) throw new BadRequestException('Connect a target subscription (Phase 0) before designing the architecture.');
+    const profile = await this.profiles.findOne({ where: { project: { id: projectId } }, order: { version: 'DESC' } });
+    if (!profile) throw new BadRequestException('Run Discover (Phase 1) before designing the architecture.');
+    if (profile.connectionVersion !== connection.version) throw new BadRequestException('The connection changed since the last Discover - run Discover (Phase 1) again first.');
+
+    const options = {
+      apiGateway: dto.apiGateway === undefined ? DEFAULT_OPTIONS.apiGateway : dto.apiGateway,
+      chatHistory: dto.chatHistory ?? DEFAULT_OPTIONS.chatHistory,
+      deployment: dto.deployment ?? DEFAULT_OPTIONS.deployment,
+    };
+    let spec;
+    try {
+      spec = designArchitecture({
+        useCase: useCase.spec,
+        useCaseId: useCase.id,
+        useCaseVersion: useCase.version,
+        profile: profile.profile,
+        profileVersion: profile.version,
+        connection: { region: connection.region, deploymentModel: connection.deploymentModel },
+        options,
+        catalog: loadAzureCatalog(),
+      });
+    } catch (err) {
+      if (err instanceof ArchitectureError) throw new BadRequestException(err.message);
+      throw err;
+    }
+    const version = (await this.architectures.count({ where: { project: { id: projectId } } })) + 1;
+    const saved = await this.architectures.save(
+      this.architectures.create({ project: { id: projectId } as Project, createdBy: { id: user.id } as User, version, useCaseVersion: useCase.version, profileVersion: profile.version, spec }),
+    );
+    this.logger.log(`user=${user.email} action=azure_builder_architect projectId=${projectId} version=${version} components=${spec.components.length} monthlyUsd=${spec.cost.monthlyUsd}`);
+    return saved;
+  }
+
+  async architectureHistory(projectId: string, user: AuthenticatedUser) {
+    await this.projectsService.findOne(projectId, user);
+    return this.architectures.find({ where: { project: { id: projectId } }, order: { version: 'DESC' } });
+  }
+
+  private latestArchitecture(projectId: string) {
+    return this.architectures.findOne({ where: { project: { id: projectId } }, order: { version: 'DESC' } });
   }
 
   async connect(projectId: string, user: AuthenticatedUser, dto: CreateAzureConnectionDto) {
