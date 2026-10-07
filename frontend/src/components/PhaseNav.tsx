@@ -14,6 +14,18 @@ const PHASES: Array<{ key: ProjectPhase; label: string; path?: (projectId: strin
   { key: 'capacity', label: '8. Capacity', path: (id) => `/projects/${id}/capacity` },
 ];
 
+/** Azure AI Factory Builder phases (spec section 4). Phases without a path are planned for a later wave. */
+const AZURE_BUILDER_PHASES: Array<{ label: string; path?: string; wave?: string }> = [
+  { label: '0 · Connect', path: 'connect' },
+  { label: '1 · Discover', path: 'discover' },
+  { label: '2 · Use case intake', wave: 'Wave 2' },
+  { label: '3 · Architect', wave: 'Wave 3' },
+  { label: '4 · Generate IaC', wave: 'Wave 4' },
+  { label: '5 · Validate & approve', wave: 'Wave 5' },
+  { label: '6 · Deploy', wave: 'Wave 5' },
+  { label: '7 · Operate', wave: 'Wave 6' },
+];
+
 export function PhaseNav({ project }: { project: Project }) {
   // AI Factory additions render only when the flag is on; with it off this component is unchanged.
   const features = useFeatures();
@@ -154,6 +166,29 @@ export function PhaseNav({ project }: { project: Project }) {
           )}
         </ul>
       </div>
+      {features.azureBuilder && (
+        <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 6 }}>Azure Builder</div>
+          <ul className="phase-nav">
+            {AZURE_BUILDER_PHASES.map((p) =>
+              p.path ? (
+                <li key={p.label}>
+                  <NavLink to={`/projects/${project.id}/azure-builder/${p.path}`} className={({ isActive }) => (isActive ? 'active' : '')}>
+                    {p.label}
+                  </NavLink>
+                </li>
+              ) : (
+                <li key={p.label}>
+                  <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, padding: '8px 10px', opacity: 0.5 }}>
+                    {p.label}
+                    <span className="status-pill" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{p.wave}</span>
+                  </span>
+                </li>
+              ),
+            )}
+          </ul>
+        </div>
+      )}
       <div style={{ margin: '16px 8px 0', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
         <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 6 }}>Project tools</div>
         <ul className="phase-nav">

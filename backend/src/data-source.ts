@@ -33,6 +33,8 @@ import { AiUsageRollup } from './ai-factory/token-observability/usage-rollup.ent
 import { AiSimulationRun } from './ai-factory/token-observability/simulation-run.entity';
 import { AiIngestKey } from './ai-factory/token-observability/ingest-key.entity';
 import { ProjectConnectionProfile } from './database-adapters/connection/project-connection-profile.entity';
+import { AzureConnection } from './azure-builder/azure-connection.entity';
+import { AzureEnvironmentProfile } from './azure-builder/azure-environment-profile.entity';
 import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entity';
 
 config();
@@ -90,6 +92,8 @@ export const AppDataSource = new DataSource({
     AiSimulationRun,
     AiIngestKey,
     ProjectConnectionProfile,
+    AzureConnection,
+    AzureEnvironmentProfile,
     AiTokenAlert,
   ],
   migrations: ['src/migrations/*.ts'],
