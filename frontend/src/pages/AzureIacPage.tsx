@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { apiClient, extractErrorDetails, extractErrorMessage, Project } from '../api/client';
 import { useFeatures } from '../api/features';
-import { AzureBuilderState, AzureIacBundle, azureBuilderApi, IacDiagnostic } from '../api/azureBuilder';
+import { AzureBuilderState, AzureIacBundle, azureBuilderApi, EnvInputs, IacDiagnostic, TARGET_ENVS, TargetEnv } from '../api/azureBuilder';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
@@ -44,13 +44,17 @@ export function AzureIacPage() {
   const [failed, setFailed] = useState<IacDiagnostic[]>([]);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [inputs, setInputs] = useState<Partial<Record<TargetEnv, EnvInputs>>>({});
 
   const load = async (initial = false) => {
     if (!id) return;
     const [s, h] = await Promise.all([azureBuilderApi.state(id), azureBuilderApi.iacBundles(id)]);
     setState(s);
     setHistory(h);
-    if (initial && h[0]) setWorkload(h[0].workload);
+    if (initial && h[0]) {
+      setWorkload(h[0].workload);
+      setInputs(h[0].inputs ?? {});
+    }
   };
 
   useEffect(() => {
@@ -69,8 +73,9 @@ export function AzureIacPage() {
     setFailed([]);
     setBusy(true);
     try {
-      const b = await azureBuilderApi.generateIac(id, workload.trim() ? { workload: workload.trim() } : {});
+      const b = await azureBuilderApi.generateIac(id, { ...(workload.trim() ? { workload: workload.trim() } : {}), inputs });
       setWorkload(b.workload);
+      setInputs(b.inputs ?? {});
       await load();
     } catch (err) {
       setError(extractErrorMessage(err, 'The infrastructure code could not be generated.'));
@@ -100,6 +105,14 @@ export function AzureIacPage() {
   const file = bundle?.files.find((f) => f.path === openFile) ?? bundle?.files[0] ?? null;
   const v = bundle?.validation;
   const workloadInvalid = workload.trim() !== '' && !WORKLOAD_RE.test(workload.trim());
+  const isPrivate = !!state?.architecture?.spec.private;
+  const reusesDns = ((state?.architecture?.spec.components.find((c) => c.id === 'private-dns')?.params.reuse as string[] | undefined) ?? []).length > 0;
+  const setInput = (env: TargetEnv, key: keyof EnvInputs, value: string) => setInputs({ ...inputs, [env]: { ...inputs[env], [key]: value } });
+  const fields: Array<[keyof EnvInputs, string, string]> = [
+    ...(isPrivate ? ([['vnetAddressPrefix', 'Spoke VNet range (/22, from the network team)', '10.20.0.0/22']] as Array<[keyof EnvInputs, string, string]>) : []),
+    ...(isPrivate && reusesDns ? ([['privateDnsZoneResourceGroupId', 'Shared DNS zone resource group (resource ID)', '/subscriptions/<id>/resourceGroups/rg-hub-dns']] as Array<[keyof EnvInputs, string, string]>) : []),
+    ['containerImage', 'Assistant API image (optional - placeholder otherwise)', 'myacr.azurecr.io/assistant-api:1.0.0'],
+  ];
 
   return (
     <div className="app-shell">
@@ -139,6 +152,24 @@ export function AzureIacPage() {
                   {workloadInvalid && <div className="error-text">2-12 lower-case letters and digits, starting with a letter.</div>}
                 </div>
               </div>
+              <div className="metric-label" style={{ margin: '10px 0 6px' }}>Values the generator will not invent - written into each environment's parameter file (blank = left for later)</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }} aria-label="Required inputs form">
+                <thead>
+                  <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}><th style={cell}>Value</th>{TARGET_ENVS.map((e) => <th key={e} style={cell}>{e}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {fields.map(([key, label, placeholder]) => (
+                    <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ ...cell, width: 220 }}>{label}</td>
+                      {TARGET_ENVS.map((e) => (
+                        <td key={e} style={cell}>
+                          <input id={`${key}-${e}`} aria-label={`${key} ${e}`} value={inputs[e]?.[key] ?? ''} onChange={(ev) => setInput(e, key, ev.target.value)} placeholder={placeholder} style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: 12 }} />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
               {error && <div className="error-text">{error}</div>}
               <DiagnosticsTable items={failed} />
               <button className="primary-btn" type="button" disabled={busy || workloadInvalid || state.architectureStale} onClick={onGenerate} style={{ marginTop: 8 }}>

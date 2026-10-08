@@ -67,6 +67,8 @@ import { AzureEnvironmentProfile } from './azure-builder/azure-environment-profi
 import { AzureUseCase } from './azure-builder/azure-use-case.entity';
 import { AzureArchitecture } from './azure-builder/azure-architecture.entity';
 import { AzureIacBundle } from './azure-builder/azure-iac-bundle.entity';
+import { AzureWhatIf } from './azure-builder/azure-what-if.entity';
+import { AzureApproval } from './azure-builder/azure-approval.entity';
 import { AzureBuilderModule } from './azure-builder/azure-builder.module';
 import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entity';
 
@@ -121,6 +123,8 @@ import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entit
           AzureUseCase,
           AzureArchitecture,
           AzureIacBundle,
+          AzureWhatIf,
+          AzureApproval,
           AiTokenAlert,
         ],
         // Sprint 1 uses schema sync for velocity. Replace with TypeORM migrations

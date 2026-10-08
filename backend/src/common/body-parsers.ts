@@ -5,6 +5,9 @@ import type { NextFunction, Request, Response } from 'express';
 /** Routes that receive usage batches: project ingest, key ingest and OTLP. */
 export const INGEST_PATH = /^\/api\/(observability\/(usage-events|v1\/traces)|projects\/[^/]+\/token-observability\/usage-events)\/?$/;
 
+/** Pasted ARM what-if output (Azure Builder Phase 5) can exceed the default limit. */
+export const WHAT_IF_PATH = /^\/api\/projects\/[^/]+\/azure-builder\/what-ifs\/?$/;
+
 /**
  * JSON body limits. Everything keeps Express's 100 KB default except the
  * usage-ingest routes, whose batches of up to 1000 events need more
@@ -16,6 +19,7 @@ export const INGEST_PATH = /^\/api\/(observability\/(usage-events|v1\/traces)|pr
 export function configureBodyParsers(app: INestApplication, ingestLimit = process.env.TOKEN_INGEST_MAX_BODY || '5mb') {
   const ingest = json({ limit: ingestLimit });
   const standard = json({ limit: '100kb' });
-  app.use((req: Request, res: Response, next: NextFunction) => (INGEST_PATH.test(req.path) ? ingest : standard)(req, res, next));
+  const whatIf = json({ limit: '5mb' });
+  app.use((req: Request, res: Response, next: NextFunction) => (INGEST_PATH.test(req.path) ? ingest : WHAT_IF_PATH.test(req.path) ? whatIf : standard)(req, res, next));
   app.use(urlencoded({ extended: true, limit: '100kb' }));
 }

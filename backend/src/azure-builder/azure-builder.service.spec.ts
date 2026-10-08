@@ -1,20 +1,25 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AzureBuilderEnabledGuard } from './azure-builder-enabled.guard';
 import { AzureBuilderService, permissionFor } from './azure-builder.service';
 import { AzureRole, ConnectionSource, DeploymentModel, ProfileSource, ResourceGroupMode } from './azure-builder.enums';
 
-/** A tiny in-memory stand-in for a TypeORM repository: create / save / count / find / findOne by project (and version), ordered by version. */
+/** A tiny in-memory stand-in for a TypeORM repository: filters on the project and any plain field; newest first (by version, else insertion). */
 function memoryRepo() {
   const rows: any[] = [];
-  const byProject = (where: any) => rows.filter((r) => r.project.id === where.project.id && (where.version === undefined || r.version === where.version));
+  const matching = (where: any) =>
+    rows
+      .map((r, i) => ({ r, i }))
+      .filter(({ r }) => r.project.id === where.project.id && Object.entries(where).every(([k, v]) => k === 'project' || r[k] === v))
+      .sort((a, b) => (b.r.version ?? 0) - (a.r.version ?? 0) || b.i - a.i)
+      .map(({ r }) => r);
   return {
     rows,
     create: (x: any) => ({ ...x }),
     save: async (x: any) => { const saved = { id: `id-${rows.length + 1}`, createdAt: new Date(), ...x }; rows.push(saved); return saved; },
-    count: async ({ where }: any) => byProject(where).length,
-    find: async ({ where }: any) => byProject(where).sort((a, b) => b.version - a.version),
-    findOne: async ({ where }: any) => byProject(where).sort((a, b) => b.version - a.version)[0] ?? null,
+    count: async ({ where }: any) => matching(where).length,
+    find: async ({ where }: any) => matching(where),
+    findOne: async ({ where }: any) => matching(where)[0] ?? null,
   };
 }
 
@@ -31,10 +36,12 @@ function setup(discovery: any = null) {
   const useCases = memoryRepo();
   const architectures = memoryRepo();
   const iacBundles = memoryRepo();
+  const whatIfs = memoryRepo();
+  const approvals = memoryRepo();
   const projects = { findOne: jest.fn().mockResolvedValue({ id: P, name: 'HR Policy Assistant', businessUseCase: 'Employees ask HR policy questions and get grounded answers with citations from the policy handbook.' }) };
   const discoveryService = { getLatest: jest.fn().mockResolvedValue(discovery ? { assessment: discovery } : null) };
-  const service = new AzureBuilderService(connections as any, profiles as any, useCases as any, architectures as any, iacBundles as any, projects as any, discoveryService as any);
-  return { service, connections, profiles, useCases, architectures, iacBundles, projects };
+  const service = new AzureBuilderService(connections as any, profiles as any, useCases as any, architectures as any, iacBundles as any, whatIfs as any, approvals as any, projects as any, discoveryService as any);
+  return { service, connections, profiles, useCases, architectures, iacBundles, whatIfs, approvals, projects };
 }
 
 const intake = {
@@ -248,6 +255,93 @@ describe('AzureBuilderService - Phase 4 generate IaC', () => {
     } finally {
       if (before !== undefined) process.env.AZURE_BUILDER_BICEP_PATH = before;
     }
+  });
+});
+
+describe('AzureBuilderService - Phase 5 validate & approve', () => {
+  // Unit tests: never run the Bicep CLI, even when AZURE_BUILDER_BICEP_PATH is set for the compile tests.
+  const bicepPath = process.env.AZURE_BUILDER_BICEP_PATH;
+  beforeAll(() => { delete process.env.AZURE_BUILDER_BICEP_PATH; });
+  afterAll(() => { if (bicepPath !== undefined) process.env.AZURE_BUILDER_BICEP_PATH = bicepPath; });
+  const other = { id: 'u2', email: 'approver@example.com', role: 'architect' } as any;
+  const inputs = {
+    dev: { vnetAddressPrefix: '10.20.0.0/22', privateDnsZoneResourceGroupId: `/subscriptions/${connectDto.subscriptionId}/resourceGroups/rg-hub-dns` },
+    test: { vnetAddressPrefix: '10.20.4.0/22', privateDnsZoneResourceGroupId: `/subscriptions/${connectDto.subscriptionId}/resourceGroups/rg-hub-dns` },
+    prod: { vnetAddressPrefix: '10.20.8.0/22', privateDnsZoneResourceGroupId: `/subscriptions/${connectDto.subscriptionId}/resourceGroups/rg-hub-dns`, containerImage: 'myacr.azurecr.io/assistant-api:1.0.0' },
+  };
+  const ready = async (withInputs = true) => {
+    const ctx = setup();
+    await ctx.service.connect(P, user, { ...connectDto });
+    await ctx.service.discover(P, user, { source: ProfileSource.SAMPLE });
+    await ctx.service.submitUseCase(P, user, intake);
+    await ctx.service.generateArchitecture(P, user, {});
+    const bundle = await ctx.service.generateIac(P, user, withInputs ? { inputs } : {});
+    return { ...ctx, bundle };
+  };
+
+  it('writes the inputs into the parameter files, validates them, and carries them over', async () => {
+    const { service, bundle } = await ready();
+    expect(bundle.files.find((f) => f.path === 'infra/params/prod.bicepparam')!.content).toContain("param vnetAddressPrefix = '10.20.8.0/22'");
+    expect(bundle.missingInputs).toEqual({ dev: [], test: [], prod: [] });
+    await expect(service.generateIac(P, user, { inputs: { dev: { vnetAddressPrefix: '10.0.0.0/22' } } })).rejects.toThrow(BadRequestException); // overlaps the sample hub (10.0.0.0/16)
+    const again = await service.generateIac(P, user, {});
+    expect(again.inputs).toEqual(bundle.inputs);
+  });
+
+  it('blocks approval until a what-if of this bundle passes, then records an immutable, hash-bound decision', async () => {
+    const { service } = await ready(false);
+    await expect(service.decide(P, other, { environment: 'dev', decision: 'approved' })).rejects.toThrow('Run a what-if');
+    const blocked = await service.runWhatIf(P, user, { environment: 'dev', source: 'planned' });
+    expect(blocked.report.approvable).toBe(false);
+    expect(blocked.report.blocking.join(' ')).toContain('vnetAddressPrefix is blank in dev.bicepparam');
+    await expect(service.decide(P, other, { environment: 'dev', decision: 'approved' })).rejects.toThrow('Approval is blocked');
+
+    await service.generateIac(P, user, { inputs });
+    await expect(service.decide(P, other, { environment: 'dev', decision: 'approved' })).rejects.toThrow('Run a what-if'); // new bundle, new hash
+    const w = await service.runWhatIf(P, user, { environment: 'dev', source: 'planned' });
+    expect(w.report).toMatchObject({ approvable: true, iacVersion: 2, riskClass: 'medium', raiRequired: false });
+    expect(w.report.risks.join(' ')).toContain('offline plan');
+    expect(w.report.risks.join(' ')).not.toContain('needs an address range'); // answered by the dev input
+    const a = await service.decide(P, other, { environment: 'dev', decision: 'approved', comments: 'Looks right' });
+    expect(a).toMatchObject({ decision: 'approved', iacVersion: 2, iacHash: w.iacHash, whatIfId: w.id, evidence: 'offline-plan', approverEmail: 'approver@example.com' });
+    expect((await service.approvalHistory(P, user)).length).toBe(1);
+  });
+
+  it('enforces separation of duties for prod and requires a reason to reject', async () => {
+    const { service } = await ready();
+    await service.runWhatIf(P, user, { environment: 'prod', source: 'planned' });
+    await expect(service.decide(P, user, { environment: 'prod', decision: 'approved' })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.decide(P, user, { environment: 'prod', decision: 'rejected', comments: 'no' })).rejects.toThrow('Say why');
+    expect((await service.decide(P, user, { environment: 'prod', decision: 'rejected', comments: 'Wait for the DPIA sign-off' })).decision).toBe('rejected');
+    expect((await service.decide(P, other, { environment: 'prod', decision: 'approved' })).decision).toBe('approved');
+  });
+
+  it('requires the responsible-AI checklist for a high-risk use case', async () => {
+    const ctx = setup();
+    await ctx.service.connect(P, user, { ...connectDto });
+    await ctx.service.discover(P, user, { source: ProfileSource.SAMPLE });
+    await ctx.service.submitUseCase(P, user, { ...intake, users: { ...intake.users, type: 'external' } });
+    await ctx.service.generateArchitecture(P, user, {});
+    await ctx.service.generateIac(P, user, { inputs });
+    const w = await ctx.service.runWhatIf(P, user, { environment: 'test', source: 'planned' });
+    expect(w.report.raiRequired).toBe(true);
+    await expect(ctx.service.decide(P, other, { environment: 'test', decision: 'approved', raiChecklist: ['content-safety'] })).rejects.toThrow('responsible-AI checklist');
+    const all = ['content-safety', 'data-review', 'human-oversight', 'transparency', 'evaluation', 'incident'];
+    expect((await ctx.service.decide(P, other, { environment: 'test', decision: 'approved', raiChecklist: all })).raiChecklist).toEqual(all);
+  });
+
+  it('reads a pasted ARM what-if and refuses one that does not belong to the connected target', async () => {
+    const { service } = await ready();
+    await expect(service.runWhatIf(P, user, { environment: 'dev', source: 'arm' })).rejects.toThrow('Paste the output');
+    const w = await service.runWhatIf(P, user, { environment: 'dev', source: 'arm', result: JSON.stringify({ status: 'Succeeded', changes: [{ resourceId: '/subscriptions/x/resourceGroups/other/providers/Microsoft.Storage/storageAccounts/st1', changeType: 'Create', after: { location: 'centralindia' } }] }) });
+    expect(w.report.approvable).toBe(false);
+    expect(w.report.blocking.join(' ')).toContain('outside the connected target');
+  });
+
+  it('refuses to validate a bundle older than the design', async () => {
+    const { service } = await ready();
+    await service.generateArchitecture(P, user, { chatHistory: true });
+    await expect(service.runWhatIf(P, user, { environment: 'dev', source: 'planned' })).rejects.toThrow('generate it again');
   });
 });
 

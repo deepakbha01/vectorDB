@@ -1,6 +1,6 @@
 import { apiClient } from './client';
 
-// Azure AI Factory Builder - mirrors backend/src/azure-builder (Wave 1: Phases 0 Connect and 1 Discover; Wave 2: Phase 2 Use case intake; Wave 3: Phase 3 Architect; Wave 4: Phase 4 Generate IaC).
+// Azure AI Factory Builder - mirrors backend/src/azure-builder (Wave 1: Phases 0 Connect and 1 Discover; Wave 2: Phase 2 Use case intake; Wave 3: Phase 3 Architect; Wave 4: Phase 4 Generate IaC; Wave 5: Phase 5 Validate & approve).
 
 export type DeploymentModel = 'centralised' | 'hub_and_spoke' | 'federated';
 export type AzureRole = 'owner' | 'contributor' | 'reader' | 'unknown';
@@ -210,6 +210,11 @@ export interface IacValidation {
   reason: string | null;
 }
 
+export type TargetEnv = 'dev' | 'test' | 'prod';
+export const TARGET_ENVS: TargetEnv[] = ['dev', 'test', 'prod'];
+export interface EnvInputs { vnetAddressPrefix?: string; privateDnsZoneResourceGroupId?: string; containerImage?: string }
+export type InputName = keyof EnvInputs;
+
 export interface AzureIacBundle {
   id: string;
   version: number;
@@ -221,8 +226,76 @@ export interface AzureIacBundle {
   requiredInputs: RequiredInput[];
   notes: string[];
   validation: IacValidation;
+  inputs: Partial<Record<TargetEnv, EnvInputs>>;
+  missingInputs: Partial<Record<TargetEnv, InputName[]>>;
   createdAt: string;
 }
+
+// Wave 5: Phase 5 Validate & approve (backend validate-approve.ts).
+export type ChangeType = 'Create' | 'Modify' | 'Delete' | 'NoChange' | 'Ignore' | 'Deploy' | 'Unsupported';
+export interface WhatIfChange {
+  resourceId: string;
+  type: string;
+  name: string;
+  changeType: ChangeType;
+  owned: boolean;
+  location: string | null;
+  propertyChanges: number;
+  note: string | null;
+}
+export interface ValidationReport {
+  environment: TargetEnv;
+  iacVersion: number;
+  iacHash: string;
+  architectureVersion: number;
+  useCaseVersion: number;
+  source: 'planned' | 'arm';
+  compile: { status: string; tool: string | null };
+  missingInputs: InputName[];
+  counts: Record<ChangeType, number>;
+  blocking: string[];
+  risks: string[];
+  monthlyUsd: number;
+  budgetUsd: number | null;
+  riskClass: RiskClass;
+  raiRequired: boolean;
+  approvable: boolean;
+}
+export interface AzureWhatIf {
+  id: string;
+  iacVersion: number;
+  iacHash: string;
+  environment: TargetEnv;
+  source: 'planned' | 'arm';
+  status: 'succeeded' | 'failed';
+  changes: WhatIfChange[];
+  report: ValidationReport;
+  createdAt: string;
+}
+export interface AzureApproval {
+  id: string;
+  approverEmail: string;
+  environment: TargetEnv;
+  decision: 'approved' | 'rejected';
+  comments: string | null;
+  iacVersion: number;
+  iacHash: string;
+  architectureVersion: number;
+  useCaseVersion: number;
+  whatIfId: string;
+  evidence: 'arm-what-if' | 'offline-plan';
+  raiChecklist: string[];
+  createdAt: string;
+}
+/** Mirrors RAI_CHECKLIST in backend validate-approve.ts (spec 12: required for a high-risk use case). */
+export const RAI_CHECKLIST: Array<{ id: string; text: string }> = [
+  { id: 'content-safety', text: 'Content Safety filters are on for every model deployment and their thresholds were reviewed.' },
+  { id: 'data-review', text: 'The data sources were reviewed for personal and regulated data, and access follows least privilege.' },
+  { id: 'human-oversight', text: 'Answers that affect people (HR, finance, legal decisions) are reviewed by a person; the assistant does not decide.' },
+  { id: 'transparency', text: 'Users are told they are using AI and can see the sources behind each answer.' },
+  { id: 'evaluation', text: 'Groundedness and safety were evaluated on a test set before release.' },
+  { id: 'incident', text: 'There is a way to report harmful answers, and an owner who acts on reports.' },
+];
 
 export interface AzureBuilderState {
   connection: (AzureConnection & { permission: PermissionLevel }) | null;
@@ -269,8 +342,14 @@ export const azureBuilderApi = {
   generateArchitecture: (projectId: string, options: Partial<ArchitectureOptions>) =>
     apiClient.post<AzureArchitecture>(`${base(projectId)}/architectures`, options).then((r) => r.data),
   architectures: (projectId: string) => apiClient.get<AzureArchitecture[]>(`${base(projectId)}/architectures`).then((r) => r.data),
-  generateIac: (projectId: string, body: { workload?: string }) => apiClient.post<AzureIacBundle>(`${base(projectId)}/iac`, body).then((r) => r.data),
+  generateIac: (projectId: string, body: { workload?: string; inputs?: Partial<Record<TargetEnv, EnvInputs>> }) => apiClient.post<AzureIacBundle>(`${base(projectId)}/iac`, body).then((r) => r.data),
   iacBundles: (projectId: string) => apiClient.get<AzureIacBundle[]>(`${base(projectId)}/iac`).then((r) => r.data),
+  runWhatIf: (projectId: string, body: { environment: TargetEnv; source: 'planned' | 'arm'; result?: string }) =>
+    apiClient.post<AzureWhatIf>(`${base(projectId)}/what-ifs`, body).then((r) => r.data),
+  whatIfs: (projectId: string) => apiClient.get<AzureWhatIf[]>(`${base(projectId)}/what-ifs`).then((r) => r.data),
+  decide: (projectId: string, body: { environment: TargetEnv; decision: 'approved' | 'rejected'; comments?: string; raiChecklist?: string[] }) =>
+    apiClient.post<AzureApproval>(`${base(projectId)}/approvals`, body).then((r) => r.data),
+  approvals: (projectId: string) => apiClient.get<AzureApproval[]>(`${base(projectId)}/approvals`).then((r) => r.data),
   downloadIac: (projectId: string, version: number) => apiClient.get<Blob>(`${base(projectId)}/iac/${version}/download`, { responseType: 'blob' }).then((r) => r.data),
 };
 
