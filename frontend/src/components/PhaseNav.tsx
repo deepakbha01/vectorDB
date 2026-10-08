@@ -21,7 +21,7 @@ const AZURE_BUILDER_PHASES: Array<{ label: string; path?: string; wave?: string 
   { label: '2 · Use case intake', path: 'intake' },
   { label: '3 · Architect', path: 'architect' },
   { label: '4 · Generate IaC', path: 'iac' },
-  { label: '5 · Validate & approve', wave: 'Wave 5' },
+  { label: '5 · Validate & approve', path: 'approve' },
   { label: '6 · Deploy', wave: 'Wave 5' },
   { label: '7 · Operate', wave: 'Wave 6' },
 ];

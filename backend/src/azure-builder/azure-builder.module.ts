@@ -10,10 +10,12 @@ import { AzureEnvironmentProfile } from './azure-environment-profile.entity';
 import { AzureUseCase } from './azure-use-case.entity';
 import { AzureArchitecture } from './azure-architecture.entity';
 import { AzureIacBundle } from './azure-iac-bundle.entity';
+import { AzureWhatIf } from './azure-what-if.entity';
+import { AzureApproval } from './azure-approval.entity';
 
-/** Azure AI Factory Builder (Wave 1: Connect, Discover; Wave 2: Use case intake; Wave 3: Architect; Wave 4: Generate IaC). Behind AZURE_BUILDER_ENABLED. */
+/** Azure AI Factory Builder (Wave 1: Connect, Discover; Wave 2: Use case intake; Wave 3: Architect; Wave 4: Generate IaC; Wave 5: Validate & approve). Behind AZURE_BUILDER_ENABLED. */
 @Module({
-  imports: [TypeOrmModule.forFeature([AzureConnection, AzureEnvironmentProfile, AzureUseCase, AzureArchitecture, AzureIacBundle]), ProjectsModule, DiscoveryModule],
+  imports: [TypeOrmModule.forFeature([AzureConnection, AzureEnvironmentProfile, AzureUseCase, AzureArchitecture, AzureIacBundle, AzureWhatIf, AzureApproval]), ProjectsModule, DiscoveryModule],
   controllers: [AzureBuilderController],
   providers: [AzureBuilderService, AzureBuilderEnabledGuard],
 })

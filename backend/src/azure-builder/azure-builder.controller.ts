@@ -13,6 +13,7 @@ import { CreateAzureConnectionDto, CreateEnvironmentProfileDto } from './dto/azu
 import { CreateUseCaseDto, OverridePatternDto } from './dto/use-case.dto';
 import { GenerateArchitectureDto } from './dto/architecture.dto';
 import { GenerateIacDto } from './dto/iac.dto';
+import { CreateApprovalDto, RunWhatIfDto } from './dto/approval.dto';
 
 /**
  * Azure AI Factory Builder, scoped to a project. Reads are open to project
@@ -136,5 +137,31 @@ export class AzureBuilderController {
     const { filename, buffer } = await this.service.iacZip(projectId, user, version);
     res.set({ 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${filename}"`, 'Content-Length': buffer.length });
     res.send(buffer);
+  }
+
+  // ---- Phase 5 - Validate & approve ----
+
+  /** What-if for one environment of the latest bundle (offline plan or pasted ARM what-if), with its validation report. */
+  @Post('what-ifs')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  runWhatIf(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: RunWhatIfDto) {
+    return this.service.runWhatIf(projectId, user, dto);
+  }
+
+  @Get('what-ifs')
+  whatIfs(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.whatIfHistory(projectId, user);
+  }
+
+  /** Approve or reject one environment of the latest bundle; immutable and bound to the bundle hash. */
+  @Post('approvals')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  decide(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: CreateApprovalDto) {
+    return this.service.decide(projectId, user, dto);
+  }
+
+  @Get('approvals')
+  approvals(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.approvalHistory(projectId, user);
   }
 }

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/auth.service';
@@ -25,6 +25,11 @@ import { GenerateIacDto } from './dto/iac.dto';
 import { deriveWorkload, generateIacBundle, TARGET_ENVS, TargetEnv } from './iac-bundle';
 import { validateIacBundle } from './iac-validate';
 import { zipFiles } from './zip';
+import { AzureWhatIf } from './azure-what-if.entity';
+import { AzureApproval } from './azure-approval.entity';
+import { CreateApprovalDto, RunWhatIfDto } from './dto/approval.dto';
+import { normaliseEnvInputs, validateEnvInputs } from './iac-inputs';
+import { assessWhatIf, bundleHash, parseArmWhatIf, planWhatIf, RAI_CHECKLIST, ValidationReport, WhatIfChange } from './validate-approve';
 
 /** What the declared role allows. Offline it is the user's word; the live wave reads Microsoft.Authorization. */
 export interface PermissionLevel {
@@ -70,7 +75,8 @@ export interface AzureBuilderState {
 }
 
 /**
- * Azure AI Factory Builder - Phases 0 (Connect), 1 (Discover), 2 (Use case intake), 3 (Architect) and 4 (Generate IaC).
+ * Azure AI Factory Builder - Phases 0 (Connect), 1 (Discover), 2 (Use case intake), 3 (Architect), 4 (Generate IaC)
+ * and 5 (Validate & approve).
  * Offline-first: no Azure call is made and no credential is accepted or stored.
  */
 @Injectable()
@@ -83,6 +89,8 @@ export class AzureBuilderService {
     @InjectRepository(AzureUseCase) private readonly useCases: Repository<AzureUseCase>,
     @InjectRepository(AzureArchitecture) private readonly architectures: Repository<AzureArchitecture>,
     @InjectRepository(AzureIacBundle) private readonly iacBundles: Repository<AzureIacBundle>,
+    @InjectRepository(AzureWhatIf) private readonly whatIfs: Repository<AzureWhatIf>,
+    @InjectRepository(AzureApproval) private readonly approvals: Repository<AzureApproval>,
     private readonly projectsService: ProjectsService,
     private readonly discoveryService: DiscoveryService,
   ) {}
@@ -265,7 +273,11 @@ export class AzureBuilderService {
       throw err;
     }
     const workload = dto.workload ?? deriveWorkload(spec.useCaseName);
-    const bundle = generateIacBundle({ spec, specsByEnv, architectureVersion: architecture.version, workload, catalog });
+    const previous = await this.latestIacBundle(projectId);
+    const inputs = normaliseEnvInputs(dto.inputs ?? previous?.inputs ?? {});
+    const inputProblems = validateEnvInputs(inputs, profile.profile.network.vnets);
+    if (inputProblems.length) throw new BadRequestException(inputProblems);
+    const bundle = generateIacBundle({ spec, specsByEnv, architectureVersion: architecture.version, workload, catalog, inputs });
     const validation = await validateIacBundle(bundle.files, process.env.AZURE_BUILDER_BICEP_PATH || undefined);
     if (validation.status === 'failed') {
       const errors = validation.diagnostics.filter((d) => d.level === 'error');
@@ -286,6 +298,8 @@ export class AzureBuilderService {
         requiredInputs: bundle.requiredInputs,
         notes: bundle.notes,
         validation,
+        inputs: bundle.inputs,
+        missingInputs: bundle.missingInputs,
       }),
     );
     this.logger.log(`user=${user.email} action=azure_builder_iac projectId=${projectId} version=${version} architecture=${architecture.version} validation=${validation.status}`);
@@ -303,6 +317,169 @@ export class AzureBuilderService {
     const bundle = await this.iacBundles.findOne({ where: { project: { id: projectId }, version } });
     if (!bundle) throw new NotFoundException(`IaC bundle v${version} was not found for this project.`);
     return { filename: `${bundle.root}-v${bundle.version}.zip`, buffer: zipFiles(bundle.files.map((f) => ({ path: `${bundle.root}/${f.path}`, content: f.content }))) };
+  }
+
+  // ---- Phase 5 - Validate & approve ----
+
+  /**
+   * Runs a what-if for one environment of the latest bundle - the offline plan, or a pasted ARM what-if - and
+   * stores it with the validation report an approver decides on (spec 4.6).
+   */
+  async runWhatIf(projectId: string, user: AuthenticatedUser, dto: RunWhatIfDto) {
+    const { bundle, architecture, useCase, profile, connection } = await this.approvalContext(projectId, user);
+    const env = dto.environment;
+    const catalog = loadAzureCatalog();
+    const spec = architecture.spec;
+    const plan = planWhatIf({
+      spec,
+      env,
+      workload: bundle.workload,
+      regionAbbreviation: catalog.iac.regionAbbreviations[spec.region] ?? spec.region.slice(0, 4),
+      subscriptionId: connection.subscriptionId,
+      resourceGroup: connection.resourceGroup,
+      useCaseId: useCase.id,
+      existingNames: [
+        ...profile.profile.network.vnets.map((v) => v.name),
+        ...profile.profile.monitoring.workspaces.map((w) => w.name),
+        ...profile.profile.ai.existingAccounts.map((a) => a.name),
+        ...profile.profile.security.keyVaults.map((k) => k.split('/').pop() ?? k),
+      ],
+    });
+    let changes: WhatIfChange[] = plan;
+    let status: 'succeeded' | 'failed' = 'succeeded';
+    let armError: string | null = null;
+    let armProblems: string[] = [];
+    if (dto.source === 'arm') {
+      if (!dto.result?.trim()) throw new BadRequestException('Paste the output of az deployment group what-if --no-pretty-print.');
+      const parsed = parseArmWhatIf(dto.result, useCase.id);
+      ({ changes, status } = parsed);
+      armError = parsed.error;
+      armProblems = parsed.problems;
+    }
+    const assessment = assessWhatIf(changes, {
+      spec, source: dto.source, allowedLocations: profile.profile.policy.allowedLocations, useCaseId: useCase.id,
+      subscriptionId: connection.subscriptionId, resourceGroup: connection.resourceGroup, plan, armStatus: status, armError, armProblems,
+    });
+
+    const envSpec = this.designFor(useCase, profile, connection, spec.options, env, catalog);
+    const missing = bundle.missingInputs?.[env];
+    const blocking = [
+      ...(missing === undefined ? ['This bundle predates required-input tracking - generate it again (Phase 4).'] : missing.map((k) => `${k} is blank in ${env}.bicepparam - fill it in on the Generate IaC page.`)),
+      ...assessment.blocking,
+    ];
+    const risks = [
+      ...assessment.risks,
+      ...(bundle.validation.status !== 'passed' ? [`The Bicep was not compiled on the server (${bundle.validation.status}) - the pipeline lints it before deploying.`] : []),
+      ...(bundle.inputs?.[env]?.containerImage ? [] : ['The container image is still the placeholder - the platform deploys, but not the assistant.']),
+      ...(dto.source === 'planned' ? ['This is the offline plan, not an ARM what-if against the subscription - names ending in xxxx get their suffix at deployment.'] : []),
+      // Design-time reminders the inputs have since answered are dropped.
+      ...envSpec.warnings.filter((x) => !(x.startsWith('The spoke VNet needs an address range') && bundle.inputs?.[env]?.vnetAddressPrefix)),
+    ];
+    const report: ValidationReport = {
+      environment: env,
+      iacVersion: bundle.version,
+      iacHash: bundleHash(bundle.files),
+      architectureVersion: architecture.version,
+      useCaseVersion: useCase.version,
+      source: dto.source,
+      compile: { status: bundle.validation.status, tool: bundle.validation.tool },
+      missingInputs: missing ?? [],
+      counts: assessment.counts,
+      blocking,
+      risks: [...new Set(risks)],
+      monthlyUsd: envSpec.cost.monthlyUsd,
+      budgetUsd: envSpec.cost.budgetUsd,
+      riskClass: useCase.spec.pattern.riskClass,
+      raiRequired: useCase.spec.pattern.riskClass === 'high',
+      approvable: status === 'succeeded' && blocking.length === 0,
+    };
+    const saved = await this.whatIfs.save(
+      this.whatIfs.create({ project: { id: projectId } as Project, createdBy: { id: user.id } as User, iacVersion: bundle.version, iacHash: report.iacHash, environment: env, source: dto.source, status, changes, report }),
+    );
+    this.logger.log(`user=${user.email} action=azure_builder_what_if projectId=${projectId} iac=${bundle.version} env=${env} source=${dto.source} status=${status} blocking=${blocking.length}`);
+    return saved;
+  }
+
+  async whatIfHistory(projectId: string, user: AuthenticatedUser) {
+    await this.projectsService.findOne(projectId, user);
+    return this.whatIfs.find({ where: { project: { id: projectId } }, order: { createdAt: 'DESC' } });
+  }
+
+  /**
+   * Records an immutable decision bound to the bundle's hash (spec 4.6). Approval needs a successful,
+   * unblocked what-if of exactly this bundle; the responsible-AI checklist for a high-risk use case
+   * (spec 12); and, for prod, an approver other than the person who generated the IaC.
+   */
+  async decide(projectId: string, user: AuthenticatedUser, dto: CreateApprovalDto) {
+    const { bundle, architecture, useCase } = await this.approvalContext(projectId, user);
+    const env = dto.environment;
+    const hash = bundleHash(bundle.files);
+    const whatIf = await this.whatIfs.findOne({ where: { project: { id: projectId }, iacVersion: bundle.version, environment: env }, order: { createdAt: 'DESC' } });
+    if (!whatIf || whatIf.iacHash !== hash) throw new BadRequestException(`Run a what-if for ${env} on IaC bundle v${bundle.version} first.`);
+    const comments = dto.comments?.trim() || null;
+    const raiChecklist = [...new Set(dto.raiChecklist ?? [])];
+    if (dto.decision === 'rejected') {
+      if (!comments || comments.length < 10) throw new BadRequestException('Say why the deployment is rejected (at least 10 characters).');
+    } else {
+      if (!whatIf.report.approvable) throw new BadRequestException(['Approval is blocked:', ...whatIf.report.blocking].join(' '));
+      if (whatIf.report.raiRequired) {
+        const missing = RAI_CHECKLIST.filter((r) => !raiChecklist.includes(r.id));
+        if (missing.length) throw new BadRequestException(`This is a high-risk use case - confirm every responsible-AI checklist item (${missing.map((m) => m.id).join(', ')}).`);
+      }
+      if (env === 'prod' && bundle.createdBy?.id === user.id) {
+        throw new ForbiddenException('Separation of duties: the person who generated this IaC cannot approve it for production. Ask another admin or architect.');
+      }
+    }
+    const saved = await this.approvals.save(
+      this.approvals.create({
+        project: { id: projectId } as Project,
+        approver: { id: user.id } as User,
+        approverEmail: user.email,
+        environment: env,
+        decision: dto.decision,
+        comments,
+        iacVersion: bundle.version,
+        iacHash: hash,
+        architectureVersion: architecture.version,
+        useCaseVersion: useCase.version,
+        whatIfId: whatIf.id,
+        evidence: whatIf.source === 'arm' ? 'arm-what-if' : 'offline-plan',
+        raiChecklist,
+      }),
+    );
+    this.logger.log(`user=${user.email} action=azure_builder_${dto.decision} projectId=${projectId} iac=${bundle.version} env=${env} hash=${hash.slice(0, 12)} evidence=${saved.evidence}`);
+    return saved;
+  }
+
+  async approvalHistory(projectId: string, user: AuthenticatedUser) {
+    await this.projectsService.findOne(projectId, user);
+    return this.approvals.find({ where: { project: { id: projectId } }, order: { createdAt: 'DESC' } });
+  }
+
+  /** The latest bundle and the exact inputs it was generated from; refuses a stale chain. */
+  private async approvalContext(projectId: string, user: AuthenticatedUser) {
+    const state = await this.getState(projectId, user);
+    const bundle = await this.iacBundles.findOne({ where: { project: { id: projectId } }, order: { version: 'DESC' }, relations: { createdBy: true } });
+    if (!bundle) throw new BadRequestException('Generate the infrastructure code (Phase 4) first.');
+    if (state.architectureStale || state.iacStale) throw new BadRequestException('The design changed since this bundle was generated - design and generate it again (Phases 3-4) first.');
+    const architecture = await this.architectures.findOne({ where: { project: { id: projectId }, version: bundle.architectureVersion } });
+    const useCase = architecture && (await this.useCases.findOne({ where: { project: { id: projectId }, version: architecture.useCaseVersion } }));
+    const profile = architecture && (await this.profiles.findOne({ where: { project: { id: projectId }, version: architecture.profileVersion } }));
+    if (!architecture || !useCase || !profile || !state.connection) throw new BadRequestException('The inputs this bundle was generated from are no longer available - generate it again.');
+    return { bundle, architecture, useCase, profile, connection: state.connection };
+  }
+
+  private designFor(useCase: AzureUseCase, profile: AzureEnvironmentProfile, connection: AzureConnection, options: ArchitectureSpec['options'], env: TargetEnv, catalog = loadAzureCatalog()) {
+    return designArchitecture({
+      useCase: { ...useCase.spec, environment: env },
+      useCaseId: useCase.id,
+      useCaseVersion: useCase.version,
+      profile: profile.profile,
+      profileVersion: profile.version,
+      connection: { region: connection.region, deploymentModel: connection.deploymentModel },
+      options,
+      catalog,
+    });
   }
 
   private latestIacBundle(projectId: string) {

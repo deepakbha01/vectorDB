@@ -38,6 +38,8 @@ import { AzureEnvironmentProfile } from './azure-builder/azure-environment-profi
 import { AzureUseCase } from './azure-builder/azure-use-case.entity';
 import { AzureArchitecture } from './azure-builder/azure-architecture.entity';
 import { AzureIacBundle } from './azure-builder/azure-iac-bundle.entity';
+import { AzureWhatIf } from './azure-builder/azure-what-if.entity';
+import { AzureApproval } from './azure-builder/azure-approval.entity';
 import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entity';
 
 config();
@@ -100,6 +102,8 @@ export const AppDataSource = new DataSource({
     AzureUseCase,
     AzureArchitecture,
     AzureIacBundle,
+    AzureWhatIf,
+    AzureApproval,
     AiTokenAlert,
   ],
   migrations: ['src/migrations/*.ts'],

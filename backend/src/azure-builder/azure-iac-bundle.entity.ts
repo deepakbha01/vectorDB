@@ -1,7 +1,8 @@
 import { Column, CreateDateColumn, Entity, Index, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
-import { IacFile, RequiredInput } from './iac-bundle';
+import { IacFile, RequiredInput, TargetEnv } from './iac-bundle';
+import { EnvInputs, InputName } from './iac-inputs';
 import { IacValidation } from './iac-validate';
 
 /**
@@ -49,6 +50,14 @@ export class AzureIacBundle {
 
   @Column({ type: 'jsonb' })
   validation: IacValidation;
+
+  /** Required-input values per environment, written into the parameter files. */
+  @Column({ type: 'jsonb', default: {} })
+  inputs: Partial<Record<TargetEnv, EnvInputs>>;
+
+  /** Needed inputs still blank per environment; empty for bundles generated before inputs were tracked. */
+  @Column({ type: 'jsonb', default: {} })
+  missingInputs: Partial<Record<TargetEnv, InputName[]>>;
 
   @CreateDateColumn()
   createdAt: Date;

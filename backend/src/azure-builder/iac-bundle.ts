@@ -13,6 +13,7 @@
  * main.bicep.
  */
 import { ArchitectureComponent, ArchitectureSpec, AzureCatalog, ZONES } from './architecture';
+import { EnvInputs, InputName, neededInputs } from './iac-inputs';
 
 export type TargetEnv = 'dev' | 'test' | 'prod';
 export const TARGET_ENVS: TargetEnv[] = ['dev', 'test', 'prod'];
@@ -40,6 +41,10 @@ export interface IacBundle {
   requiredInputs: RequiredInput[];
   notes: string[];
   generator: string;
+  /** The values supplied per environment (Phase 5 approves exactly these). */
+  inputs: Partial<Record<TargetEnv, EnvInputs>>;
+  /** Needed inputs still blank, per environment - a bundle with gaps cannot be approved for that environment. */
+  missingInputs: Record<TargetEnv, InputName[]>;
 }
 
 export interface IacInput {
@@ -50,6 +55,8 @@ export interface IacInput {
   architectureVersion: number;
   workload: string;
   catalog: AzureCatalog & { iac: IacCatalog };
+  /** Values for the required inputs, per environment; blanks stay blank. */
+  inputs?: Partial<Record<TargetEnv, EnvInputs>>;
 }
 
 export const IAC_GENERATOR_ID = 'bicep-avm-v1';
@@ -688,6 +695,7 @@ output resourceId string = bot.id
 `);
 
   // ------------------------------------------------------ params/<env>.bicepparam
+  const given = (env: TargetEnv): EnvInputs => input.inputs?.[env] ?? {};
   const paramFile = (env: TargetEnv) => {
     const s = input.specsByEnv[env];
     const c = (id: string) => s.components.find((x) => x.id === id)!;
@@ -714,14 +722,17 @@ output resourceId string = bot.id
       `param apiMinReplicas = ${app.minReplicas}`,
       `param apiMaxReplicas = ${Math.max(3, app.minReplicas * 3)}`,
       `param keyVaultPurgeProtection = ${c('keyvault').params.enablePurgeProtection === true}`,
-      `// Replace with the assistant API image once it is published (see README).`,
-      `param containerImage = ${bicepString(iac.placeholderImage)}`,
+      ...(given(env).containerImage
+        ? [`param containerImage = ${bicepString(given(env).containerImage!)}`]
+        : ['// Replace with the assistant API image once it is published (see README).', `param containerImage = ${bicepString(iac.placeholderImage)}`]),
     ];
     if (!laReused) lines.push(`param logRetentionInDays = ${Number(c('log-analytics').params.retentionInDays) || 30}`);
     else lines.push(`param logAnalyticsWorkspaceResourceId = ${bicepString(la.resourceId ?? '')}`);
     if (isPrivate) {
-      lines.push("// REQUIRED before deploying: a /22 for this environment's spoke from the network team, e.g. '10.20.0.0/22'.", "param vnetAddressPrefix = ''");
-      if (dns.reuse.length) lines.push(`// REQUIRED before deploying: the resource group that holds ${dns.reuse.join(', ')}.`, "param privateDnsZoneResourceGroupId = ''");
+      const prefix = given(env).vnetAddressPrefix;
+      lines.push(...(prefix ? [`param vnetAddressPrefix = ${bicepString(prefix)}`] : ["// REQUIRED before deploying: a /22 for this environment's spoke from the network team, e.g. '10.20.0.0/22'.", "param vnetAddressPrefix = ''"]));
+      const dnsRg = given(env).privateDnsZoneResourceGroupId;
+      if (dns.reuse.length) lines.push(...(dnsRg ? [`param privateDnsZoneResourceGroupId = ${bicepString(dnsRg)}`] : [`// REQUIRED before deploying: the resource group that holds ${dns.reuse.join(', ')}.`, "param privateDnsZoneResourceGroupId = ''"]));
       if (hub) lines.push(`param hubVnetResourceId = ${bicepString(hub.resourceId ?? '')}`);
     }
     if (has('apim')) {
@@ -800,7 +811,9 @@ jobs:
     { path: 'docs/architecture.md', content: architectureDoc(spec, input.architectureVersion) },
     { path: 'README.md', content: readme(spec, input, root, requiredInputs, notes, regionAbbr) },
   ];
-  return { root, workload: input.workload, files, requiredInputs, notes, generator: IAC_GENERATOR_ID };
+  const needed = neededInputs({ private: isPrivate, reusesDnsZones: dns.reuse.length > 0 });
+  const missingInputs = Object.fromEntries(TARGET_ENVS.map((env) => [env, needed.filter((k) => !given(env)[k])])) as Record<TargetEnv, InputName[]>;
+  return { root, workload: input.workload, files, requiredInputs, notes, generator: IAC_GENERATOR_ID, inputs: input.inputs ?? {}, missingInputs };
 }
 
 const md = (s: string) => s.replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ');
