@@ -1,6 +1,6 @@
 import { apiClient } from './client';
 
-// Azure AI Factory Builder - mirrors backend/src/azure-builder (Wave 1: Phases 0 Connect and 1 Discover; Wave 2: Phase 2 Use case intake; Wave 3: Phase 3 Architect).
+// Azure AI Factory Builder - mirrors backend/src/azure-builder (Wave 1: Phases 0 Connect and 1 Discover; Wave 2: Phase 2 Use case intake; Wave 3: Phase 3 Architect; Wave 4: Phase 4 Generate IaC).
 
 export type DeploymentModel = 'centralised' | 'hub_and_spoke' | 'federated';
 export type AzureRole = 'owner' | 'contributor' | 'reader' | 'unknown';
@@ -197,6 +197,33 @@ export interface AzureArchitecture {
   createdAt: string;
 }
 
+// Wave 4: Phase 4 Generate IaC (backend iac-bundle.ts, iac-validate.ts).
+export interface IacFile { path: string; content: string }
+export interface RequiredInput { name: string; where: string; description: string; when: 'before-deploy' | 'after-deploy' }
+export interface IacDiagnostic { file: string; line: number; column: number; level: 'error' | 'warning' | 'info'; code: string; message: string }
+export interface IacValidation {
+  status: 'passed' | 'failed' | 'skipped';
+  tool: string | null;
+  checkedAt: string;
+  commands: string[];
+  diagnostics: IacDiagnostic[];
+  reason: string | null;
+}
+
+export interface AzureIacBundle {
+  id: string;
+  version: number;
+  architectureVersion: number;
+  workload: string;
+  root: string;
+  generator: string;
+  files: IacFile[];
+  requiredInputs: RequiredInput[];
+  notes: string[];
+  validation: IacValidation;
+  createdAt: string;
+}
+
 export interface AzureBuilderState {
   connection: (AzureConnection & { permission: PermissionLevel }) | null;
   environmentProfile: AzureEnvironmentProfile | null;
@@ -204,6 +231,8 @@ export interface AzureBuilderState {
   useCase: AzureUseCase | null;
   architecture: AzureArchitecture | null;
   architectureStale: boolean;
+  iacBundle: Omit<AzureIacBundle, 'files'> | null;
+  iacStale: boolean;
 }
 
 export interface ProfileFormInput {
@@ -240,6 +269,9 @@ export const azureBuilderApi = {
   generateArchitecture: (projectId: string, options: Partial<ArchitectureOptions>) =>
     apiClient.post<AzureArchitecture>(`${base(projectId)}/architectures`, options).then((r) => r.data),
   architectures: (projectId: string) => apiClient.get<AzureArchitecture[]>(`${base(projectId)}/architectures`).then((r) => r.data),
+  generateIac: (projectId: string, body: { workload?: string }) => apiClient.post<AzureIacBundle>(`${base(projectId)}/iac`, body).then((r) => r.data),
+  iacBundles: (projectId: string) => apiClient.get<AzureIacBundle[]>(`${base(projectId)}/iac`).then((r) => r.data),
+  downloadIac: (projectId: string, version: number) => apiClient.get<Blob>(`${base(projectId)}/iac/${version}/download`, { responseType: 'blob' }).then((r) => r.data),
 };
 
 export const REGIONS: Array<{ value: string; label: string }> = [

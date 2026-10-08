@@ -35,6 +35,7 @@ import { AzureConnectPage } from './pages/AzureConnectPage';
 import { AzureDiscoverPage } from './pages/AzureDiscoverPage';
 import { AzureIntakePage } from './pages/AzureIntakePage';
 import { AzureArchitectPage } from './pages/AzureArchitectPage';
+import { AzureIacPage } from './pages/AzureIacPage';
 
 export function App() {
   return (
@@ -76,6 +77,7 @@ export function App() {
           <Route path="/projects/:id/azure-builder/discover" element={<AzureDiscoverPage />} />
           <Route path="/projects/:id/azure-builder/intake" element={<AzureIntakePage />} />
           <Route path="/projects/:id/azure-builder/architect" element={<AzureArchitectPage />} />
+          <Route path="/projects/:id/azure-builder/iac" element={<AzureIacPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

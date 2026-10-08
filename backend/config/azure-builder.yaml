@@ -30,7 +30,7 @@ patterns:
       cae:            { type: container-apps-env,  label: Container Apps environment,         module: avm/res/app/managed-environment,                zone: app }
       app:            { type: container-app,       label: Assistant API (Container App),      module: avm/res/app/container-app,                      zone: app }
       apim:           { type: api-management,      label: API Management (AI gateway),        module: avm/res/api-management/service,                 zone: edge }
-      bot:            { type: bot-service,         label: Azure Bot (Teams channel),          module: avm/res/bot-service/bot-service,                zone: edge }
+      bot:            { type: bot-service,         label: Azure Bot (Teams channel),          module: modules/bot-service.bicep,         zone: edge }   # no AVM module is published yet (status: Proposed) - native resource in a thin wrapper
       log-analytics:  { type: log-analytics,       label: Log Analytics workspace,            module: avm/res/operational-insights/workspace,         zone: monitoring }
       app-insights:   { type: app-insights,        label: Application Insights,               module: avm/res/insights/component,                     zone: monitoring }
       vnet:           { type: virtual-network,     label: Use-case spoke VNet,                module: avm/res/network/virtual-network,                zone: network }
@@ -107,3 +107,62 @@ rates:
   privateDnsZoneMonth: 0.50
   apimMonth: { developer: 48.04, standardv2: 700.00 }
   cosmosServerless: { per1MRu: 0.25, gbMonth: 0.25 }
+
+# Phase 4 (Generate IaC) - spec 4.5 and 11. Module versions are pinned (spec 11.1) and
+# were checked against the public Bicep registry (mcr.microsoft.com) on lastReviewed.
+iac:
+  avm:
+    avm/res/cognitive-services/account: 0.19.1
+    avm/res/search/search-service: 0.13.0
+    avm/res/storage/storage-account: 0.33.1
+    avm/res/key-vault/vault: 0.14.2
+    avm/res/document-db/database-account: 0.21.1
+    avm/res/managed-identity/user-assigned-identity: 0.6.0
+    avm/res/app/managed-environment: 0.16.0
+    avm/res/app/container-app: 0.23.0
+    avm/res/api-management/service: 0.15.0
+    avm/res/operational-insights/workspace: 0.16.1
+    avm/res/insights/component: 0.8.0
+    avm/res/network/virtual-network: 0.10.2
+    avm/res/network/private-dns-zone: 0.8.1
+    # Each resource module creates its own endpoints through its privateEndpoints parameter (using this module).
+    avm/res/network/private-endpoint: 0.12.1
+  botServiceApiVersion: '2022-09-15'
+  modelVersions:
+    gpt-4o: '2024-11-20'
+    text-embedding-3-large: '1'
+  raiPolicyName: Microsoft.DefaultV2     # Content Safety on every model deployment (spec 12)
+  # Placeholder image until the team publishes the assistant API image; README says so.
+  placeholderImage: mcr.microsoft.com/k8se/quickstart:latest
+  placeholderPort: 80
+  # CAF abbreviations (https://learn.microsoft.com/azure/cloud-adoption-framework/ready/azure-best-practices/resource-abbreviations)
+  regionAbbreviations:
+    centralindia: cin
+    southindia: sin
+    westindia: win
+    eastus: eus
+    eastus2: eus2
+    westus: wus
+    westus2: wus2
+    westus3: wus3
+    centralus: cus
+    northcentralus: ncus
+    southcentralus: scus
+    westeurope: weu
+    northeurope: neu
+    swedencentral: sdc
+    francecentral: frc
+    germanywestcentral: gwc
+    uksouth: uks
+    southeastasia: sea
+    australiaeast: aue
+    japaneast: jpe
+  # Built-in role definition IDs granted to the workload identity (RBAC, no keys - spec 11.1).
+  roles:
+    cognitiveServicesOpenAiUser: 5e0bd9bd-7b93-4f28-af87-19fc36ad61bd
+    searchIndexDataContributor: 8ebe5a00-799e-43f5-93ac-243d3dce84a7
+    searchServiceContributor: 7ca78c08-252a-4471-8644-bb5ff32d4ba0
+    storageBlobDataContributor: ba92f5b4-2d11-453d-a403-e96b0029c9fe
+    keyVaultSecretsUser: 4633458b-17de-408a-b874-0445c86b69e6
+    monitoringMetricsPublisher: 3913510d-42f4-4e42-8a64-420c390055eb
+    cosmosDataContributor: 00000000-0000-0000-0000-000000000002

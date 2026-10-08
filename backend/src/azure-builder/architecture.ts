@@ -291,6 +291,8 @@ export function designArchitecture(input: ArchitectureInput): ArchitectureSpec {
   const chatHistory = options.chatHistory;
   const teams = uc.users.channels.includes('teams');
   const hubId = isPrivate ? profile.network.hubVnetId : null;
+  // Internal-only hosting needs every caller inside the network: no Teams (its service calls in from the internet) and no gateway in front.
+  const appInternal = isPrivate && uc.users.type === 'internal' && !apiGateway && !teams;
   const laId = profile.monitoring.logAnalyticsId;
 
   // ---- Components ----
@@ -309,9 +311,9 @@ export function designArchitecture(input: ArchitectureInput): ArchitectureSpec {
   }
   if (teams) add('bot', { sku: env === 'dev' ? 'F0' : 'S1', channels: ['MsTeamsChannel'], msaAppType: 'UserAssignedMSI', messagingEndpoint: apiGateway ? 'via API Management' : 'assistant API' }, 'Teams is a user channel (rule: channels contains teams -> bot service).');
   add('identity', {}, 'One identity for the assistant; access to every service is by RBAC, never by keys.');
-  add('cae', { workloadProfile: 'Consumption', internal: isPrivate && uc.users.type === 'internal', infrastructureSubnet: isPrivate ? 'snet-apps' : null }, 'Serverless container hosting for the assistant API.');
+  add('cae', { workloadProfile: 'Consumption', internal: appInternal, infrastructureSubnet: isPrivate ? 'snet-apps' : null }, 'Serverless container hosting for the assistant API.');
   const replicas = w.apiReplicas[env] ?? 1;
-  add('app', { minReplicas: replicas, cpu: w.apiReplicaSize.vcpu, memoryGi: w.apiReplicaSize.gib, ingress: isPrivate && uc.users.type === 'internal' && !apiGateway ? 'internal' : 'external', identity: 'identity' }, 'Runs the retrieval and generation logic.');
+  add('app', { minReplicas: replicas, cpu: w.apiReplicaSize.vcpu, memoryGi: w.apiReplicaSize.gib, ingress: appInternal ? 'internal' : 'external', identity: 'identity' }, 'Runs the retrieval and generation logic.');
   add('aoai', {
     kind: 'AIServices',
     sku: 'S0',

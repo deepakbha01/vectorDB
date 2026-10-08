@@ -4,10 +4,10 @@ import { AzureBuilderEnabledGuard } from './azure-builder-enabled.guard';
 import { AzureBuilderService, permissionFor } from './azure-builder.service';
 import { AzureRole, ConnectionSource, DeploymentModel, ProfileSource, ResourceGroupMode } from './azure-builder.enums';
 
-/** A tiny in-memory stand-in for a TypeORM repository: create / save / count / find / findOne by project, ordered by version. */
+/** A tiny in-memory stand-in for a TypeORM repository: create / save / count / find / findOne by project (and version), ordered by version. */
 function memoryRepo() {
   const rows: any[] = [];
-  const byProject = (where: any) => rows.filter((r) => r.project.id === where.project.id);
+  const byProject = (where: any) => rows.filter((r) => r.project.id === where.project.id && (where.version === undefined || r.version === where.version));
   return {
     rows,
     create: (x: any) => ({ ...x }),
@@ -30,10 +30,11 @@ function setup(discovery: any = null) {
   const profiles = memoryRepo();
   const useCases = memoryRepo();
   const architectures = memoryRepo();
+  const iacBundles = memoryRepo();
   const projects = { findOne: jest.fn().mockResolvedValue({ id: P, name: 'HR Policy Assistant', businessUseCase: 'Employees ask HR policy questions and get grounded answers with citations from the policy handbook.' }) };
   const discoveryService = { getLatest: jest.fn().mockResolvedValue(discovery ? { assessment: discovery } : null) };
-  const service = new AzureBuilderService(connections as any, profiles as any, useCases as any, architectures as any, projects as any, discoveryService as any);
-  return { service, connections, profiles, useCases, architectures, projects };
+  const service = new AzureBuilderService(connections as any, profiles as any, useCases as any, architectures as any, iacBundles as any, projects as any, discoveryService as any);
+  return { service, connections, profiles, useCases, architectures, iacBundles, projects };
 }
 
 const intake = {
@@ -199,6 +200,54 @@ describe('AzureBuilderService - Phase 3 architect', () => {
     await expect(service.generateArchitecture(P, user, {})).rejects.toBeInstanceOf(BadRequestException);
     await service.submitUseCase(P, user, { ...intake, constraints: { ...intake.constraints, regions: ['eastus'] } });
     await expect(service.generateArchitecture(P, user, {})).rejects.toThrow('No region satisfies');
+  });
+});
+
+describe('AzureBuilderService - Phase 4 generate IaC', () => {
+  const ready = async () => {
+    const ctx = setup();
+    await ctx.service.connect(P, user, { ...connectDto });
+    await ctx.service.discover(P, user, { source: ProfileSource.SAMPLE });
+    await ctx.service.submitUseCase(P, user, intake);
+    return ctx;
+  };
+
+  it('needs a current architecture first', async () => {
+    const { service } = await ready();
+    await expect(service.generateIac(P, user, {})).rejects.toThrow('Design the architecture');
+    await service.generateArchitecture(P, user, {});
+    await service.submitUseCase(P, user, { ...intake, users: { ...intake.users, count: 9000 } });
+    await expect(service.generateIac(P, user, {})).rejects.toThrow('design it again');
+  });
+
+  it('generates a versioned bundle (validation skipped without a Bicep CLI), zips it and tracks staleness', async () => {
+    const before = process.env.AZURE_BUILDER_BICEP_PATH;
+    delete process.env.AZURE_BUILDER_BICEP_PATH;
+    try {
+      const { service } = await ready();
+      await service.generateArchitecture(P, user, {});
+      const b = await service.generateIac(P, user, {});
+      expect(b).toMatchObject({ version: 1, architectureVersion: 1, workload: 'hrpoliassi', generator: 'bicep-avm-v1' });
+      expect(b.validation.status).toBe('skipped');
+      expect(b.files.map((f) => f.path)).toContain('infra/main.bicep');
+      expect(b.files.find((f) => f.path === 'infra/params/prod.bicepparam')!.content).toContain("param environment = 'prod'");
+      const named = await service.generateIac(P, user, { workload: 'hrpolicy' });
+      expect(named.files.find((f) => f.path === 'infra/params/dev.bicepparam')!.content).toContain("param workload = 'hrpolicy'");
+
+      const state = await service.getState(P, user);
+      expect(state.iacBundle).toMatchObject({ version: 2 });
+      expect((state.iacBundle as any).files).toBeUndefined();
+      expect(state.iacStale).toBe(false);
+      await service.generateArchitecture(P, user, { chatHistory: true });
+      expect((await service.getState(P, user)).iacStale).toBe(true);
+
+      const zip = await service.iacZip(P, user, 1);
+      expect(zip.filename).toBe(`${b.root}-v1.zip`);
+      expect(zip.buffer.readUInt32LE(0)).toBe(0x04034b50);
+      await expect(service.iacZip(P, user, 9)).rejects.toBeInstanceOf(NotFoundException);
+    } finally {
+      if (before !== undefined) process.env.AZURE_BUILDER_BICEP_PATH = before;
+    }
   });
 });
 

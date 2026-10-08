@@ -44,8 +44,9 @@ const comp = (s: ArchitectureSpec, id: string) => s.components.find((c) => c.id 
 
 describe('azure-builder catalog', () => {
   it('is complete and every rate the engine needs is present', () => {
-    expect(validateCatalog(catalog)).toEqual([]);
-    expect(validateCatalog({ ...catalog, rates: { ...catalog.rates, models: {} } })).toEqual(expect.arrayContaining(['the chat model has no rate']));
+    expect(validateCatalog(catalog as any)).toEqual([]);
+    expect(validateCatalog({ ...(catalog as any), iac: { ...(catalog as any).iac, avm: {} } })).toEqual(expect.arrayContaining(['component search module avm/res/search/search-service has no pinned version']));
+    expect(validateCatalog({ ...(catalog as any), rates: { ...catalog.rates, models: {} } })).toEqual(expect.arrayContaining(['the chat model has no rate']));
   });
 });
 
@@ -122,6 +123,12 @@ describe('designArchitecture - rules and toggles', () => {
     expect(comp(s, 'log-analytics').reuseExisting).toBe(false);
     expect(s.sizing).toMatchObject({ deploymentSku: 'GlobalStandard', searchTier: 'basic', searchPartitions: 2, searchReplicas: 1 });
     expect(validateArchitecture(s, [])).toEqual([]);
+  });
+
+  it('hosts the API internal-only when every caller is inside the network', () => {
+    const s = design({}, { users: { ...hr.users, channels: ['web'] } });
+    expect(comp(s, 'app').params.ingress).toBe('internal');
+    expect(comp(s, 'cae').params.internal).toBe(true);
   });
 
   it('goes private for personal data even when policy allows public access (spec 11.1)', () => {
