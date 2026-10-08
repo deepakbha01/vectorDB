@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/auth.service';
@@ -17,9 +17,14 @@ import { DiscoveryService } from '../discovery/discovery.service';
 import { buildUseCaseSpec, classifyUseCase, IntakeAnswers, SolutionPattern, SOLUTION_PATTERNS, validateIntake } from './use-case-spec';
 import { prefillIntake } from './use-case-prefill';
 import { AzureArchitecture } from './azure-architecture.entity';
-import { ArchitectureError, DEFAULT_OPTIONS, designArchitecture } from './architecture';
+import { ArchitectureError, ArchitectureSpec, DEFAULT_OPTIONS, designArchitecture } from './architecture';
 import { loadAzureCatalog } from './architecture-catalog';
 import { GenerateArchitectureDto } from './dto/architecture.dto';
+import { AzureIacBundle } from './azure-iac-bundle.entity';
+import { GenerateIacDto } from './dto/iac.dto';
+import { deriveWorkload, generateIacBundle, TARGET_ENVS, TargetEnv } from './iac-bundle';
+import { validateIacBundle } from './iac-validate';
+import { zipFiles } from './zip';
 
 /** What the declared role allows. Offline it is the user's word; the live wave reads Microsoft.Authorization. */
 export interface PermissionLevel {
@@ -41,6 +46,12 @@ export function permissionFor(role: AzureRole, source: ConnectionSource): Permis
   return { role, canDesign: true, canDeploy, verified, note: verified ? note : `${note} (Declared, not yet verified against Azure.)` };
 }
 
+/** The bundle's metadata for the state endpoint; the files come from the history or the download. */
+function withoutFiles(b: AzureIacBundle): Omit<AzureIacBundle, 'files'> {
+  const { files: _files, ...rest } = b;
+  return rest;
+}
+
 export interface AzureBuilderState {
   connection: (AzureConnection & { permission: PermissionLevel }) | null;
   environmentProfile: AzureEnvironmentProfile | null;
@@ -52,10 +63,14 @@ export interface AzureBuilderState {
   architecture: AzureArchitecture | null;
   /** True when a newer use case or Environment Profile exists than the architecture was designed from. */
   architectureStale: boolean;
+  /** Latest IaC bundle (Phase 4) without its files, or null. */
+  iacBundle: Omit<AzureIacBundle, 'files'> | null;
+  /** True when a newer architecture exists than the bundle was generated from. */
+  iacStale: boolean;
 }
 
 /**
- * Azure AI Factory Builder - Phases 0 (Connect), 1 (Discover), 2 (Use case intake) and 3 (Architect).
+ * Azure AI Factory Builder - Phases 0 (Connect), 1 (Discover), 2 (Use case intake), 3 (Architect) and 4 (Generate IaC).
  * Offline-first: no Azure call is made and no credential is accepted or stored.
  */
 @Injectable()
@@ -67,6 +82,7 @@ export class AzureBuilderService {
     @InjectRepository(AzureEnvironmentProfile) private readonly profiles: Repository<AzureEnvironmentProfile>,
     @InjectRepository(AzureUseCase) private readonly useCases: Repository<AzureUseCase>,
     @InjectRepository(AzureArchitecture) private readonly architectures: Repository<AzureArchitecture>,
+    @InjectRepository(AzureIacBundle) private readonly iacBundles: Repository<AzureIacBundle>,
     private readonly projectsService: ProjectsService,
     private readonly discoveryService: DiscoveryService,
   ) {}
@@ -78,6 +94,7 @@ export class AzureBuilderService {
     const active = connection?.active ? connection : null;
     const useCase = await this.latestUseCase(projectId);
     const architecture = await this.latestArchitecture(projectId);
+    const bundle = await this.latestIacBundle(projectId);
     return {
       connection: active ? { ...active, permission: permissionFor(active.role, active.source) } : null,
       environmentProfile,
@@ -85,6 +102,8 @@ export class AzureBuilderService {
       useCase,
       architecture,
       architectureStale: !!(architecture && (architecture.useCaseVersion !== useCase?.version || architecture.profileVersion !== environmentProfile?.version)),
+      iacBundle: bundle ? withoutFiles(bundle) : null,
+      iacStale: !!(bundle && bundle.architectureVersion !== architecture?.version),
     };
   }
 
@@ -207,6 +226,87 @@ export class AzureBuilderService {
 
   private latestArchitecture(projectId: string) {
     return this.architectures.findOne({ where: { project: { id: projectId } }, order: { version: 'DESC' } });
+  }
+
+  // ---- Phase 4 - Generate IaC ----
+
+  /**
+   * Generates the IaC bundle from the latest architecture, sized per environment, and compiles and lints
+   * it when a Bicep CLI is configured. A bundle that does not compile is not saved (spec 4.5).
+   */
+  async generateIac(projectId: string, user: AuthenticatedUser, dto: GenerateIacDto) {
+    const state = await this.getState(projectId, user);
+    const architecture = state.architecture;
+    if (!architecture) throw new BadRequestException('Design the architecture (Phase 3) before generating infrastructure code.');
+    if (state.architectureStale) throw new BadRequestException('The use case or the Environment Profile changed since the architecture was designed - design it again (Phase 3) first.');
+    const useCase = await this.useCases.findOne({ where: { project: { id: projectId }, version: architecture.useCaseVersion } });
+    const profile = await this.profiles.findOne({ where: { project: { id: projectId }, version: architecture.profileVersion } });
+    const connection = state.connection;
+    if (!useCase || !profile || !connection) throw new BadRequestException('The inputs this architecture was designed from are no longer available - design it again (Phase 3).');
+
+    const catalog = loadAzureCatalog();
+    const spec = architecture.spec;
+    const specsByEnv = {} as Record<TargetEnv, ArchitectureSpec>;
+    try {
+      for (const env of TARGET_ENVS) {
+        specsByEnv[env] = designArchitecture({
+          useCase: { ...useCase.spec, environment: env },
+          useCaseId: useCase.id,
+          useCaseVersion: useCase.version,
+          profile: profile.profile,
+          profileVersion: profile.version,
+          connection: { region: connection.region, deploymentModel: connection.deploymentModel },
+          options: spec.options,
+          catalog,
+        });
+      }
+    } catch (err) {
+      if (err instanceof ArchitectureError) throw new BadRequestException(err.message);
+      throw err;
+    }
+    const workload = dto.workload ?? deriveWorkload(spec.useCaseName);
+    const bundle = generateIacBundle({ spec, specsByEnv, architectureVersion: architecture.version, workload, catalog });
+    const validation = await validateIacBundle(bundle.files, process.env.AZURE_BUILDER_BICEP_PATH || undefined);
+    if (validation.status === 'failed') {
+      const errors = validation.diagnostics.filter((d) => d.level === 'error');
+      this.logger.error(`user=${user.email} action=azure_builder_iac_failed projectId=${projectId} architecture=${architecture.version} errors=${errors.length}`);
+      throw new UnprocessableEntityException({ message: `The generated Bicep did not compile (${errors.length} error(s)); nothing was saved.`, errorCode: 'IAC_COMPILE_FAILED', details: { diagnostics: validation.diagnostics } });
+    }
+    const version = (await this.iacBundles.count({ where: { project: { id: projectId } } })) + 1;
+    const saved = await this.iacBundles.save(
+      this.iacBundles.create({
+        project: { id: projectId } as Project,
+        createdBy: { id: user.id } as User,
+        version,
+        architectureVersion: architecture.version,
+        workload,
+        root: bundle.root,
+        generator: bundle.generator,
+        files: bundle.files,
+        requiredInputs: bundle.requiredInputs,
+        notes: bundle.notes,
+        validation,
+      }),
+    );
+    this.logger.log(`user=${user.email} action=azure_builder_iac projectId=${projectId} version=${version} architecture=${architecture.version} validation=${validation.status}`);
+    return saved;
+  }
+
+  async iacHistory(projectId: string, user: AuthenticatedUser) {
+    await this.projectsService.findOne(projectId, user);
+    return this.iacBundles.find({ where: { project: { id: projectId } }, order: { version: 'DESC' } });
+  }
+
+  /** The bundle as a zip, inside its root folder. */
+  async iacZip(projectId: string, user: AuthenticatedUser, version: number) {
+    await this.projectsService.findOne(projectId, user);
+    const bundle = await this.iacBundles.findOne({ where: { project: { id: projectId }, version } });
+    if (!bundle) throw new NotFoundException(`IaC bundle v${version} was not found for this project.`);
+    return { filename: `${bundle.root}-v${bundle.version}.zip`, buffer: zipFiles(bundle.files.map((f) => ({ path: `${bundle.root}/${f.path}`, content: f.content }))) };
+  }
+
+  private latestIacBundle(projectId: string) {
+    return this.iacBundles.findOne({ where: { project: { id: projectId } }, order: { version: 'DESC' } });
   }
 
   async connect(projectId: string, user: AuthenticatedUser, dto: CreateAzureConnectionDto) {

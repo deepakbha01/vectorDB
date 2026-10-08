@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, ParseUUIDPipe, Post, Res, UseGuards } from '@nestjs/common';
+import { Response } from 'express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -11,6 +12,7 @@ import { AzureBuilderService } from './azure-builder.service';
 import { CreateAzureConnectionDto, CreateEnvironmentProfileDto } from './dto/azure-builder.dto';
 import { CreateUseCaseDto, OverridePatternDto } from './dto/use-case.dto';
 import { GenerateArchitectureDto } from './dto/architecture.dto';
+import { GenerateIacDto } from './dto/iac.dto';
 
 /**
  * Azure AI Factory Builder, scoped to a project. Reads are open to project
@@ -107,5 +109,32 @@ export class AzureBuilderController {
   @Get('architectures')
   architectures(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.service.architectureHistory(projectId, user);
+  }
+
+  // ---- Phase 4 - Generate IaC ----
+
+  /** Generates (and, with a Bicep CLI, compiles and lints) the IaC bundle from the latest architecture. New version each call. */
+  @Post('iac')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  generateIac(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: GenerateIacDto) {
+    return this.service.generateIac(projectId, user, dto);
+  }
+
+  @Get('iac')
+  iacBundles(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.iacHistory(projectId, user);
+  }
+
+  /** The bundle as a zip (spec 11.2 layout inside one folder). */
+  @Get('iac/:version/download')
+  async downloadIac(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('version', ParseIntPipe) version: number,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const { filename, buffer } = await this.service.iacZip(projectId, user, version);
+    res.set({ 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${filename}"`, 'Content-Length': buffer.length });
+    res.send(buffer);
   }
 }
