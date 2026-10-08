@@ -29,10 +29,11 @@ function setup(discovery: any = null) {
   const connections = memoryRepo();
   const profiles = memoryRepo();
   const useCases = memoryRepo();
+  const architectures = memoryRepo();
   const projects = { findOne: jest.fn().mockResolvedValue({ id: P, name: 'HR Policy Assistant', businessUseCase: 'Employees ask HR policy questions and get grounded answers with citations from the policy handbook.' }) };
   const discoveryService = { getLatest: jest.fn().mockResolvedValue(discovery ? { assessment: discovery } : null) };
-  const service = new AzureBuilderService(connections as any, profiles as any, useCases as any, projects as any, discoveryService as any);
-  return { service, connections, profiles, useCases, projects };
+  const service = new AzureBuilderService(connections as any, profiles as any, useCases as any, architectures as any, projects as any, discoveryService as any);
+  return { service, connections, profiles, useCases, architectures, projects };
 }
 
 const intake = {
@@ -155,6 +156,49 @@ describe('AzureBuilderService - Phase 2 use case intake', () => {
     const p = await service.intakePrefill(P, user);
     expect(p.answers.data).toEqual([]);
     expect(p.answers.constraints.regions).toEqual([]);
+  });
+});
+
+describe('AzureBuilderService - Phase 3 architect', () => {
+  it('needs a use case, a connection and a current Environment Profile first', async () => {
+    const { service } = setup();
+    await expect(service.generateArchitecture(P, user, {})).rejects.toThrow('Complete the use case intake');
+    await service.submitUseCase(P, user, intake);
+    await expect(service.generateArchitecture(P, user, {})).rejects.toThrow('Connect a target subscription');
+    await service.connect(P, user, { ...connectDto });
+    await expect(service.generateArchitecture(P, user, {})).rejects.toThrow('Run Discover');
+    await service.discover(P, user, { source: ProfileSource.SAMPLE });
+    await service.connect(P, user, { ...connectDto, region: 'southindia' });
+    await expect(service.generateArchitecture(P, user, {})).rejects.toThrow('connection changed');
+  });
+
+  it('designs a versioned architecture from the latest inputs, and marks it stale when they change', async () => {
+    const { service } = setup();
+    await service.connect(P, user, { ...connectDto });
+    await service.discover(P, user, { source: ProfileSource.SAMPLE });
+    await service.submitUseCase(P, user, intake);
+    const a1 = await service.generateArchitecture(P, user, {});
+    expect(a1).toMatchObject({ version: 1, useCaseVersion: 1, profileVersion: 1 });
+    expect(a1.spec).toMatchObject({ region: 'centralindia', private: true, options: { apiGateway: null, chatHistory: false, deployment: 'auto' } });
+    const a2 = await service.generateArchitecture(P, user, { apiGateway: true, chatHistory: true });
+    expect(a2.version).toBe(2);
+    expect(a2.spec.components.map((c) => c.id)).toEqual(expect.arrayContaining(['apim', 'cosmos']));
+    expect(a2.spec.cost.monthlyUsd).toBeGreaterThan(a1.spec.cost.monthlyUsd);
+    expect((await service.getState(P, user)).architectureStale).toBe(false);
+    await service.submitUseCase(P, user, { ...intake, users: { ...intake.users, count: 8000 } });
+    expect((await service.getState(P, user)).architectureStale).toBe(true);
+    expect((await service.architectureHistory(P, user)).map((a) => a.version)).toEqual([2, 1]);
+  });
+
+  it('turns rules-engine refusals into clear 400s', async () => {
+    const { service } = setup();
+    await service.connect(P, user, { ...connectDto });
+    await service.discover(P, user, { source: ProfileSource.SAMPLE });
+    await service.submitUseCase(P, user, intake);
+    await service.overridePattern(P, user, { pattern: 'predictive-ml', reason: 'It is really a forecasting problem' });
+    await expect(service.generateArchitecture(P, user, {})).rejects.toBeInstanceOf(BadRequestException);
+    await service.submitUseCase(P, user, { ...intake, constraints: { ...intake.constraints, regions: ['eastus'] } });
+    await expect(service.generateArchitecture(P, user, {})).rejects.toThrow('No region satisfies');
   });
 });
 

@@ -1,6 +1,6 @@
 import { apiClient } from './client';
 
-// Azure AI Factory Builder - mirrors backend/src/azure-builder (Wave 1: Phases 0 Connect and 1 Discover; Wave 2: Phase 2 Use case intake).
+// Azure AI Factory Builder - mirrors backend/src/azure-builder (Wave 1: Phases 0 Connect and 1 Discover; Wave 2: Phase 2 Use case intake; Wave 3: Phase 3 Architect).
 
 export type DeploymentModel = 'centralised' | 'hub_and_spoke' | 'federated';
 export type AzureRole = 'owner' | 'contributor' | 'reader' | 'unknown';
@@ -136,11 +136,74 @@ export interface AzureUseCase {
 
 export interface IntakePrefill { answers: IntakeAnswers; sources: Record<string, string>; patterns: PatternInfo[] }
 
+// Wave 3: Phase 3 Architect (backend architecture.ts).
+export type Zone = 'edge' | 'app' | 'ai' | 'data' | 'network' | 'monitoring';
+export type ConnectionKind = 'https' | 'private-endpoint' | 'shared-private-link' | 'identity' | 'indexer' | 'hosted-in' | 'telemetry' | 'diagnostics' | 'workspace' | 'subnet' | 'dns-zone' | 'peering';
+
+export interface ArchitectureOptions { apiGateway: boolean | null; chatHistory: boolean; deployment: 'auto' | 'payg' | 'ptu' }
+
+export interface ArchitectureComponent {
+  id: string;
+  type: string;
+  label: string;
+  module: string;
+  zone: Zone;
+  params: Record<string, unknown>;
+  reuseExisting: boolean;
+  resourceId: string | null;
+  optional: boolean;
+  reason: string;
+}
+
+export interface Adr { id: string; title: string; status: string; context: string; decision: string; consequences: string; choice: string }
+
+export interface CostLineItem { component: string; item: string; quantity: string; monthlyUsd: number; oneTimeUsd: number; basis: string }
+
+export interface ArchitectureSpec {
+  useCaseId: string;
+  useCaseName: string;
+  specVersion: number;
+  profileVersion: number;
+  pattern: string;
+  region: string;
+  environment: string;
+  private: boolean;
+  options: ArchitectureOptions;
+  sizing: {
+    monthlyRequests: number; peakTpm: number; documentGb: number; corpusTokens: number; chunks: number; vectorGb: number; indexGb: number;
+    searchTier: string; searchReplicas: number; searchPartitions: number; deploymentSku: string; deploymentCapacity: number;
+  };
+  components: ArchitectureComponent[];
+  connections: Array<{ from: string; to: string; kind: ConnectionKind }>;
+  decisions: Array<{ adr: string; choice: string; reason: string }>;
+  adrs: Adr[];
+  tags: Record<string, string | null>;
+  cost: {
+    currency: string; monthlyUsd: number; oneTimeUsd: number; lineItems: CostLineItem[]; assumptions: string[];
+    rateCard: { version: string; lastReviewed: string; source: string }; budgetUsd: number | null; overBudget: boolean;
+    modelOptions: { paygMonthlyUsd: number; ptuMonthlyUsd: number; ptuUnits: number };
+  };
+  summary: string;
+  warnings: string[];
+  generator: { rules: string; explainer: string };
+}
+
+export interface AzureArchitecture {
+  id: string;
+  version: number;
+  useCaseVersion: number;
+  profileVersion: number;
+  spec: ArchitectureSpec;
+  createdAt: string;
+}
+
 export interface AzureBuilderState {
   connection: (AzureConnection & { permission: PermissionLevel }) | null;
   environmentProfile: AzureEnvironmentProfile | null;
   profileStale: boolean;
   useCase: AzureUseCase | null;
+  architecture: AzureArchitecture | null;
+  architectureStale: boolean;
 }
 
 export interface ProfileFormInput {
@@ -174,6 +237,9 @@ export const azureBuilderApi = {
   overridePattern: (projectId: string, body: { pattern: SolutionPattern; reason: string }) =>
     apiClient.post<AzureUseCase>(`${base(projectId)}/use-cases/override`, body).then((r) => r.data),
   useCases: (projectId: string) => apiClient.get<AzureUseCase[]>(`${base(projectId)}/use-cases`).then((r) => r.data),
+  generateArchitecture: (projectId: string, options: Partial<ArchitectureOptions>) =>
+    apiClient.post<AzureArchitecture>(`${base(projectId)}/architectures`, options).then((r) => r.data),
+  architectures: (projectId: string) => apiClient.get<AzureArchitecture[]>(`${base(projectId)}/architectures`).then((r) => r.data),
 };
 
 export const REGIONS: Array<{ value: string; label: string }> = [

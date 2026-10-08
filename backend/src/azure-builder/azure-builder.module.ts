@@ -8,10 +8,11 @@ import { AzureBuilderService } from './azure-builder.service';
 import { AzureConnection } from './azure-connection.entity';
 import { AzureEnvironmentProfile } from './azure-environment-profile.entity';
 import { AzureUseCase } from './azure-use-case.entity';
+import { AzureArchitecture } from './azure-architecture.entity';
 
-/** Azure AI Factory Builder (Wave 1: Connect, Discover; Wave 2: Use case intake). Behind AZURE_BUILDER_ENABLED. */
+/** Azure AI Factory Builder (Wave 1: Connect, Discover; Wave 2: Use case intake; Wave 3: Architect). Behind AZURE_BUILDER_ENABLED. */
 @Module({
-  imports: [TypeOrmModule.forFeature([AzureConnection, AzureEnvironmentProfile, AzureUseCase]), ProjectsModule, DiscoveryModule],
+  imports: [TypeOrmModule.forFeature([AzureConnection, AzureEnvironmentProfile, AzureUseCase, AzureArchitecture]), ProjectsModule, DiscoveryModule],
   controllers: [AzureBuilderController],
   providers: [AzureBuilderService, AzureBuilderEnabledGuard],
 })
