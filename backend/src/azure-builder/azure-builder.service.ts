@@ -908,7 +908,9 @@ export class AzureBuilderService {
     const current = await this.latestConnection(projectId);
     if (!current?.active) throw new BadRequestException('This project has no active Azure connection.');
     const { id: _id, createdAt: _createdAt, ...rest } = current;
-    await this.connections.save(this.connections.create({ ...rest, active: false, version: current.version + 1, createdBy: { id: user.id } as User }));
+    // The project is set explicitly: findOne does not load the relation, so `rest` has no project, and the
+    // disconnected version would be saved without one - leaving the project still connected.
+    await this.connections.save(this.connections.create({ ...rest, project: { id: projectId } as Project, active: false, version: current.version + 1, createdBy: { id: user.id } as User }));
     return { disconnected: true, subscriptionId: current.subscriptionId };
   }
 
