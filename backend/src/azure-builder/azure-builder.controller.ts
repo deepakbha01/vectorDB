@@ -14,6 +14,7 @@ import { CreateUseCaseDto, OverridePatternDto } from './dto/use-case.dto';
 import { GenerateArchitectureDto } from './dto/architecture.dto';
 import { GenerateIacDto } from './dto/iac.dto';
 import { CreateApprovalDto, CreateDeploymentDto, RunWhatIfDto } from './dto/approval.dto';
+import { SetBudgetDto, TeardownDto } from './dto/operate.dto';
 
 /** The user's Azure sign-in for one request (live mode). Read from this header only - never from a body, which the audit log records. */
 export const AZURE_TOKEN_HEADER = 'x-azure-token';
@@ -233,5 +234,44 @@ export class AzureBuilderController {
     @Headers(AZURE_TOKEN_HEADER) token: string | undefined,
   ) {
     return this.service.refreshDeployment(projectId, user, token, deploymentId);
+  }
+
+  // ---- Phase 7 - Operate (Azure sign-in in the X-Azure-Token header) ----
+
+  /** Smoke tests from what Azure reports about the stack's resources. */
+  @Post('deployments/:deploymentId/smoke-tests')
+  @HttpCode(200)
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  smokeTests(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('deploymentId', ParseUUIDPipe) deploymentId: string, @CurrentUser() user: AuthenticatedUser, @Headers(AZURE_TOKEN_HEADER) token: string | undefined) {
+    return this.service.runSmokeTests(projectId, user, token, deploymentId);
+  }
+
+  /** Live what-if of the deployed bundle: anything but NoChange is drift. */
+  @Post('deployments/:deploymentId/drift')
+  @HttpCode(200)
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  drift(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('deploymentId', ParseUUIDPipe) deploymentId: string, @CurrentUser() user: AuthenticatedUser, @Headers(AZURE_TOKEN_HEADER) token: string | undefined) {
+    return this.service.runDriftCheck(projectId, user, token, deploymentId);
+  }
+
+  /** Monthly cost budget on the resource group with alerts at 80% and 100%. */
+  @Post('deployments/:deploymentId/budget')
+  @HttpCode(200)
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  budget(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('deploymentId', ParseUUIDPipe) deploymentId: string, @CurrentUser() user: AuthenticatedUser, @Headers(AZURE_TOKEN_HEADER) token: string | undefined, @Body() dto: SetBudgetDto) {
+    return this.service.setBudget(projectId, user, token, deploymentId, dto);
+  }
+
+  /** Deletes the stack, every resource it manages, and its budget. Confirmed by typing the environment. */
+  @Post('deployments/:deploymentId/teardown')
+  @HttpCode(200)
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  teardown(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('deploymentId', ParseUUIDPipe) deploymentId: string, @CurrentUser() user: AuthenticatedUser, @Headers(AZURE_TOKEN_HEADER) token: string | undefined, @Body() dto: TeardownDto) {
+    return this.service.teardown(projectId, user, token, deploymentId, dto);
+  }
+
+  @Get('operate-checks')
+  operateChecks(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.operateHistory(projectId, user);
   }
 }

@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/auth.service';
 import { Project } from '../projects/project.entity';
 import { ProjectsService } from '../projects/projects.service';
-import { User } from '../users/user.entity';
+import { User, UserRole } from '../users/user.entity';
 import { AzureConnection } from './azure-connection.entity';
 import { AzureEnvironmentProfile } from './azure-environment-profile.entity';
 import { AzureRole, ConnectionSource, ProfileSource, ResourceGroupMode } from './azure-builder.enums';
@@ -27,6 +27,9 @@ import { GenerateIacDto } from './dto/iac.dto';
 import { deriveWorkload, generateIacBundle, TARGET_ENVS, TargetEnv } from './iac-bundle';
 import { compileForArm, IacCompileError, validateIacBundle } from './iac-validate';
 import { AzureDeployment } from './azure-deployment.entity';
+import { AzureOperateCheck, OperateKind, OperateStatus } from './azure-operate-check.entity';
+import { budgetBody, budgetName, deleteBudget, deleteStack, driftFrom, modelDeploymentsOf, overallStatus, putBudget, smokeChecks, stackResourceRows } from './live-operate';
+import { SetBudgetDto, TeardownDto } from './dto/operate.dto';
 import { denyModeFor, getDeploymentStack, putDeploymentStack, runLiveWhatIf, stackName, summariseStack, whatIfDeploymentName } from './live-deploy';
 import { zipFiles } from './zip';
 import { AzureWhatIf } from './azure-what-if.entity';
@@ -117,7 +120,7 @@ export interface AzureBuilderState {
 
 /**
  * Azure AI Factory Builder - Phases 0 (Connect), 1 (Discover), 2 (Use case intake), 3 (Architect), 4 (Generate IaC)
- * 5 (Validate & approve) and 6 (Deploy).
+ * 5 (Validate & approve), 6 (Deploy) and 7 (Operate).
  * Offline-first: every phase works without Azure. Live calls (Wave 6) use the user's own ARM token for
  * the one request that carries it; no credential or token is ever stored.
  */
@@ -136,6 +139,7 @@ export class AzureBuilderService {
     @InjectRepository(AzureWhatIf) private readonly whatIfs: Repository<AzureWhatIf>,
     @InjectRepository(AzureApproval) private readonly approvals: Repository<AzureApproval>,
     @InjectRepository(AzureDeployment) private readonly deployments: Repository<AzureDeployment>,
+    @InjectRepository(AzureOperateCheck) private readonly operateChecks: Repository<AzureOperateCheck>,
     private readonly projectsService: ProjectsService,
     private readonly discoveryService: DiscoveryService,
   ) {}
@@ -546,6 +550,8 @@ export class AzureBuilderService {
     }
     const running = await this.deployments.findOne({ where: { project: { id: projectId }, environment: env, state: 'running' } });
     if (running) throw new BadRequestException(`A ${env} deployment is already running (started ${new Date(running.createdAt).toISOString()}).`);
+    const tearingDown = await this.deployments.findOne({ where: { project: { id: projectId }, environment: env, state: 'tearing_down' } });
+    if (tearingDown) throw new BadRequestException(`The ${env} stack is being torn down - wait until it is deleted.`);
 
     const { arm, azureUser } = this.arm(token);
     const compiled = await this.compile(bundle.files, env);
@@ -597,8 +603,9 @@ export class AzureBuilderService {
     await this.projectsService.findOne(projectId, user);
     const row = await this.deployments.findOne({ where: { project: { id: projectId }, id: deploymentId } });
     if (!row) throw new NotFoundException('Deployment not found for this project.');
-    if (row.state !== 'running' || !row.stackId) return row;
+    if ((row.state !== 'running' && row.state !== 'tearing_down') || !row.stackId) return row;
     const { arm } = this.arm(token);
+    if (row.state === 'tearing_down') return this.refreshTeardown(projectId, user, arm, row);
     const summary = summariseStack(await this.callArm(() => getDeploymentStack(arm, row.stackId!)));
     const updated = await this.deployments.save({
       ...row,
@@ -617,9 +624,148 @@ export class AzureBuilderService {
     return updated;
   }
 
+  /** A teardown is done when the stack is gone (404); a failed stack delete keeps ARM's errors. */
+  private async refreshTeardown(projectId: string, user: AuthenticatedUser, arm: ArmClient, row: AzureDeployment) {
+    const stack = await this.callArm(async () => {
+      try {
+        return await getDeploymentStack(arm, row.stackId!);
+      } catch (err) {
+        if (err instanceof ArmError && err.status === 404) return null;
+        throw err;
+      }
+    });
+    const summary = stack ? summariseStack(stack) : null;
+    const failed = summary?.provisioningState.toLowerCase() === 'failed';
+    const state = !stack ? ('torn_down' as const) : failed ? ('teardown_failed' as const) : ('tearing_down' as const);
+    const updated = await this.deployments.save({
+      ...row,
+      state,
+      provisioningState: !stack ? 'deleted' : summary!.provisioningState,
+      errors: failed ? summary!.errors : [],
+      finishedAt: state === 'tearing_down' ? null : new Date(),
+      lastCheckedAt: new Date(),
+    });
+    if (state !== 'tearing_down') this.logger.log(`user=${user.email} action=azure_builder_teardown_${state} projectId=${projectId} env=${row.environment} stack=${row.stackName}`);
+    return updated;
+  }
+
   async deploymentHistory(projectId: string, user: AuthenticatedUser) {
     await this.projectsService.findOne(projectId, user);
     return this.deployments.find({ where: { project: { id: projectId } }, order: { createdAt: 'DESC' } });
+  }
+
+  // ---- Phase 7 - Operate (Wave 6c): smoke tests, budget, drift, teardown - spec 4.8 ----
+
+  /** The deployment Operate acts on: it must be the latest one of its environment and have a stack. */
+  private async operable(projectId: string, user: AuthenticatedUser, deploymentId: string) {
+    await this.projectsService.findOne(projectId, user);
+    const d = await this.deployments.findOne({ where: { project: { id: projectId }, id: deploymentId } });
+    if (!d) throw new NotFoundException('Deployment not found for this project.');
+    const latest = await this.deployments.findOne({ where: { project: { id: projectId }, environment: d.environment }, order: { createdAt: 'DESC' } });
+    if (latest && latest.id !== d.id) throw new BadRequestException(`A newer ${d.environment} deployment exists - operate on that one.`);
+    if (!d.stackId) throw new BadRequestException('This deployment has no Deployment Stack to operate on.');
+    return d;
+  }
+
+  private async recordCheck(projectId: string, user: AuthenticatedUser, d: AzureDeployment, kind: OperateKind, status: OperateStatus, summary: string, result: Record<string, unknown>) {
+    const saved = await this.operateChecks.save(
+      this.operateChecks.create({ project: { id: projectId } as Project, createdBy: { id: user.id } as User, createdByEmail: user.email, deploymentId: d.id, environment: d.environment, kind, status, summary, result }),
+    );
+    this.logger.log(`user=${user.email} action=azure_builder_operate_${kind} projectId=${projectId} env=${d.environment} stack=${d.stackName} status=${status}`);
+    return saved;
+  }
+
+  /** The architecture and use case a deployment's bundle was generated from. */
+  private async deploymentDesign(projectId: string, d: AzureDeployment) {
+    const bundle = await this.iacBundles.findOne({ where: { project: { id: projectId }, version: d.iacVersion } });
+    const architecture = bundle && (await this.architectures.findOne({ where: { project: { id: projectId }, version: bundle.architectureVersion } }));
+    const useCase = architecture && (await this.useCases.findOne({ where: { project: { id: projectId }, version: architecture.useCaseVersion } }));
+    return { bundle, architecture, useCase };
+  }
+
+  /** Smoke tests from what ARM reports about the stack's resources (spec 4.8). */
+  async runSmokeTests(projectId: string, user: AuthenticatedUser, token: string | undefined, deploymentId: string) {
+    const d = await this.operable(projectId, user, deploymentId);
+    if (d.state !== 'succeeded' && d.state !== 'failed') throw new BadRequestException(`Smoke tests need a finished deployment - this one is ${d.state.replace('_', ' ')}.`);
+    const { architecture } = await this.deploymentDesign(projectId, d);
+    const { arm } = this.arm(token);
+    const checks = await this.callArm(async () => {
+      const stack = summariseStack(await getDeploymentStack(arm, d.stackId!));
+      const rows = await stackResourceRows(arm, d.subscriptionId, stack.resourceIds);
+      const modelDeployments = await modelDeploymentsOf(arm, rows);
+      return smokeChecks({ stack, rows, modelDeployments, isPrivate: architecture?.spec.private ?? true });
+    });
+    const count = (s: string) => checks.filter((c) => c.status === s).length;
+    return this.recordCheck(projectId, user, d, 'smoke', overallStatus(checks), `${count('passed')} passed, ${count('failed')} failed, ${count('warning')} warning(s), ${count('skipped')} skipped.`, { checks });
+  }
+
+  /**
+   * Creates or updates a monthly cost budget on the resource group with alerts at 80% and 100% (spec 4.8).
+   * The amount defaults to the use case budget, else the estimate; it is in the subscription's billing currency.
+   */
+  async setBudget(projectId: string, user: AuthenticatedUser, token: string | undefined, deploymentId: string, dto: SetBudgetDto) {
+    const d = await this.operable(projectId, user, deploymentId);
+    if (d.state !== 'succeeded') throw new BadRequestException('Set a budget on a successful deployment.');
+    const { arm, azureUser } = this.arm(token);
+    const whatIf = await this.whatIfs.findOne({ where: { project: { id: projectId }, id: d.whatIfId } });
+    const amount = dto.amountUsd ?? whatIf?.report.budgetUsd ?? whatIf?.report.monthlyUsd ?? null;
+    if (!amount) throw new BadRequestException('Give a monthly budget amount.');
+    const emails = [...new Set((dto.contactEmails?.length ? dto.contactEmails : [azureUser ?? user.email]).map((e) => e.trim()).filter(Boolean))];
+    const name = budgetName(d.stackName);
+    const body = budgetBody(amount, emails);
+    await this.callArm(() => putBudget(arm, { subscriptionId: d.subscriptionId, resourceGroup: d.resourceGroup }, name, body));
+    return this.recordCheck(projectId, user, d, 'budget', 'info', `Monthly budget ${body.properties.amount} on ${d.resourceGroup}, alerts at 80% and 100% to ${emails.join(', ')}.`, {
+      name, amount: body.properties.amount, contactEmails: emails, thresholds: [80, 100], scope: `/subscriptions/${d.subscriptionId}/resourceGroups/${d.resourceGroup}`,
+    });
+  }
+
+  /**
+   * Drift: a live what-if of exactly the deployed bundle and environment. Anything other than NoChange
+   * means the resources no longer match what was approved and deployed (spec 4.8). Runs on demand -
+   * a scheduled daily check needs a service principal, since no user token is kept.
+   */
+  async runDriftCheck(projectId: string, user: AuthenticatedUser, token: string | undefined, deploymentId: string) {
+    const d = await this.operable(projectId, user, deploymentId);
+    if (d.state !== 'succeeded') throw new BadRequestException('Drift is checked against a successful deployment.');
+    const { bundle, useCase } = await this.deploymentDesign(projectId, d);
+    if (!bundle || !useCase) throw new BadRequestException(`IaC bundle v${d.iacVersion} or its use case is no longer available.`);
+    const { arm } = this.arm(token);
+    const compiled = await this.compile(bundle.files, d.environment);
+    const raw = await this.callArm(() => runLiveWhatIf(arm, { subscriptionId: d.subscriptionId, resourceGroup: d.resourceGroup }, `${d.stackName}-drift`.slice(0, 64), compiled.template, compiled.parameters));
+    const parsed = parseArmWhatIf(JSON.stringify(raw), useCase.id);
+    if (parsed.status === 'failed') {
+      return this.recordCheck(projectId, user, d, 'drift', 'failed', `The drift check could not run: ${parsed.error ?? parsed.problems.join(' ') ?? 'Azure returned no result.'}`, { error: parsed.error, problems: parsed.problems });
+    }
+    const drift = driftFrom(parsed.changes);
+    const by = (t: string) => drift.items.filter((i) => i.changeType === t).length;
+    return this.recordCheck(
+      projectId, user, d, 'drift', drift.drifted ? 'warning' : 'passed',
+      drift.drifted ? `Drift: ${by('Modify')} changed, ${by('Create')} missing (deleted outside the stack), ${by('Delete')} to delete - redeploy, or bring the change into the design.` : `No drift: all ${parsed.changes.length} resource(s) match bundle v${bundle.version}.`,
+      { items: drift.items, compared: parsed.changes.length, iacVersion: bundle.version },
+    );
+  }
+
+  /**
+   * Deletes the Deployment Stack with every resource it manages, and its budget (spec 4.8). Resources
+   * outside the stack are untouched. Confirmed by typing the environment; production needs an admin.
+   */
+  async teardown(projectId: string, user: AuthenticatedUser, token: string | undefined, deploymentId: string, dto: TeardownDto) {
+    const d = await this.operable(projectId, user, deploymentId);
+    if (d.state === 'running' || d.state === 'tearing_down' || d.state === 'torn_down') throw new BadRequestException(`This deployment is ${d.state.replace('_', ' ')}.`);
+    if (dto.confirm.trim() !== d.environment) throw new BadRequestException(`Type "${d.environment}" to confirm the teardown.`);
+    if (d.environment === 'prod' && user.role !== UserRole.ADMIN) throw new ForbiddenException('Only an admin can tear down production.');
+    const { arm } = this.arm(token);
+    const target = { subscriptionId: d.subscriptionId, resourceGroup: d.resourceGroup };
+    await this.callArm(() => deleteBudget(arm, target, budgetName(d.stackName)));
+    await this.callArm(() => deleteStack(arm, d.stackId!));
+    const updated = await this.deployments.save({ ...d, state: 'tearing_down' as const, provisioningState: 'deleting', errors: [], finishedAt: null, lastCheckedAt: new Date() });
+    await this.recordCheck(projectId, user, d, 'teardown', 'info', `Teardown requested: ${d.stackName} and the ${d.resourceIds.length} resource(s) it manages are being deleted, with the budget.`, { stackId: d.stackId, resources: d.resourceIds.length });
+    return updated;
+  }
+
+  async operateHistory(projectId: string, user: AuthenticatedUser) {
+    await this.projectsService.findOne(projectId, user);
+    return this.operateChecks.find({ where: { project: { id: projectId } }, order: { createdAt: 'DESC' } });
   }
 
   /** The latest bundle and the exact inputs it was generated from; refuses a stale chain. */
