@@ -252,6 +252,27 @@ export interface AssessContext {
 }
 
 /** What blocks approval and what the approver must weigh (spec 4.6). */
+/**
+ * What-if cannot evaluate a location that depends on a resource created in the same deployment - e.g. a private
+ * endpoint's `[coalesce(null(), reference('<vnet id>', ...).location)]` - and reports the template expression
+ * instead. Such a location is taken from the referenced resource's own location in the same what-if; one that
+ * cannot be resolved is reported as unresolved, never compared as text.
+ */
+export function effectiveLocations(changes: WhatIfChange[]): (location: string) => { location: string; via: string | null; unresolved: boolean } {
+  const concrete = new Map<string, { location: string; name: string }>();
+  for (const c of changes) if (c.location && !isExpression(c.location)) concrete.set(lower(c.resourceId), { location: c.location, name: c.name });
+  return (location) => {
+    if (!isExpression(location)) return { location, via: null, unresolved: false };
+    for (const m of location.matchAll(/reference\('([^']+)'/gi)) {
+      const hit = concrete.get(lower(m[1]));
+      if (hit) return { location: hit.location, via: hit.name, unresolved: false };
+    }
+    return { location, via: null, unresolved: true };
+  };
+}
+
+const isExpression = (s: string) => /^\[[\s\S]*\]$/.test(s.trim());
+
 export function assessWhatIf(changes: WhatIfChange[], ctx: AssessContext): WhatIfAssessment {
   const blocking: string[] = [];
   const risks: string[] = [];
@@ -259,6 +280,7 @@ export function assessWhatIf(changes: WhatIfChange[], ctx: AssessContext): WhatI
   for (const c of changes) counts[c.changeType]++;
   const allowed = ctx.allowedLocations.map(lower);
   const show = (c: WhatIfChange) => `${c.type.split('/').pop()} ${c.name}`;
+  const locationOf = effectiveLocations(changes);
 
   if (ctx.source === 'arm') {
     if (ctx.armStatus !== 'succeeded') blocking.push(`The what-if did not succeed${ctx.armError ? `: ${ctx.armError}` : ''}.`);
@@ -287,8 +309,13 @@ export function assessWhatIf(changes: WhatIfChange[], ctx: AssessContext): WhatI
     if (c.changeType === 'Delete' && !c.owned) blocking.push(`${show(c)} would be deleted, and it does not belong to this use case.`);
     if (c.changeType === 'Delete' && c.owned) risks.push(`${show(c)} (this use case's) would be deleted.`);
     if (c.changeType === 'Modify' && !c.owned) risks.push(`${show(c)} is shared and would be modified (${c.propertyChanges} propert${c.propertyChanges === 1 ? 'y' : 'ies'}).`);
-    if ((c.changeType === 'Create' || c.changeType === 'Modify') && c.location && allowed.length && !['global'].includes(lower(c.location)) && !allowed.includes(lower(c.location).replace(/\s+/g, ''))) {
-      blocking.push(`${show(c)} would be placed in ${c.location}, which the policy does not allow (${allowed.join(', ')}).`);
+    if ((c.changeType === 'Create' || c.changeType === 'Modify') && c.location && allowed.length) {
+      const where = locationOf(c.location);
+      if (where.unresolved) {
+        risks.push(`${show(c)}: its region is only known at deployment (it follows another resource) - Azure Policy still enforces the allowed regions then.`);
+      } else if (!['global'].includes(lower(where.location)) && !allowed.includes(lower(where.location).replace(/\s+/g, ''))) {
+        blocking.push(`${show(c)} would be placed in ${where.location}${where.via ? ` (the region of ${where.via})` : ''}, which the policy does not allow (${allowed.join(', ')}).`);
+      }
     }
     if (c.note?.includes('already exists')) risks.push(`${show(c)}: a resource with this name already exists in the subscription.`);
   }
