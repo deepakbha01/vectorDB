@@ -1,5 +1,5 @@
 import { AccountInfo, BrowserCacheLocation, InteractionRequiredAuthError, PublicClientApplication } from '@azure/msal-browser';
-import { apiClient } from './client';
+import { apiClient, extractErrorMessage } from './client';
 
 /**
  * Azure sign-in for the Azure Builder's live mode (Wave 6, spec 9.1). Separate
@@ -34,6 +34,9 @@ export function liveAzureConfig(): Promise<LiveAzureConfig> {
 async function msal(): Promise<PublicClientApplication | null> {
   msalPromise ??= liveAzureConfig().then(async (config) => {
     if (!config.enabled || !config.clientId || !config.tenantId) return null;
+    // MSAL needs Web Crypto, which browsers only offer on https or localhost - fail with the reason, not a crypto error.
+    const insecure = insecureOriginMessage();
+    if (insecure) throw new Error(insecure);
     const app = new PublicClientApplication({
       auth: {
         clientId: config.clientId,
@@ -44,9 +47,26 @@ async function msal(): Promise<PublicClientApplication | null> {
       cache: { cacheLocation: BrowserCacheLocation.SessionStorage },
     });
     await app.initialize();
+    // Outside the callback page, settle a sign-in left half-way (tab closed, Back pressed); otherwise MSAL keeps an
+    // "interaction in progress" flag in this tab and refuses to start the next sign-in.
+    if (window.location.pathname !== AZURE_CALLBACK_PATH) await app.handleRedirectPromise().catch(() => null);
     return app;
   });
   return msalPromise;
+}
+
+/** Why Azure sign-in cannot work at this address, or null. Entra ID also accepts plain-http redirect URIs only for localhost. */
+export function insecureOriginMessage(): string | null {
+  if (window.isSecureContext && window.crypto?.subtle) return null;
+  const local = `http://localhost${window.location.port ? `:${window.location.port}` : ''}`;
+  return `Azure sign-in needs a secure address, and ${window.location.origin} is not one. Open ${local} on this server (or through an SSH tunnel), or serve the app over https.`;
+}
+
+/** A readable message for a failed Azure sign-in step: the API's message, or the browser/MSAL error itself - not just the fallback. */
+export function azureErrorText(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object' && 'response' in err) return extractErrorMessage(err, fallback);
+  if (err instanceof Error && err.message) return `${fallback.replace(/\.$/, '')}: ${err.message}`;
+  return fallback;
 }
 
 /** The signed-in Azure account, if any. */

@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { AccountInfo } from '@azure/msal-browser';
-import { extractErrorCode, extractErrorMessage } from '../api/client';
-import { AzureSignInRequired, azureAccount, LiveAzureConfig, liveAzureConfig, signInToAzure, signOutOfAzure } from '../api/azureAuth';
+import { extractErrorCode } from '../api/client';
+import { AzureSignInRequired, azureAccount, azureErrorText, LiveAzureConfig, liveAzureConfig, signInToAzure, signOutOfAzure } from '../api/azureAuth';
 import { azureBuilderApi, LiveConnectionInput, LiveSubscription, REGIONS } from '../api/azureBuilder';
 
 const NEW_GROUP = '__new__';
@@ -28,7 +28,7 @@ export function AzureLiveConnect({ projectId, onConnected }: { projectId: string
 
   const fail = (err: unknown, fallback: string) => {
     if (needsSignIn(err)) setAccount(null);
-    setError(err instanceof AzureSignInRequired ? err.message : extractErrorMessage(err, fallback));
+    setError(err instanceof AzureSignInRequired ? err.message : azureErrorText(err, fallback));
   };
 
   const loadSubscriptions = async () => {

@@ -184,8 +184,14 @@ export class AzureBuilderService {
     const problems = validateIntake(answers);
     if (problems.length) throw new BadRequestException(problems);
     const classification = classifyUseCase(answers);
-    const saved = await this.saveUseCase(projectId, user, buildUseCaseSpec(answers, classification, user.email), classification);
-    this.logger.log(`user=${user.email} action=azure_builder_intake projectId=${projectId} version=${saved.version} pattern=${classification.pattern} risk=${classification.riskClass}`);
+    // An architect's override survives a resubmitted intake while the classifier still gives the answer that was overridden;
+    // when the new answers change the classification, the override no longer applies and the new result stands.
+    const previous = await this.latestUseCase(projectId);
+    const kept = previous?.spec.pattern.overriddenBy && previous.classification.pattern === classification.pattern
+      ? { pattern: previous.spec.pattern.id, reason: previous.spec.pattern.overrideReason ?? '', by: previous.spec.pattern.overriddenBy }
+      : undefined;
+    const saved = await this.saveUseCase(projectId, user, buildUseCaseSpec(answers, classification, user.email, kept), classification);
+    this.logger.log(`user=${user.email} action=azure_builder_intake projectId=${projectId} version=${saved.version} pattern=${saved.spec.pattern.id} classified=${classification.pattern} overrideKept=${!!kept} risk=${classification.riskClass}`);
     return saved;
   }
 

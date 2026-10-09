@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { apiClient, extractErrorCode, extractErrorMessage, Project } from '../api/client';
 import { useFeatures } from '../api/features';
-import { AzureSignInRequired, signInToAzure } from '../api/azureAuth';
+import { AzureSignInRequired, azureErrorText, signInToAzure } from '../api/azureAuth';
 import { AzureBuilderState, AzureDeployment, AzureOperateCheck, azureBuilderApi, CheckStatus, TARGET_ENVS, TargetEnv } from '../api/azureBuilder';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
@@ -158,7 +158,7 @@ export function AzureOperatePage() {
             {error && (
               <div className="card" style={{ marginBottom: 16, borderLeft: '4px solid var(--danger)' }}>
                 <div className="error-text">{error}</div>
-                {signInNeeded && <button type="button" className="primary-btn" style={{ marginTop: 8 }} onClick={() => signInToAzure().catch((e) => setError(extractErrorMessage(e, 'Could not start the Azure sign-in.')))}>Sign in to Azure</button>}
+                {signInNeeded && <button type="button" className="primary-btn" style={{ marginTop: 8 }} onClick={() => signInToAzure().catch((e) => setError(azureErrorText(e, 'Could not start the Azure sign-in.')))}>Sign in to Azure</button>}
               </div>
             )}
 

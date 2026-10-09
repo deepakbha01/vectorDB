@@ -4,7 +4,7 @@ import { apiClient, extractErrorCode, extractErrorMessage, Project } from '../ap
 import { useFeatures } from '../api/features';
 import { AzureBuilderState, AzureEnvironmentProfile, azureBuilderApi, DiscoveryQuery, ModelQuota, ProfileSource } from '../api/azureBuilder';
 import { PhaseNav } from '../components/PhaseNav';
-import { AzureSignInRequired, signInToAzure } from '../api/azureAuth';
+import { AzureSignInRequired, azureErrorText, signInToAzure } from '../api/azureAuth';
 import { TopBar } from '../components/TopBar';
 
 const list = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
@@ -209,7 +209,7 @@ export function AzureDiscoverPage() {
               )}
 
               {error && <div className="error-text">{error}</div>}
-              {signInNeeded && <button type="button" className="primary-btn" style={{ marginRight: 8 }} onClick={() => signInToAzure().catch((err) => setError(extractErrorMessage(err, 'Could not start the Azure sign-in.')))}>Sign in to Azure</button>}
+              {signInNeeded && <button type="button" className="primary-btn" style={{ marginRight: 8 }} onClick={() => signInToAzure().catch((err) => setError(azureErrorText(err, 'Could not start the Azure sign-in.')))}>Sign in to Azure</button>}
               <div>
                 <button className="primary-btn" type="submit" disabled={running}>{running ? 'Building profile...' : profile ? 'Re-run Discover (new version)' : 'Run Discover'}</button>
               </div>

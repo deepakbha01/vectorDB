@@ -210,6 +210,8 @@ describe('AzureBuilderService - Phase 3 architect', () => {
     await service.overridePattern(P, user, { pattern: 'predictive-ml', reason: 'It is really a forecasting problem' });
     await expect(service.generateArchitecture(P, user, {})).rejects.toBeInstanceOf(BadRequestException);
     await service.submitUseCase(P, user, { ...intake, constraints: { ...intake.constraints, regions: ['eastus'] } });
+    // The override survives the resubmitted intake; set the pattern back to the RAG assistant to reach the region rule.
+    await service.overridePattern(P, user, { pattern: 'rag-assistant', reason: 'Back to the RAG design' });
     await expect(service.generateArchitecture(P, user, {})).rejects.toThrow('No region satisfies');
   });
 });
@@ -605,6 +607,22 @@ describe('AzureBuilderService - live what-if and Deploy (Wave 6b)', () => {
   it('Phase 6: a Reader cannot deploy', async () => {
     const { service } = await liveReady({ perms: [{ actions: ['*/read'] }] });
     await expect(service.deploy(P, user, token(), { environment: 'dev' })).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
+
+describe('AzureBuilderService - pattern override and a resubmitted intake', () => {
+  it('keeps the override while the classifier still gives the result that was overridden, and drops it when the answers change that', async () => {
+    const { service } = setup();
+    const copilot = { ...intake, name: 'Customer chat', business: { ...intake.business, problem: 'A customer service chatbot to deflect helpdesk conversations' } };
+    expect((await service.submitUseCase(P, user, copilot)).spec.pattern.id).toBe('conversational-copilot');
+    await service.overridePattern(P, user, { pattern: 'rag-assistant', reason: 'Answers come from the knowledge base' });
+
+    const again = await service.submitUseCase(P, user, { ...copilot, business: { ...copilot.business, sponsor: 'COO' } });
+    expect(again.spec.pattern).toMatchObject({ id: 'rag-assistant', overriddenBy: user.email, overrideReason: 'Answers come from the knowledge base' });
+    expect(again.classification.pattern).toBe('conversational-copilot'); // the classifier's own answer is still recorded
+
+    const changed = await service.submitUseCase(P, user, { ...copilot, business: { ...copilot.business, problem: 'Forecast weekly demand and predict churn from tabular sales history' }, data: [{ ...intake.data[0], source: 'Sales warehouse', format: 'sql tables' }] });
+    expect(changed.spec.pattern).toMatchObject({ id: 'predictive-ml', overriddenBy: null });
   });
 });
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { apiClient, extractErrorCode, extractErrorMessage, Project } from '../api/client';
 import { useFeatures } from '../api/features';
-import { AzureSignInRequired, signInToAzure } from '../api/azureAuth';
+import { AzureSignInRequired, azureErrorText, signInToAzure } from '../api/azureAuth';
 import { AzureApproval, AzureBuilderState, AzureDeployment, AzureIacBundle, AzureWhatIf, azureBuilderApi, TARGET_ENVS, TargetEnv } from '../api/azureBuilder';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
@@ -174,7 +174,7 @@ export function AzureDeployPage() {
               )}
               {error && <div className="error-text" style={{ marginTop: 8 }}>{error}</div>}
               {signInNeeded && (
-                <button type="button" className="primary-btn" style={{ marginTop: 8 }} onClick={() => signInToAzure().catch((e) => setError(extractErrorMessage(e, 'Could not start the Azure sign-in.')))}>
+                <button type="button" className="primary-btn" style={{ marginTop: 8 }} onClick={() => signInToAzure().catch((e) => setError(azureErrorText(e, 'Could not start the Azure sign-in.')))}>
                   Sign in to Azure
                 </button>
               )}
