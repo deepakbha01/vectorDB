@@ -1,7 +1,8 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AzureBuilderEnabledGuard } from './azure-builder-enabled.guard';
-import { AzureBuilderService, permissionFor } from './azure-builder.service';
+import { AzureBuilderService, liveAzureConfig, permissionFor } from './azure-builder.service';
+import { ArmError } from './arm-client';
 import { AzureRole, ConnectionSource, DeploymentModel, ProfileSource, ResourceGroupMode } from './azure-builder.enums';
 
 /** A tiny in-memory stand-in for a TypeORM repository: filters on the project and any plain field; newest first (by version, else insertion). */
@@ -351,5 +352,109 @@ describe('AzureBuilderEnabledGuard', () => {
     expect(() => guard(undefined).canActivate()).toThrow(NotFoundException);
     expect(() => guard('false').canActivate()).toThrow(NotFoundException);
     expect(guard('true').canActivate()).toBe(true);
+  });
+});
+
+describe('AzureBuilderService - live Azure (Wave 6a)', () => {
+  const TENANT = 'ef04bcd8-91ce-495c-9393-c645d394493c';
+  const SUB = '51bfc241-927a-44b4-9dc8-2a3af25352b4';
+  const token = (claims: Record<string, unknown> = {}) => {
+    const part = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    return `${part({ alg: 'none' })}.${part({ aud: 'https://management.azure.com/', tid: TENANT, upn: 'architect@contoso.com', exp: Math.floor(Date.now() / 1000) + 3600, ...claims })}.sig`;
+  };
+  const liveDto = { subscriptionId: SUB, resourceGroup: 'evectorizeresoruces', resourceGroupMode: ResourceGroupMode.EXISTING, region: 'CentralIndia', deploymentModel: DeploymentModel.HUB_AND_SPOKE };
+  const envBefore = { ...process.env };
+
+  /** An ARM client answering the calls live Connect and Discover make. */
+  function armReplies(overrides: { groupMissing?: boolean; tenantId?: string; perms?: unknown[] } = {}) {
+    const answer = async (path: string): Promise<any> => {
+      if (/permissions/.test(path)) return { value: overrides.perms ?? [{ actions: ['*'], notActions: ['Microsoft.Authorization/*/Write'] }] };
+      if (/\/locations\?/.test(path)) return { value: [{ name: 'centralindia' }] };
+      if (/resourcegroups\/[^/?]+\?/.test(path)) {
+        if (overrides.groupMissing) throw new ArmError(404, 'ResourceGroupNotFound', 'not found');
+        return { location: 'centralindia' };
+      }
+      if (/ResourceGraph/.test(path)) return { data: [{ id: `/subscriptions/${SUB}/resourceGroups/rg-mon/providers/Microsoft.OperationalInsights/workspaces/log-1`, name: 'log-1', type: 'microsoft.operationalinsights/workspaces', location: 'centralindia' }] };
+      if (/policyAssignments|usages/.test(path)) return { value: [] };
+      if (/secureScores/.test(path)) throw new ArmError(404, 'NotFound', 'x');
+      if (/\/subscriptions\/[^/]+\?/.test(path)) return { displayName: 'Evectorize Test', tenantId: overrides.tenantId ?? TENANT };
+      if (/\/subscriptions\?/.test(path)) return { value: [{ subscriptionId: SUB, displayName: 'Evectorize Test', tenantId: TENANT, state: 'Enabled' }] };
+      throw new Error(`unexpected ${path}`);
+    };
+    return { get: jest.fn(answer), post: jest.fn(answer), list: jest.fn(async (p: string) => (await answer(p)).value) } as any;
+  }
+
+  function liveSetup(overrides: Parameters<typeof armReplies>[0] = {}) {
+    const s = setup();
+    const arm = armReplies(overrides);
+    const seen: string[] = [];
+    s.service.armClientFor = (t) => { seen.push(t); return arm; };
+    return { ...s, arm, seen };
+  }
+
+  beforeEach(() => {
+    process.env.AZURE_BUILDER_ENTRA_CLIENT_ID = 'ba6bfea9-3b98-45bf-bcc5-a9929849f229';
+    process.env.AZURE_BUILDER_ENTRA_TENANT_ID = TENANT;
+  });
+  afterEach(() => { process.env = { ...envBefore }; });
+
+  it('exposes the Entra app registration only when both IDs are configured', () => {
+    expect(liveAzureConfig()).toEqual({ enabled: true, clientId: 'ba6bfea9-3b98-45bf-bcc5-a9929849f229', tenantId: TENANT, scopes: ['https://management.azure.com/user_impersonation'] });
+    expect(liveAzureConfig({ AZURE_BUILDER_ENTRA_CLIENT_ID: 'not-a-guid', AZURE_BUILDER_ENTRA_TENANT_ID: TENANT }).enabled).toBe(false);
+  });
+
+  it('Phase 0 live: verifies the target and records the role Azure reports, never the token', async () => {
+    const { service, connections, seen } = liveSetup();
+    const t = token();
+    const c = await service.connectLive(P, user, t, { ...liveDto });
+    expect(seen).toEqual([t]);
+    expect(c).toMatchObject({ source: ConnectionSource.LIVE, tenantId: TENANT, subscriptionName: 'Evectorize Test', region: 'centralindia', role: AzureRole.CONTRIBUTOR, azureUser: 'architect@contoso.com' });
+    expect(c.permission).toMatchObject({ verified: true, canDeploy: true, canAssignRoles: false });
+    expect(c.permission.note).toContain('Role Based Access Control Administrator');
+    expect(JSON.stringify(connections.rows)).not.toContain(t);
+  });
+
+  it('Phase 0 live: asks for an Azure sign-in (400, not 401) when the token is missing, foreign or expired', async () => {
+    const { service } = liveSetup();
+    for (const t of [undefined, token({ tid: '00000000-0000-4000-8000-000000000000' }), token({ exp: 1 })]) {
+      const err = await service.connectLive(P, user, t, { ...liveDto }).catch((e) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect(err.getResponse()).toMatchObject({ errorCode: 'AZURE_SIGN_IN_REQUIRED' });
+    }
+  });
+
+  it('Phase 0 live: refuses when live Azure is not configured on the server', async () => {
+    delete process.env.AZURE_BUILDER_ENTRA_CLIENT_ID;
+    const { service } = liveSetup();
+    await expect(service.connectLive(P, user, token(), { ...liveDto })).rejects.toThrow('not configured');
+  });
+
+  it('Phase 0 live: checks the resource group mode against what exists, and the subscription tenant', async () => {
+    await expect(liveSetup({ groupMissing: true }).service.connectLive(P, user, token(), { ...liveDto })).rejects.toThrow('was not found');
+    await expect(liveSetup().service.connectLive(P, user, token(), { ...liveDto, resourceGroupMode: ResourceGroupMode.NEW })).rejects.toThrow('already exists');
+    await expect(liveSetup({ tenantId: '00000000-0000-4000-8000-000000000000' }).service.connectLive(P, user, token(), { ...liveDto })).rejects.toThrow('belongs to tenant');
+  });
+
+  it('Phase 0 live: an Azure 403 surfaces as Forbidden with Azure\'s message', async () => {
+    const { service, arm } = liveSetup();
+    arm.get.mockRejectedValueOnce(new ArmError(403, 'AuthorizationFailed', 'The client does not have authorization'));
+    await expect(service.connectLive(P, user, token(), { ...liveDto })).rejects.toThrow(ForbiddenException);
+  });
+
+  it('Phase 1 live: needs a live connection, then builds the profile from the subscription', async () => {
+    const { service } = liveSetup();
+    await service.connect(P, user, { ...connectDto });
+    await expect(service.discover(P, user, { source: ProfileSource.LIVE }, token())).rejects.toThrow('needs a live connection');
+    await service.connectLive(P, user, token(), { ...liveDto });
+    const p = await service.discover(P, user, { source: ProfileSource.LIVE }, token());
+    expect(p).toMatchObject({ source: ProfileSource.LIVE, connectionVersion: 2 });
+    expect(p.profile.subscriptionId).toBe(SUB);
+    expect(p.profile.monitoring.logAnalyticsId).toContain('/workspaces/log-1');
+    expect(p.problems).toContain('Defender for Cloud secure score is not available for this subscription or user.');
+  });
+
+  it('lists subscriptions for the signed-in user', async () => {
+    const { service } = liveSetup();
+    await expect(service.liveSubscriptions(P, user, token())).resolves.toEqual([{ subscriptionId: SUB, displayName: 'Evectorize Test', tenantId: TENANT, state: 'Enabled' }]);
   });
 });

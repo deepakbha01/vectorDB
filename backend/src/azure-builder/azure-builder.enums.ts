@@ -5,7 +5,7 @@ export enum DeploymentModel {
   FEDERATED = 'federated',
 }
 
-/** The role the user holds on the target scope. Offline it is declared; the live wave reads it from Microsoft.Authorization. */
+/** The role the user holds on the target scope. Offline it is declared; live it is read from Microsoft.Authorization (owner = can deploy and assign roles). */
 export enum AzureRole {
   OWNER = 'owner',
   CONTRIBUTOR = 'contributor',
@@ -18,7 +18,7 @@ export enum ResourceGroupMode {
   NEW = 'new',
 }
 
-/** Where a connection's details came from. Only `declared` exists until the live-Azure wave. */
+/** Where a connection's details came from: declared by the user (offline) or verified against Azure with their sign-in (live). */
 export enum ConnectionSource {
   DECLARED = 'declared',
   LIVE = 'live',
@@ -28,4 +28,6 @@ export enum ProfileSource {
   FORM = 'form',
   RESOURCE_GRAPH = 'resource_graph',
   SAMPLE = 'sample',
+  /** Read from the subscription with the user's Azure sign-in (Wave 6). */
+  LIVE = 'live',
 }

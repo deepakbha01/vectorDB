@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ForbiddenException, HttpException, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/auth.service';
@@ -7,10 +7,12 @@ import { ProjectsService } from '../projects/projects.service';
 import { User } from '../users/user.entity';
 import { AzureConnection } from './azure-connection.entity';
 import { AzureEnvironmentProfile } from './azure-environment-profile.entity';
-import { AzureRole, ConnectionSource, ProfileSource } from './azure-builder.enums';
+import { AzureRole, ConnectionSource, ProfileSource, ResourceGroupMode } from './azure-builder.enums';
 import { DISCOVERY_QUERIES, SAMPLE_FORM_INPUT, SAMPLE_RESOURCE_GRAPH_ROWS, SAMPLE_SUBSCRIPTION_ID } from './discovery-queries';
 import { buildEnvironmentProfile, deriveConstraints, ProfileFormInput, readResourceGraphRows, validateEnvironmentProfile } from './environment-profile';
-import { CreateAzureConnectionDto, CreateEnvironmentProfileDto } from './dto/azure-builder.dto';
+import { CreateAzureConnectionDto, CreateEnvironmentProfileDto, CreateLiveConnectionDto } from './dto/azure-builder.dto';
+import { ArmClient, ArmError, ArmTokenError, readArmToken } from './arm-client';
+import { discoverLive, EffectivePermissions, listResourceGroups, listSubscriptions, verifyTarget } from './live-azure';
 import { CreateUseCaseDto, OverridePatternDto } from './dto/use-case.dto';
 import { AzureUseCase } from './azure-use-case.entity';
 import { DiscoveryService } from '../discovery/discovery.service';
@@ -31,24 +33,61 @@ import { CreateApprovalDto, RunWhatIfDto } from './dto/approval.dto';
 import { normaliseEnvInputs, validateEnvInputs } from './iac-inputs';
 import { assessWhatIf, bundleHash, parseArmWhatIf, planWhatIf, RAI_CHECKLIST, ValidationReport, WhatIfChange } from './validate-approve';
 
-/** What the declared role allows. Offline it is the user's word; the live wave reads Microsoft.Authorization. */
+/** What the role allows. Offline it is the user's word; live it is what Microsoft.Authorization reported. */
 export interface PermissionLevel {
   role: AzureRole;
   canDesign: boolean;
   canDeploy: boolean;
+  /** Live only: whether the user can create role assignments (the RAG bundle needs it); null when declared. */
+  canAssignRoles: boolean | null;
   verified: boolean;
   note: string;
 }
 
-export function permissionFor(role: AzureRole, source: ConnectionSource): PermissionLevel {
+export function permissionFor(role: AzureRole, source: ConnectionSource, permissions: EffectivePermissions | null = null): PermissionLevel {
   const canDeploy = role === AzureRole.OWNER || role === AzureRole.CONTRIBUTOR;
   const verified = source === ConnectionSource.LIVE;
-  const note = canDeploy
+  let note = canDeploy
     ? `${role === AzureRole.OWNER ? 'Owner' : 'Contributor'} can design and deploy into this scope.`
     : role === AzureRole.READER
       ? 'Reader can design but deployment is blocked - ask for Contributor on the target resource group.'
       : 'Role not known - design is allowed; deployment stays blocked until the role is confirmed.';
-  return { role, canDesign: true, canDeploy, verified, note: verified ? note : `${note} (Declared, not yet verified against Azure.)` };
+  if (verified && role === AzureRole.CONTRIBUTOR) {
+    note += ' Role assignments are not allowed, so the managed-identity grants in the bundle will fail - ask for Role Based Access Control Administrator (or Owner) on this scope.';
+  }
+  return { role, canDesign: true, canDeploy, canAssignRoles: verified ? (permissions?.canAssignRoles ?? null) : null, verified, note: verified ? note : `${note} (Declared, not yet verified against Azure.)` };
+}
+
+/** The Entra app registration the browser signs in with (spec 9.1); live mode is off until both IDs are set. */
+export interface LiveAzureConfig {
+  enabled: boolean;
+  clientId: string | null;
+  tenantId: string | null;
+  /** Delegated ARM scope the browser requests. */
+  scopes: string[];
+}
+
+export function liveAzureConfig(env: NodeJS.ProcessEnv = process.env): LiveAzureConfig {
+  const guid = (v: string | undefined) => (v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim()) ? v.trim().toLowerCase() : null);
+  const clientId = guid(env.AZURE_BUILDER_ENTRA_CLIENT_ID);
+  const tenantId = guid(env.AZURE_BUILDER_ENTRA_TENANT_ID);
+  return { enabled: !!(clientId && tenantId), clientId, tenantId, scopes: ['https://management.azure.com/user_impersonation'] };
+}
+
+/** Azure needs a fresh sign-in. Not a 401: that status signs the user out of Evectorize itself. */
+function azureSignInRequired(message: string) {
+  return new BadRequestException({ message, errorCode: 'AZURE_SIGN_IN_REQUIRED' });
+}
+
+/** Turns an ARM failure into the matching HTTP error, with Azure's own message. */
+function fromArmError(err: unknown): unknown {
+  if (err instanceof ArmTokenError) return azureSignInRequired(err.message);
+  if (!(err instanceof ArmError)) return err;
+  if (err.status === 401) return azureSignInRequired('Azure did not accept the sign-in - sign in to Azure again.');
+  if (err.status === 403) return new ForbiddenException(`Azure refused: ${err.message}`);
+  if (err.status === 404) return new NotFoundException(`Azure: ${err.message}`);
+  if (err.status >= 400 && err.status < 500) return new HttpException(`Azure: ${err.message}`, err.status);
+  return new BadGatewayException(`Azure is not responding as expected (${err.code}): ${err.message}`);
 }
 
 /** The bundle's metadata for the state endpoint; the files come from the history or the download. */
@@ -77,11 +116,14 @@ export interface AzureBuilderState {
 /**
  * Azure AI Factory Builder - Phases 0 (Connect), 1 (Discover), 2 (Use case intake), 3 (Architect), 4 (Generate IaC)
  * and 5 (Validate & approve).
- * Offline-first: no Azure call is made and no credential is accepted or stored.
+ * Offline-first: every phase works without Azure. Live calls (Wave 6) use the user's own ARM token for
+ * the one request that carries it; no credential or token is ever stored.
  */
 @Injectable()
 export class AzureBuilderService {
   private readonly logger = new Logger(AzureBuilderService.name);
+  /** Builds the ARM client for a request's token; replaced in tests. */
+  armClientFor: (token: string) => ArmClient = (token) => new ArmClient(token);
 
   constructor(
     @InjectRepository(AzureConnection) private readonly connections: Repository<AzureConnection>,
@@ -104,7 +146,7 @@ export class AzureBuilderService {
     const architecture = await this.latestArchitecture(projectId);
     const bundle = await this.latestIacBundle(projectId);
     return {
-      connection: active ? { ...active, permission: permissionFor(active.role, active.source) } : null,
+      connection: active ? { ...active, permission: permissionFor(active.role, active.source, active.permissions) } : null,
       environmentProfile,
       profileStale: !!(active && environmentProfile && environmentProfile.connectionVersion !== active.version),
       useCase,
@@ -505,6 +547,85 @@ export class AzureBuilderService {
     return { ...saved, permission: permissionFor(saved.role, saved.source) };
   }
 
+  // ---- Live Azure (Wave 6): the user's own delegated ARM token, per request, never stored ----
+
+  liveConfig(): LiveAzureConfig {
+    return liveAzureConfig();
+  }
+
+  /** An ARM client for this request's token, after refusing a token for another tenant or audience. */
+  private arm(token: string | undefined): { arm: ArmClient; azureUser: string | null } {
+    const config = liveAzureConfig();
+    if (!config.enabled) throw new BadRequestException('Live Azure is not configured on this server (AZURE_BUILDER_ENTRA_CLIENT_ID / AZURE_BUILDER_ENTRA_TENANT_ID).');
+    if (!token?.trim()) throw azureSignInRequired('Sign in to Azure first.');
+    try {
+      const claims = readArmToken(token.trim(), config.tenantId!);
+      return { arm: this.armClientFor(token.trim()), azureUser: claims.userName };
+    } catch (err) {
+      throw fromArmError(err);
+    }
+  }
+
+  private async callArm<T>(call: () => Promise<T>): Promise<T> {
+    try {
+      return await call();
+    } catch (err) {
+      throw fromArmError(err);
+    }
+  }
+
+  async liveSubscriptions(projectId: string, user: AuthenticatedUser, token: string | undefined) {
+    await this.projectsService.findOne(projectId, user);
+    const { arm } = this.arm(token);
+    return this.callArm(() => listSubscriptions(arm));
+  }
+
+  async liveResourceGroups(projectId: string, user: AuthenticatedUser, token: string | undefined, subscriptionId: string) {
+    await this.projectsService.findOne(projectId, user);
+    const { arm } = this.arm(token);
+    return this.callArm(() => listResourceGroups(arm, subscriptionId));
+  }
+
+  /**
+   * Phase 0, live (spec 4.1): verifies the subscription, resource group and region with the user's sign-in
+   * and records the effective permission Azure reports - not a declared one.
+   */
+  async connectLive(projectId: string, user: AuthenticatedUser, token: string | undefined, dto: CreateLiveConnectionDto) {
+    await this.projectsService.findOne(projectId, user);
+    const { arm, azureUser } = this.arm(token);
+    const region = dto.region.toLowerCase();
+    const target = await this.callArm(() => verifyTarget(arm, dto.subscriptionId, dto.resourceGroup, region));
+    if (target.tenantId.toLowerCase() !== liveAzureConfig().tenantId) {
+      throw new BadRequestException(`Subscription ${dto.subscriptionId} belongs to tenant ${target.tenantId}, not the tenant this server is registered in.`);
+    }
+    if (!target.regionKnown) throw new BadRequestException(`${region} is not a region available to subscription ${target.subscriptionName}.`);
+    if (dto.resourceGroupMode === ResourceGroupMode.EXISTING && !target.resourceGroupExists) {
+      throw new BadRequestException(`Resource group ${dto.resourceGroup} was not found in ${target.subscriptionName} - check the name, or choose "New" to create it at deploy time.`);
+    }
+    if (dto.resourceGroupMode === ResourceGroupMode.NEW && target.resourceGroupExists) {
+      throw new BadRequestException(`Resource group ${dto.resourceGroup} already exists (in ${target.resourceGroupLocation}) - choose "Existing" to deploy into it.`);
+    }
+    const version = (await this.connections.count({ where: { project: { id: projectId } } })) + 1;
+    const saved = await this.connections.save(
+      this.connections.create({
+        ...dto,
+        region,
+        tenantId: target.tenantId.toLowerCase(),
+        subscriptionName: target.subscriptionName,
+        role: target.role,
+        permissions: target.permissions,
+        azureUser,
+        source: ConnectionSource.LIVE,
+        active: true,
+        version,
+        project: { id: projectId } as Project,
+        createdBy: { id: user.id } as User,
+      }),
+    );
+    this.logger.log(`user=${user.email} action=azure_builder_connect_live projectId=${projectId} version=${version} role=${target.role}`);
+    return { ...saved, permission: permissionFor(saved.role, saved.source, saved.permissions) };
+  }
+
   /** Records a disconnected version - history is kept, nothing is deleted. */
   async disconnect(projectId: string, user: AuthenticatedUser) {
     await this.projectsService.findOne(projectId, user);
@@ -520,7 +641,7 @@ export class AzureBuilderService {
     return this.connections.find({ where: { project: { id: projectId } }, order: { version: 'DESC' } });
   }
 
-  async discover(projectId: string, user: AuthenticatedUser, dto: CreateEnvironmentProfileDto) {
+  async discover(projectId: string, user: AuthenticatedUser, dto: CreateEnvironmentProfileDto, token?: string) {
     await this.projectsService.findOne(projectId, user);
     const connection = await this.latestConnection(projectId);
     if (!connection?.active) throw new BadRequestException('Connect a target subscription (Phase 0) before running Discover.');
@@ -534,6 +655,10 @@ export class AzureBuilderService {
       form = SAMPLE_FORM_INPUT;
       subscriptionId = SAMPLE_SUBSCRIPTION_ID;
       problems = ['Sample environment - not read from your subscription. Replace it with your own Resource Graph output before relying on it.'];
+    } else if (dto.source === ProfileSource.LIVE) {
+      if (connection.source !== ConnectionSource.LIVE) throw new BadRequestException('Live Discover needs a live connection - connect with your Azure sign-in (Phase 0) first.');
+      const { arm } = this.arm(token);
+      ({ rows, form, problems } = await this.callArm(() => discoverLive(arm, connection.subscriptionId, connection.region)));
     } else if (dto.source === ProfileSource.RESOURCE_GRAPH) {
       if (dto.resourceGraph === undefined || dto.resourceGraph === null || dto.resourceGraph === '') {
         throw new BadRequestException('Paste the Resource Graph output, or choose the form or the sample.');

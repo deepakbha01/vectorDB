@@ -4,6 +4,7 @@ import { apiClient, extractErrorMessage, Project } from '../api/client';
 import { useFeatures } from '../api/features';
 import { AzureBuilderState, AzureConnection, AzureConnectionInput, azureBuilderApi, REGIONS } from '../api/azureBuilder';
 import { PhaseNav } from '../components/PhaseNav';
+import { AzureLiveConnect } from '../components/AzureLiveConnect';
 import { TopBar } from '../components/TopBar';
 
 const EMPTY: AzureConnectionInput = {
@@ -19,7 +20,7 @@ const EMPTY: AzureConnectionInput = {
 
 const MODEL_LABEL = { centralised: 'Centralised', hub_and_spoke: 'Hub-and-spoke', federated: 'Federated' } as const;
 
-/** Azure AI Factory Builder - Phase 0 (Connect): declare the target subscription, resource group and region. */
+/** Azure AI Factory Builder - Phase 0 (Connect): the target subscription, resource group and region - verified live with an Azure sign-in, or declared offline. */
 export function AzureConnectPage() {
   const { id } = useParams<{ id: string }>();
   const features = useFeatures();
@@ -97,9 +98,9 @@ export function AzureConnectPage() {
           <>
             <div className="card" style={{ marginBottom: 16 }}>
               <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>
-                Declare the Azure subscription, resource group and region this use case will deploy into. <strong>Offline mode:</strong> no
-                sign-in, password, key or token is entered or stored - the role you hold is declared here and verified against Azure in
-                the live-connection wave. A Reader can design; deploying needs Contributor or Owner.
+                Choose the Azure subscription, resource group and region this use case will deploy into. <strong>Live:</strong> sign in to
+                Azure and Azure confirms your role. <strong>Offline:</strong> declare the target and your role yourself - no sign-in, password,
+                key or token is entered or stored. A Reader can design; deploying needs Contributor or Owner.
               </p>
             </div>
 
@@ -116,6 +117,7 @@ export function AzureConnectPage() {
                   <div className="card"><div className="metric-label">Region</div><div style={{ fontSize: 13 }}>{REGIONS.find((r) => r.value === c.region)?.label ?? c.region}</div></div>
                   <div className="card"><div className="metric-label">Deployment model</div><div style={{ fontSize: 13 }}>{MODEL_LABEL[c.deploymentModel]}</div></div>
                 </div>
+                {c.source === 'live' && c.azureUser && <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 0' }}>Verified by {c.azureUser} on {c.permissions?.scope ?? 'the subscription'}.</p>}
                 <p style={{ fontSize: 13, margin: '10px 0' }}>{c.permission.note}</p>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <Link className="primary-btn" style={{ textDecoration: 'none' }} to={`/projects/${project.id}/azure-builder/discover`}>Next: Discover the environment</Link>
@@ -126,8 +128,10 @@ export function AzureConnectPage() {
               </div>
             )}
 
+            <AzureLiveConnect projectId={project.id} onConnected={load} />
+
             <form className="card" style={{ marginBottom: 16 }} onSubmit={onSubmit} aria-label="Azure target form">
-              <div className="metric-label" style={{ marginBottom: 10 }}>{c ? 'Change the target (creates a new version)' : 'Connect a target'}</div>
+              <div className="metric-label" style={{ marginBottom: 10 }}>{c ? 'Offline: change the target (creates a new version)' : 'Offline: declare a target'}</div>
               <div className="field-grid">
                 <div className="field"><label htmlFor="tenantId">Tenant ID</label><input id="tenantId" value={form.tenantId} onChange={(e) => set('tenantId', e.target.value.trim())} placeholder="00000000-0000-0000-0000-000000000000" required /></div>
                 <div className="field"><label htmlFor="subscriptionId">Subscription ID</label><input id="subscriptionId" value={form.subscriptionId} onChange={(e) => set('subscriptionId', e.target.value.trim())} placeholder="00000000-0000-0000-0000-000000000000" required /></div>
@@ -181,7 +185,7 @@ export function AzureConnectPage() {
                         <td style={{ padding: '6px 8px' }}>{h.subscriptionName || h.subscriptionId}</td>
                         <td style={{ padding: '6px 8px' }}>{h.resourceGroup}</td>
                         <td style={{ padding: '6px 8px' }}>{h.region}</td>
-                        <td style={{ padding: '6px 8px' }}>{h.role}</td>
+                        <td style={{ padding: '6px 8px' }}>{h.role}{h.source === 'live' ? ' (verified)' : ''}</td>
                         <td style={{ padding: '6px 8px', color: 'var(--muted)' }}>{new Date(h.createdAt).toLocaleString()}</td>
                       </tr>
                     ))}
