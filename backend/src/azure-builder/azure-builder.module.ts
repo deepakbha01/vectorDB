@@ -13,10 +13,11 @@ import { AzureIacBundle } from './azure-iac-bundle.entity';
 import { AzureWhatIf } from './azure-what-if.entity';
 import { AzureApproval } from './azure-approval.entity';
 import { AzureDeployment } from './azure-deployment.entity';
+import { AzureOperateCheck } from './azure-operate-check.entity';
 
-/** Azure AI Factory Builder (Wave 1: Connect, Discover; Wave 2: Use case intake; Wave 3: Architect; Wave 4: Generate IaC; Wave 5: Validate & approve; Wave 6a: live Connect and Discover; Wave 6b: live what-if and Deploy). Behind AZURE_BUILDER_ENABLED. */
+/** Azure AI Factory Builder (Wave 1: Connect, Discover; Wave 2: Use case intake; Wave 3: Architect; Wave 4: Generate IaC; Wave 5: Validate & approve; Wave 6a: live Connect and Discover; Wave 6b: live what-if and Deploy; Wave 6c: Operate). Behind AZURE_BUILDER_ENABLED. */
 @Module({
-  imports: [TypeOrmModule.forFeature([AzureConnection, AzureEnvironmentProfile, AzureUseCase, AzureArchitecture, AzureIacBundle, AzureWhatIf, AzureApproval, AzureDeployment]), ProjectsModule, DiscoveryModule],
+  imports: [TypeOrmModule.forFeature([AzureConnection, AzureEnvironmentProfile, AzureUseCase, AzureArchitecture, AzureIacBundle, AzureWhatIf, AzureApproval, AzureDeployment, AzureOperateCheck]), ProjectsModule, DiscoveryModule],
   controllers: [AzureBuilderController, AzureBuilderConfigController],
   providers: [AzureBuilderService, AzureBuilderEnabledGuard],
 })
