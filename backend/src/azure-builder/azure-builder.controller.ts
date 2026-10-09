@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, ParseUUIDPipe, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, ParseIntPipe, ParseUUIDPipe, Post, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -9,11 +9,28 @@ import { AuthenticatedUser } from '../auth/auth.service';
 import { UserRole } from '../users/user.entity';
 import { AzureBuilderEnabledGuard } from './azure-builder-enabled.guard';
 import { AzureBuilderService } from './azure-builder.service';
-import { CreateAzureConnectionDto, CreateEnvironmentProfileDto } from './dto/azure-builder.dto';
+import { CreateAzureConnectionDto, CreateEnvironmentProfileDto, CreateLiveConnectionDto } from './dto/azure-builder.dto';
 import { CreateUseCaseDto, OverridePatternDto } from './dto/use-case.dto';
 import { GenerateArchitectureDto } from './dto/architecture.dto';
 import { GenerateIacDto } from './dto/iac.dto';
 import { CreateApprovalDto, RunWhatIfDto } from './dto/approval.dto';
+
+/** The user's Azure sign-in for one request (live mode). Read from this header only - never from a body, which the audit log records. */
+export const AZURE_TOKEN_HEADER = 'x-azure-token';
+
+/** Live-Azure settings the browser needs before it can sign in (the Entra app registration). Not project-scoped: the sign-in callback has no project. */
+@ApiTags('azure-builder')
+@ApiBearerAuth()
+@UseGuards(AzureBuilderEnabledGuard, JwtAuthGuard)
+@Controller('azure-builder')
+export class AzureBuilderConfigController {
+  constructor(private readonly service: AzureBuilderService) {}
+
+  @Get('live-config')
+  liveConfig() {
+    return this.service.liveConfig();
+  }
+}
 
 /**
  * Azure AI Factory Builder, scoped to a project. Reads are open to project
@@ -47,6 +64,33 @@ export class AzureBuilderController {
     return this.service.disconnect(projectId, user);
   }
 
+  // ---- Live Azure (Wave 6) - the ARM token travels in the X-Azure-Token header ----
+
+  /** Subscriptions the signed-in Azure user can see. */
+  @Get('live/subscriptions')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  liveSubscriptions(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Headers(AZURE_TOKEN_HEADER) token: string | undefined) {
+    return this.service.liveSubscriptions(projectId, user, token);
+  }
+
+  @Get('live/subscriptions/:subscriptionId/resource-groups')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  liveResourceGroups(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('subscriptionId', ParseUUIDPipe) subscriptionId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Headers(AZURE_TOKEN_HEADER) token: string | undefined,
+  ) {
+    return this.service.liveResourceGroups(projectId, user, token, subscriptionId);
+  }
+
+  /** Connects to a target verified against Azure; the role recorded is the one Azure reports. */
+  @Post('connections/live')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  connectLive(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Headers(AZURE_TOKEN_HEADER) token: string | undefined, @Body() dto: CreateLiveConnectionDto) {
+    return this.service.connectLive(projectId, user, token, dto);
+  }
+
   @Get('connections')
   connections(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.service.connectionHistory(projectId, user);
@@ -56,8 +100,8 @@ export class AzureBuilderController {
 
   @Post('environment-profiles')
   @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
-  discover(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: CreateEnvironmentProfileDto) {
-    return this.service.discover(projectId, user, dto);
+  discover(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: CreateEnvironmentProfileDto, @Headers(AZURE_TOKEN_HEADER) token: string | undefined) {
+    return this.service.discover(projectId, user, dto, token);
   }
 
   @Get('environment-profiles')

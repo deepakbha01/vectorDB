@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { apiClient, extractErrorMessage, Project } from '../api/client';
+import { apiClient, extractErrorCode, extractErrorMessage, Project } from '../api/client';
 import { useFeatures } from '../api/features';
 import { AzureBuilderState, AzureEnvironmentProfile, azureBuilderApi, DiscoveryQuery, ModelQuota, ProfileSource } from '../api/azureBuilder';
 import { PhaseNav } from '../components/PhaseNav';
+import { AzureSignInRequired, signInToAzure } from '../api/azureAuth';
 import { TopBar } from '../components/TopBar';
 
 const list = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
@@ -35,6 +36,7 @@ export function AzureDiscoverPage() {
   const [policy, setPolicy] = useState<PolicyForm>(EMPTY_POLICY);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [signInNeeded, setSignInNeeded] = useState(false);
 
   const load = async () => {
     if (!id) return;
@@ -42,6 +44,8 @@ export function AzureDiscoverPage() {
     setState(s);
     setHistory(h);
     setQueries(q);
+    // A live connection reads the subscription itself; the offline sources stay available.
+    if (s.connection?.source === 'live') setSource((prev) => (prev === 'sample' ? 'live' : prev));
   };
 
   useEffect(() => {
@@ -61,10 +65,11 @@ export function AzureDiscoverPage() {
     e.preventDefault();
     if (!id) return;
     setError(null);
+    setSignInNeeded(false);
     setRunning(true);
     try {
       const form =
-        source === 'sample'
+        source === 'sample' || source === 'live'
           ? undefined
           : {
               allowedLocations: list(policy.allowedLocations),
@@ -78,7 +83,9 @@ export function AzureDiscoverPage() {
       await azureBuilderApi.discover(id, { source, ...(source === 'resource_graph' ? { resourceGraph: pasted } : {}), ...(form ? { form } : {}) });
       await load();
     } catch (err) {
-      setError(extractErrorMessage(err, 'Discover failed.'));
+      const signIn = err instanceof AzureSignInRequired || extractErrorCode(err) === 'AZURE_SIGN_IN_REQUIRED';
+      setSignInNeeded(signIn);
+      setError(err instanceof AzureSignInRequired ? err.message : extractErrorMessage(err, 'Discover failed.'));
     } finally {
       setRunning(false);
     }
@@ -119,6 +126,7 @@ export function AzureDiscoverPage() {
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
                 {([
+                  ...(state.connection.source === 'live' ? [['live', 'Read from Azure (live)'] as [ProfileSource, string]] : []),
                   ['sample', 'Try the sample landing zone'],
                   ['resource_graph', 'Paste Resource Graph output'],
                   ['form', 'Enter policy only'],
@@ -129,6 +137,14 @@ export function AzureDiscoverPage() {
                   </label>
                 ))}
               </div>
+
+              {source === 'live' && (
+                <p style={{ fontSize: 13, color: 'var(--muted)' }}>
+                  Reads the subscription with your Azure sign-in: VNets, private DNS zones, Log Analytics, Key Vaults and AI accounts (Resource
+                  Graph), the policy assignments in force (allowed locations, required tags, public-access denies), Azure OpenAI quota in{' '}
+                  {state.connection.region} and the Defender for Cloud secure score. Anything you cannot read is listed as a problem, not a failure.
+                </p>
+              )}
 
               {source === 'sample' && (
                 <p style={{ fontSize: 13, color: 'var(--muted)' }}>
@@ -159,7 +175,7 @@ export function AzureDiscoverPage() {
                 </>
               )}
 
-              {source !== 'sample' && (
+              {source !== 'sample' && source !== 'live' && (
                 <>
                   <div className="metric-label" style={{ margin: '12px 0 6px' }}>Policy and quota (from Azure Policy and the Azure OpenAI quota page)</div>
                   <div className="field-grid">
@@ -193,6 +209,7 @@ export function AzureDiscoverPage() {
               )}
 
               {error && <div className="error-text">{error}</div>}
+              {signInNeeded && <button type="button" className="primary-btn" style={{ marginRight: 8 }} onClick={() => signInToAzure().catch((err) => setError(extractErrorMessage(err, 'Could not start the Azure sign-in.')))}>Sign in to Azure</button>}
               <div>
                 <button className="primary-btn" type="submit" disabled={running}>{running ? 'Building profile...' : profile ? 'Re-run Discover (new version)' : 'Run Discover'}</button>
               </div>

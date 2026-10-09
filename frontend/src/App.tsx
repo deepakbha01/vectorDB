@@ -37,6 +37,7 @@ import { AzureIntakePage } from './pages/AzureIntakePage';
 import { AzureArchitectPage } from './pages/AzureArchitectPage';
 import { AzureIacPage } from './pages/AzureIacPage';
 import { AzureApprovePage } from './pages/AzureApprovePage';
+import { AzureCallbackPage } from './pages/AzureCallbackPage';
 
 export function App() {
   return (
@@ -80,6 +81,7 @@ export function App() {
           <Route path="/projects/:id/azure-builder/architect" element={<AzureArchitectPage />} />
           <Route path="/projects/:id/azure-builder/iac" element={<AzureIacPage />} />
           <Route path="/projects/:id/azure-builder/approve" element={<AzureApprovePage />} />
+          <Route path="/azure-builder/callback" element={<AzureCallbackPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
