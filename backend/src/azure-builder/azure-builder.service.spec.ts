@@ -84,6 +84,18 @@ describe('AzureBuilderService', () => {
     expect((await service.getState(P, user)).connection).toBeNull();
   });
 
+  it('Phase 0: disconnect records the new version on the project even though the loaded row has no project relation', async () => {
+    const { service, connections } = setup();
+    await service.connect(P, user, { ...connectDto });
+    // TypeORM's findOne returns the row without its (unloaded) project relation.
+    const loaded = { ...connections.rows[0] };
+    delete loaded.project;
+    jest.spyOn(service as any, 'latestConnection').mockResolvedValueOnce(loaded);
+    await service.disconnect(P, user);
+    expect(connections.rows[1]).toMatchObject({ version: 2, active: false, project: { id: P } });
+    expect((await service.getState(P, user)).connection).toBeNull();
+  });
+
   it('Phase 1: requires a connection, then builds a versioned profile from the sample', async () => {
     const { service } = setup();
     await expect(service.discover(P, user, { source: ProfileSource.SAMPLE })).rejects.toThrow('Connect a target subscription');
