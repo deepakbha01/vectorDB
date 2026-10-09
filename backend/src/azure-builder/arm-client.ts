@@ -92,6 +92,27 @@ export class ArmClient {
     return this.request<T>('POST', path, body);
   }
 
+  put<T>(path: string, body: unknown): Promise<T> {
+    return this.request<T>('PUT', path, body);
+  }
+
+  /**
+   * A POST that ARM may answer with 202 Accepted (e.g. what-if): polls the Location (or
+   * Azure-AsyncOperation) URL until it returns the result, for at most `maxWaitMs`.
+   */
+  async postLongRunning<T>(path: string, body: unknown, maxWaitMs = 300_000): Promise<T> {
+    let res = await this.send('POST', this.url(path), body);
+    const started = Date.now();
+    while (res.status === 202) {
+      const next = res.headers.get('location') ?? res.headers.get('azure-asyncoperation');
+      if (!next) throw new ArmError(202, 'NoLocation', 'Azure accepted the request but gave no address to poll for the result.');
+      if (Date.now() - started > maxWaitMs) throw new ArmError(0, 'Timeout', `Azure did not finish within ${Math.round(maxWaitMs / 1000)} s.`);
+      await this.sleep(this.retryDelay(res.headers.get('retry-after'), 5000));
+      res = await this.send('GET', this.url(next));
+    }
+    return this.parse<T>(res);
+  }
+
   /** Follows nextLink pages of a list call, up to `maxItems`. */
   async list<T>(path: string, maxItems = 5000): Promise<T[]> {
     const items: T[] = [];
@@ -105,8 +126,22 @@ export class ArmClient {
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    return this.parse<T>(await this.send(method, this.url(path), body));
+  }
+
+  private url(path: string): string {
     const url = path.startsWith('https://') ? path : `${ARM}${path}`;
     if (!url.startsWith(`${ARM}/`)) throw new ArmError(0, 'InvalidUrl', 'Refusing to send the Azure token outside management.azure.com.');
+    return url;
+  }
+
+  private retryDelay(retryAfter: string | null, fallbackMs: number): number {
+    const seconds = Number(retryAfter);
+    return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 30) * 1000 : fallbackMs;
+  }
+
+  /** One call with retries on 429 and 5xx; returns any other response as it is. */
+  private async send(method: string, url: string, body?: unknown): Promise<{ status: number; headers: { get(name: string): string | null }; text: string }> {
     for (let attempt = 1; ; attempt++) {
       const res = await this.fetch(url, {
         method,
@@ -114,15 +149,18 @@ export class ArmClient {
         body: body === undefined ? undefined : JSON.stringify(body),
       });
       const text = await res.text();
-      if (res.status >= 200 && res.status < 300) return (text ? JSON.parse(text) : {}) as T;
       const retryable = res.status === 429 || res.status >= 500;
       if (retryable && attempt < this.maxAttempts) {
-        const retryAfter = Number(res.headers.get('retry-after'));
-        await this.sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 30) * 1000 : 500 * 2 ** (attempt - 1));
+        await this.sleep(this.retryDelay(res.headers.get('retry-after'), 500 * 2 ** (attempt - 1)));
         continue;
       }
-      throw armErrorFrom(res.status, text);
+      return { status: res.status, headers: res.headers, text };
     }
+  }
+
+  private parse<T>(res: { status: number; text: string }): T {
+    if (res.status >= 200 && res.status < 300) return (res.text ? JSON.parse(res.text) : {}) as T;
+    throw armErrorFrom(res.status, res.text);
   }
 }
 

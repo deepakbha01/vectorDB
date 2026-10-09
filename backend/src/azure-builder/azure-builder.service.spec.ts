@@ -39,10 +39,11 @@ function setup(discovery: any = null) {
   const iacBundles = memoryRepo();
   const whatIfs = memoryRepo();
   const approvals = memoryRepo();
+  const deployments = memoryRepo();
   const projects = { findOne: jest.fn().mockResolvedValue({ id: P, name: 'HR Policy Assistant', businessUseCase: 'Employees ask HR policy questions and get grounded answers with citations from the policy handbook.' }) };
   const discoveryService = { getLatest: jest.fn().mockResolvedValue(discovery ? { assessment: discovery } : null) };
-  const service = new AzureBuilderService(connections as any, profiles as any, useCases as any, architectures as any, iacBundles as any, whatIfs as any, approvals as any, projects as any, discoveryService as any);
-  return { service, connections, profiles, useCases, architectures, iacBundles, whatIfs, approvals, projects };
+  const service = new AzureBuilderService(connections as any, profiles as any, useCases as any, architectures as any, iacBundles as any, whatIfs as any, approvals as any, deployments as any, projects as any, discoveryService as any);
+  return { service, connections, profiles, useCases, architectures, iacBundles, whatIfs, approvals, deployments, projects };
 }
 
 const intake = {
@@ -456,5 +457,151 @@ describe('AzureBuilderService - live Azure (Wave 6a)', () => {
   it('lists subscriptions for the signed-in user', async () => {
     const { service } = liveSetup();
     await expect(service.liveSubscriptions(P, user, token())).resolves.toEqual([{ subscriptionId: SUB, displayName: 'Evectorize Test', tenantId: TENANT, state: 'Enabled' }]);
+  });
+});
+
+describe('AzureBuilderService - live what-if and Deploy (Wave 6b)', () => {
+  const TENANT = 'ef04bcd8-91ce-495c-9393-c645d394493c';
+  const SUB = '51bfc241-927a-44b4-9dc8-2a3af25352b4';
+  const RG = 'evectorizeresoruces';
+  const other = { id: 'u2', email: 'approver@example.com', role: 'architect' } as any;
+  const token = () => {
+    const part = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    return `${part({ alg: 'none' })}.${part({ aud: 'https://management.azure.com/', tid: TENANT, upn: 'architect@contoso.com', exp: Math.floor(Date.now() / 1000) + 3600 })}.sig`;
+  };
+  const inputs = { dev: { vnetAddressPrefix: '10.20.0.0/22', privateDnsZoneResourceGroupId: `/subscriptions/${SUB}/resourceGroups/rg-hub-dns` } };
+  const stackId = `/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Resources/deploymentStacks/azb-hrpoliassi-dev`;
+  const envBefore = { ...process.env };
+
+  /** Answers the ARM calls of live Connect, what-if, deny-setting check, stack PUT and stack GET. */
+  function fakeArm(opts: { perms?: unknown[]; stack?: unknown } = {}) {
+    const perms = opts.perms ?? [{ actions: ['*'], notActions: [] }];
+    const answer = async (path: string): Promise<any> => {
+      if (/permissions/.test(path)) return { value: perms };
+      if (/\/locations\?/.test(path)) return { value: [{ name: 'centralindia' }] };
+      if (/deploymentStacks/.test(path)) return opts.stack ?? { id: stackId, properties: { provisioningState: 'succeeded', outputs: { apiUrl: { type: 'String', value: 'https://api' } }, resources: [{ id: `${RG}/search` }] } };
+      if (/resourcegroups\/[^/?]+\?/.test(path)) return { location: 'centralindia' };
+      if (/\/subscriptions\/[^/]+\?/.test(path)) return { displayName: 'Evectorize Test', tenantId: TENANT };
+      throw new Error(`unexpected ${path}`);
+    };
+    return {
+      get: jest.fn(answer),
+      list: jest.fn(async (p: string) => (await answer(p)).value),
+      put: jest.fn(async () => ({ id: stackId, properties: { provisioningState: 'deploying' } })),
+      postLongRunning: jest.fn(async () => ({
+        status: 'Succeeded',
+        properties: { changes: [{ resourceId: `/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Search/searchServices/srch-hr`, changeType: 'Create', after: { location: 'centralindia', tags: {} } }] },
+      })),
+    } as any;
+  }
+
+  /** A live-connected project with a dev bundle ready for a what-if; Bicep compilation is stubbed. */
+  async function liveReady(opts: Parameters<typeof fakeArm>[0] = {}) {
+    const ctx = setup();
+    const arm = fakeArm(opts);
+    ctx.service.armClientFor = () => arm;
+    const compile = jest.fn().mockResolvedValue({ template: { resources: [] }, parameters: { environment: { value: 'dev' } }, tool: 'Bicep CLI version 0.48.1' });
+    (ctx.service as any).compile = compile;
+    await ctx.service.connectLive(P, user, token(), { subscriptionId: SUB, resourceGroup: RG, resourceGroupMode: ResourceGroupMode.EXISTING, region: 'centralindia', deploymentModel: DeploymentModel.HUB_AND_SPOKE });
+    await ctx.service.discover(P, user, { source: ProfileSource.SAMPLE });
+    await ctx.service.submitUseCase(P, user, intake);
+    await ctx.service.generateArchitecture(P, user, {});
+    await ctx.service.generateIac(P, user, { inputs });
+    // What ARM would answer for this bundle: the planned changes (new resources created, reused hub resources unchanged).
+    const plan = await ctx.service.runWhatIf(P, user, { environment: 'dev', source: 'planned' });
+    const armResult = { status: 'Succeeded', changes: plan.changes.map((c) => ({ resourceId: c.resourceId, changeType: c.changeType, after: { location: c.location ?? 'centralindia', tags: {} } })) };
+    arm.postLongRunning.mockResolvedValue({ status: armResult.status, properties: { changes: armResult.changes } });
+    return { ...ctx, arm, compile, armResult };
+  }
+
+  beforeEach(() => {
+    process.env.AZURE_BUILDER_ENTRA_CLIENT_ID = 'ba6bfea9-3b98-45bf-bcc5-a9929849f229';
+    process.env.AZURE_BUILDER_ENTRA_TENANT_ID = TENANT;
+    delete process.env.AZURE_BUILDER_BICEP_PATH; // unit tests never run the Bicep CLI
+  });
+  afterEach(() => { process.env = { ...envBefore }; });
+
+  it('Phase 5 live: compiles the environment, runs ARM what-if with the sign-in and records it as live ARM evidence', async () => {
+    const { service, arm, compile } = await liveReady();
+    const w = await service.runWhatIf(P, user, { environment: 'dev', source: 'live' }, token());
+    expect(compile).toHaveBeenCalledWith(expect.any(Array), 'dev');
+    expect(arm.postLongRunning).toHaveBeenCalledWith(expect.stringContaining(`/resourceGroups/${RG}/providers/Microsoft.Resources/deployments/azb-hrpoliassi-dev-v1-whatif/whatIf`), expect.objectContaining({ properties: expect.objectContaining({ mode: 'Incremental' }) }));
+    expect(w).toMatchObject({ source: 'arm', status: 'succeeded', report: { source: 'arm', armOrigin: 'live' } });
+    expect(w.changes[0]).toMatchObject({ changeType: 'Create', owned: true });
+  });
+
+  it('Phase 5 live: needs a live connection and an Azure sign-in', async () => {
+    const declared = setup();
+    await declared.service.connect(P, user, { ...connectDto });
+    await declared.service.discover(P, user, { source: ProfileSource.SAMPLE });
+    await declared.service.submitUseCase(P, user, intake);
+    await declared.service.generateArchitecture(P, user, {});
+    await declared.service.generateIac(P, user, { inputs });
+    await expect(declared.service.runWhatIf(P, user, { environment: 'dev', source: 'live' }, token())).rejects.toThrow('needs a live connection');
+    const { service } = await liveReady();
+    const err = await service.runWhatIf(P, user, { environment: 'dev', source: 'live' }, undefined).catch((e) => e);
+    expect(err.getResponse()).toMatchObject({ errorCode: 'AZURE_SIGN_IN_REQUIRED' });
+  });
+
+  it('Phase 6: deploys only an approval of this bundle that rests on a live what-if', async () => {
+    const { service, armResult } = await liveReady();
+    await expect(service.deploy(P, user, token(), { environment: 'dev' })).rejects.toThrow('is not approved for dev');
+
+    await service.runWhatIf(P, user, { environment: 'dev', source: 'planned' });
+    await service.decide(P, other, { environment: 'dev', decision: 'approved' });
+    await expect(service.deploy(P, user, token(), { environment: 'dev' })).rejects.toThrow('rests on the offline what-if');
+
+    const pasted = JSON.stringify(armResult);
+    await service.runWhatIf(P, user, { environment: 'dev', source: 'arm', result: pasted });
+    await service.decide(P, other, { environment: 'dev', decision: 'approved' });
+    await expect(service.deploy(P, user, token(), { environment: 'dev' })).rejects.toThrow('rests on a pasted what-if');
+
+    await service.runWhatIf(P, user, { environment: 'dev', source: 'live' }, token());
+    await service.decide(P, other, { environment: 'dev', decision: 'rejected', comments: 'Wait for the network review' });
+    await expect(service.deploy(P, user, token(), { environment: 'dev' })).rejects.toThrow('is not approved for dev'); // the latest decision counts
+  });
+
+  it('Phase 6: creates a Deployment Stack with deny settings, then follows it to success with its outputs', async () => {
+    const { service, arm, deployments } = await liveReady();
+    await service.runWhatIf(P, user, { environment: 'dev', source: 'live' }, token());
+    await service.decide(P, other, { environment: 'dev', decision: 'approved' });
+    const t = token();
+    const d = await service.deploy(P, user, t, { environment: 'dev' });
+    expect(arm.put).toHaveBeenCalledWith(
+      expect.stringContaining(`/resourceGroups/${RG}/providers/Microsoft.Resources/deploymentStacks/azb-hrpoliassi-dev?`),
+      expect.objectContaining({ properties: expect.objectContaining({ denySettings: { mode: 'denyDelete', applyToChildScopes: false }, actionOnUnmanage: expect.objectContaining({ resources: 'detach' }) }) }),
+    );
+    expect(d).toMatchObject({ environment: 'dev', state: 'running', denyMode: 'denyDelete', stackId, azureUser: 'architect@contoso.com', compiledWith: 'Bicep CLI version 0.48.1' });
+    expect(JSON.stringify(deployments.rows)).not.toContain(t);
+    await expect(service.deploy(P, user, token(), { environment: 'dev' })).rejects.toThrow('already running');
+
+    const done = await service.refreshDeployment(P, user, token(), d.id);
+    expect(done).toMatchObject({ state: 'succeeded', outputs: { apiUrl: 'https://api' }, resourceIds: [`${RG}/search`] });
+    expect(done.finishedAt).toBeInstanceOf(Date);
+    expect((await service.deploymentHistory(P, user))[0].state).toBe('succeeded');
+  });
+
+  it('Phase 6: without the deny-setting permission the stack has no deny settings; a failure keeps the failing resource and ARM message', async () => {
+    const failed = {
+      id: stackId,
+      properties: {
+        provisioningState: 'failed',
+        error: { code: 'DeploymentFailed', message: 'At least one resource deployment operation failed.', details: [{ code: 'ResourceDeploymentFailure', target: `${RG}/providers/Microsoft.CognitiveServices/accounts/oai-hr`, message: 'x', details: [{ code: 'InsufficientQuota', message: 'This operation require 30 new capacity in quota Tokens Per Minute.' }] }] },
+      },
+    };
+    const contributorPlusRbac = [{ actions: ['*'], notActions: ['Microsoft.Authorization/*/Write', 'Microsoft.Resources/deploymentStacks/manageDenySetting/action'] }, { actions: ['Microsoft.Authorization/roleAssignments/write'] }];
+    const { service } = await liveReady({ perms: contributorPlusRbac, stack: failed });
+    await service.runWhatIf(P, user, { environment: 'dev', source: 'live' }, token());
+    await service.decide(P, other, { environment: 'dev', decision: 'approved' });
+    const d = await service.deploy(P, user, token(), { environment: 'dev' });
+    expect(d.denyMode).toBe('none');
+    const done = await service.refreshDeployment(P, user, token(), d.id);
+    expect(done.state).toBe('failed');
+    expect(done.errors).toEqual([{ code: 'InsufficientQuota', message: 'This operation require 30 new capacity in quota Tokens Per Minute.', resource: `${RG}/providers/Microsoft.CognitiveServices/accounts/oai-hr` }]);
+  });
+
+  it('Phase 6: a Reader cannot deploy', async () => {
+    const { service } = await liveReady({ perms: [{ actions: ['*/read'] }] });
+    await expect(service.deploy(P, user, token(), { environment: 'dev' })).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

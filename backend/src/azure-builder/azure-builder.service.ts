@@ -25,13 +25,15 @@ import { GenerateArchitectureDto } from './dto/architecture.dto';
 import { AzureIacBundle } from './azure-iac-bundle.entity';
 import { GenerateIacDto } from './dto/iac.dto';
 import { deriveWorkload, generateIacBundle, TARGET_ENVS, TargetEnv } from './iac-bundle';
-import { validateIacBundle } from './iac-validate';
+import { compileForArm, IacCompileError, validateIacBundle } from './iac-validate';
+import { AzureDeployment } from './azure-deployment.entity';
+import { denyModeFor, getDeploymentStack, putDeploymentStack, runLiveWhatIf, stackName, summariseStack, whatIfDeploymentName } from './live-deploy';
 import { zipFiles } from './zip';
 import { AzureWhatIf } from './azure-what-if.entity';
 import { AzureApproval } from './azure-approval.entity';
-import { CreateApprovalDto, RunWhatIfDto } from './dto/approval.dto';
+import { CreateApprovalDto, CreateDeploymentDto, RunWhatIfDto } from './dto/approval.dto';
 import { normaliseEnvInputs, validateEnvInputs } from './iac-inputs';
-import { assessWhatIf, bundleHash, parseArmWhatIf, planWhatIf, RAI_CHECKLIST, ValidationReport, WhatIfChange } from './validate-approve';
+import { assessWhatIf, bundleHash, parseArmWhatIf, planWhatIf, RAI_CHECKLIST, ValidationReport, WhatIfChange, WhatIfSource } from './validate-approve';
 
 /** What the role allows. Offline it is the user's word; live it is what Microsoft.Authorization reported. */
 export interface PermissionLevel {
@@ -115,7 +117,7 @@ export interface AzureBuilderState {
 
 /**
  * Azure AI Factory Builder - Phases 0 (Connect), 1 (Discover), 2 (Use case intake), 3 (Architect), 4 (Generate IaC)
- * and 5 (Validate & approve).
+ * 5 (Validate & approve) and 6 (Deploy).
  * Offline-first: every phase works without Azure. Live calls (Wave 6) use the user's own ARM token for
  * the one request that carries it; no credential or token is ever stored.
  */
@@ -133,6 +135,7 @@ export class AzureBuilderService {
     @InjectRepository(AzureIacBundle) private readonly iacBundles: Repository<AzureIacBundle>,
     @InjectRepository(AzureWhatIf) private readonly whatIfs: Repository<AzureWhatIf>,
     @InjectRepository(AzureApproval) private readonly approvals: Repository<AzureApproval>,
+    @InjectRepository(AzureDeployment) private readonly deployments: Repository<AzureDeployment>,
     private readonly projectsService: ProjectsService,
     private readonly discoveryService: DiscoveryService,
   ) {}
@@ -367,7 +370,7 @@ export class AzureBuilderService {
    * Runs a what-if for one environment of the latest bundle - the offline plan, or a pasted ARM what-if - and
    * stores it with the validation report an approver decides on (spec 4.6).
    */
-  async runWhatIf(projectId: string, user: AuthenticatedUser, dto: RunWhatIfDto) {
+  async runWhatIf(projectId: string, user: AuthenticatedUser, dto: RunWhatIfDto, token?: string) {
     const { bundle, architecture, useCase, profile, connection } = await this.approvalContext(projectId, user);
     const env = dto.environment;
     const catalog = loadAzureCatalog();
@@ -391,7 +394,18 @@ export class AzureBuilderService {
     let status: 'succeeded' | 'failed' = 'succeeded';
     let armError: string | null = null;
     let armProblems: string[] = [];
-    if (dto.source === 'arm') {
+    // A live what-if is an ARM what-if the server ran itself, so it is stored as one - with its origin recorded.
+    const source: WhatIfSource = dto.source === 'planned' ? 'planned' : 'arm';
+    if (dto.source === 'live') {
+      if (connection.source !== ConnectionSource.LIVE) throw new BadRequestException('A live what-if needs a live connection - connect with your Azure sign-in (Phase 0) first.');
+      const { arm } = this.arm(token);
+      const compiled = await this.compile(bundle.files, env);
+      const result = await this.callArm(() => runLiveWhatIf(arm, connection, whatIfDeploymentName(bundle.workload, env, bundle.version), compiled.template, compiled.parameters));
+      const parsed = parseArmWhatIf(JSON.stringify(result), useCase.id);
+      ({ changes, status } = parsed);
+      armError = parsed.error;
+      armProblems = parsed.problems;
+    } else if (dto.source === 'arm') {
       if (!dto.result?.trim()) throw new BadRequestException('Paste the output of az deployment group what-if --no-pretty-print.');
       const parsed = parseArmWhatIf(dto.result, useCase.id);
       ({ changes, status } = parsed);
@@ -399,7 +413,7 @@ export class AzureBuilderService {
       armProblems = parsed.problems;
     }
     const assessment = assessWhatIf(changes, {
-      spec, source: dto.source, allowedLocations: profile.profile.policy.allowedLocations, useCaseId: useCase.id,
+      spec, source, allowedLocations: profile.profile.policy.allowedLocations, useCaseId: useCase.id,
       subscriptionId: connection.subscriptionId, resourceGroup: connection.resourceGroup, plan, armStatus: status, armError, armProblems,
     });
 
@@ -413,7 +427,7 @@ export class AzureBuilderService {
       ...assessment.risks,
       ...(bundle.validation.status !== 'passed' ? [`The Bicep was not compiled on the server (${bundle.validation.status}) - the pipeline lints it before deploying.`] : []),
       ...(bundle.inputs?.[env]?.containerImage ? [] : ['The container image is still the placeholder - the platform deploys, but not the assistant.']),
-      ...(dto.source === 'planned' ? ['This is the offline plan, not an ARM what-if against the subscription - names ending in xxxx get their suffix at deployment.'] : []),
+      ...(source === 'planned' ? ['This is the offline plan, not an ARM what-if against the subscription - names ending in xxxx get their suffix at deployment.'] : []),
       // Design-time reminders the inputs have since answered are dropped.
       ...envSpec.warnings.filter((x) => !(x.startsWith('The spoke VNet needs an address range') && bundle.inputs?.[env]?.vnetAddressPrefix)),
     ];
@@ -423,7 +437,8 @@ export class AzureBuilderService {
       iacHash: bundleHash(bundle.files),
       architectureVersion: architecture.version,
       useCaseVersion: useCase.version,
-      source: dto.source,
+      source,
+      ...(source === 'arm' ? { armOrigin: dto.source === 'live' ? ('live' as const) : ('pasted' as const) } : {}),
       compile: { status: bundle.validation.status, tool: bundle.validation.tool },
       missingInputs: missing ?? [],
       counts: assessment.counts,
@@ -436,7 +451,7 @@ export class AzureBuilderService {
       approvable: status === 'succeeded' && blocking.length === 0,
     };
     const saved = await this.whatIfs.save(
-      this.whatIfs.create({ project: { id: projectId } as Project, createdBy: { id: user.id } as User, iacVersion: bundle.version, iacHash: report.iacHash, environment: env, source: dto.source, status, changes, report }),
+      this.whatIfs.create({ project: { id: projectId } as Project, createdBy: { id: user.id } as User, iacVersion: bundle.version, iacHash: report.iacHash, environment: env, source, status, changes, report }),
     );
     this.logger.log(`user=${user.email} action=azure_builder_what_if projectId=${projectId} iac=${bundle.version} env=${env} source=${dto.source} status=${status} blocking=${blocking.length}`);
     return saved;
@@ -496,6 +511,115 @@ export class AzureBuilderService {
   async approvalHistory(projectId: string, user: AuthenticatedUser) {
     await this.projectsService.findOne(projectId, user);
     return this.approvals.find({ where: { project: { id: projectId } }, order: { createdAt: 'DESC' } });
+  }
+
+  // ---- Phase 6 - Deploy (Wave 6b): an Azure Deployment Stack, spec 4.7 Mode B ----
+
+  /** Compiles one environment of a bundle for ARM; a compile failure is the user's to fix, not a server error. */
+  private async compile(files: AzureIacBundle['files'], env: TargetEnv) {
+    try {
+      return await compileForArm(files, env, process.env.AZURE_BUILDER_BICEP_PATH || undefined);
+    } catch (err) {
+      if (err instanceof IacCompileError) throw new UnprocessableEntityException({ message: err.message, errorCode: 'IAC_COMPILE_FAILED' });
+      throw err;
+    }
+  }
+
+  /**
+   * Deploys one environment of the latest bundle. Refused unless the latest decision for this
+   * environment and bundle is an approval bound to exactly these bytes (spec 4.7) that rests on
+   * a live ARM what-if - a pasted what-if cannot be verified, so it is not enough to deploy from here.
+   */
+  async deploy(projectId: string, user: AuthenticatedUser, token: string | undefined, dto: CreateDeploymentDto) {
+    const { bundle, useCase, connection } = await this.approvalContext(projectId, user);
+    const env = dto.environment;
+    if (connection.source !== ConnectionSource.LIVE) throw new BadRequestException('Deploying needs a live connection - connect with your Azure sign-in (Phase 0) first.');
+    const permission = permissionFor(connection.role, connection.source, connection.permissions);
+    if (!permission.canDeploy) throw new ForbiddenException(`Azure reports ${connection.role} on the target - deploying needs Contributor or Owner.`);
+    const hash = bundleHash(bundle.files);
+    const approval = await this.approvals.findOne({ where: { project: { id: projectId }, environment: env, iacVersion: bundle.version }, order: { createdAt: 'DESC' } });
+    if (!approval || approval.decision !== 'approved') throw new BadRequestException(`IaC bundle v${bundle.version} is not approved for ${env} - approve it in Phase 5 first.`);
+    if (approval.iacHash !== hash) throw new BadRequestException('The bundle differs from the one that was approved - run the what-if and approve it again.');
+    const whatIf = await this.whatIfs.findOne({ where: { project: { id: projectId }, id: approval.whatIfId } });
+    if (!whatIf || whatIf.source !== 'arm' || whatIf.report.armOrigin !== 'live') {
+      throw new BadRequestException(`The ${env} approval rests on ${whatIf?.source === 'arm' ? 'a pasted' : 'the offline'} what-if. Run a live what-if against the subscription and approve again before deploying from here.`);
+    }
+    const running = await this.deployments.findOne({ where: { project: { id: projectId }, environment: env, state: 'running' } });
+    if (running) throw new BadRequestException(`A ${env} deployment is already running (started ${new Date(running.createdAt).toISOString()}).`);
+
+    const { arm, azureUser } = this.arm(token);
+    const compiled = await this.compile(bundle.files, env);
+    const denyMode = await this.callArm(() => denyModeFor(arm, connection));
+    const name = stackName(bundle.workload, env);
+    const stack = await this.callArm(() =>
+      putDeploymentStack(arm, connection, name, {
+        template: compiled.template,
+        parameters: compiled.parameters,
+        denyMode,
+        description: `Evectorize Azure Builder: ${useCase.spec.name} (${env}), IaC bundle v${bundle.version}, sha256 ${hash.slice(0, 12)}`,
+        tags: { useCaseId: useCase.id, environment: env, 'azb-iac-version': String(bundle.version), 'azb-iac-hash': hash.slice(0, 16) },
+      }),
+    );
+    const summary = summariseStack(stack);
+    const saved = await this.deployments.save(
+      this.deployments.create({
+        project: { id: projectId } as Project,
+        deployedBy: { id: user.id } as User,
+        deployedByEmail: user.email,
+        azureUser,
+        environment: env,
+        iacVersion: bundle.version,
+        iacHash: hash,
+        approvalId: approval.id,
+        whatIfId: whatIf.id,
+        subscriptionId: connection.subscriptionId,
+        resourceGroup: connection.resourceGroup,
+        stackName: name,
+        stackId: stack.id ?? `/subscriptions/${connection.subscriptionId}/resourceGroups/${connection.resourceGroup}/providers/Microsoft.Resources/deploymentStacks/${name}`,
+        denyMode,
+        state: summary.state,
+        provisioningState: summary.provisioningState,
+        outputs: summary.outputs,
+        resourceIds: summary.resourceIds,
+        errors: summary.errors,
+        armDeploymentId: summary.armDeploymentId,
+        compiledWith: compiled.tool.slice(0, 80),
+        finishedAt: summary.state === 'running' ? null : new Date(),
+        lastCheckedAt: new Date(),
+      }),
+    );
+    this.logger.log(`user=${user.email} action=azure_builder_deploy projectId=${projectId} iac=${bundle.version} env=${env} stack=${name} deny=${denyMode} state=${summary.state}`);
+    return saved;
+  }
+
+  /** Reads a running deployment's state from ARM with this request's token and records it; a finished one is returned as stored. */
+  async refreshDeployment(projectId: string, user: AuthenticatedUser, token: string | undefined, deploymentId: string) {
+    await this.projectsService.findOne(projectId, user);
+    const row = await this.deployments.findOne({ where: { project: { id: projectId }, id: deploymentId } });
+    if (!row) throw new NotFoundException('Deployment not found for this project.');
+    if (row.state !== 'running' || !row.stackId) return row;
+    const { arm } = this.arm(token);
+    const summary = summariseStack(await this.callArm(() => getDeploymentStack(arm, row.stackId!)));
+    const updated = await this.deployments.save({
+      ...row,
+      state: summary.state,
+      provisioningState: summary.provisioningState,
+      outputs: summary.outputs,
+      resourceIds: summary.resourceIds,
+      errors: summary.errors,
+      armDeploymentId: summary.armDeploymentId ?? row.armDeploymentId,
+      finishedAt: summary.state === 'running' ? null : new Date(),
+      lastCheckedAt: new Date(),
+    });
+    if (summary.state !== 'running') {
+      this.logger.log(`user=${user.email} action=azure_builder_deploy_${summary.state} projectId=${projectId} env=${row.environment} stack=${row.stackName} errors=${summary.errors.length}`);
+    }
+    return updated;
+  }
+
+  async deploymentHistory(projectId: string, user: AuthenticatedUser) {
+    await this.projectsService.findOne(projectId, user);
+    return this.deployments.find({ where: { project: { id: projectId } }, order: { createdAt: 'DESC' } });
   }
 
   /** The latest bundle and the exact inputs it was generated from; refuses a stale chain. */

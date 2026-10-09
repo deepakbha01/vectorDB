@@ -13,7 +13,7 @@ import { CreateAzureConnectionDto, CreateEnvironmentProfileDto, CreateLiveConnec
 import { CreateUseCaseDto, OverridePatternDto } from './dto/use-case.dto';
 import { GenerateArchitectureDto } from './dto/architecture.dto';
 import { GenerateIacDto } from './dto/iac.dto';
-import { CreateApprovalDto, RunWhatIfDto } from './dto/approval.dto';
+import { CreateApprovalDto, CreateDeploymentDto, RunWhatIfDto } from './dto/approval.dto';
 
 /** The user's Azure sign-in for one request (live mode). Read from this header only - never from a body, which the audit log records. */
 export const AZURE_TOKEN_HEADER = 'x-azure-token';
@@ -185,11 +185,11 @@ export class AzureBuilderController {
 
   // ---- Phase 5 - Validate & approve ----
 
-  /** What-if for one environment of the latest bundle (offline plan or pasted ARM what-if), with its validation report. */
+  /** What-if for one environment of the latest bundle (offline plan, pasted ARM what-if, or live with the Azure sign-in), with its validation report. */
   @Post('what-ifs')
   @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
-  runWhatIf(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: RunWhatIfDto) {
-    return this.service.runWhatIf(projectId, user, dto);
+  runWhatIf(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: RunWhatIfDto, @Headers(AZURE_TOKEN_HEADER) token: string | undefined) {
+    return this.service.runWhatIf(projectId, user, dto, token);
   }
 
   @Get('what-ifs')
@@ -207,5 +207,31 @@ export class AzureBuilderController {
   @Get('approvals')
   approvals(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.service.approvalHistory(projectId, user);
+  }
+
+  // ---- Phase 6 - Deploy ----
+
+  /** Deploys one environment of the latest approved bundle as an Azure Deployment Stack (live what-if approval required). */
+  @Post('deployments')
+  @Roles(UserRole.ADMIN, UserRole.ARCHITECT)
+  deploy(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser, @Headers(AZURE_TOKEN_HEADER) token: string | undefined, @Body() dto: CreateDeploymentDto) {
+    return this.service.deploy(projectId, user, token, dto);
+  }
+
+  @Get('deployments')
+  deployments(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.deploymentHistory(projectId, user);
+  }
+
+  /** Reads a running deployment's status from Azure with the caller's sign-in and records it. */
+  @Post('deployments/:deploymentId/refresh')
+  @HttpCode(200)
+  refreshDeployment(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('deploymentId', ParseUUIDPipe) deploymentId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Headers(AZURE_TOKEN_HEADER) token: string | undefined,
+  ) {
+    return this.service.refreshDeployment(projectId, user, token, deploymentId);
   }
 }

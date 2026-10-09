@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { apiClient, extractErrorMessage, Project } from '../api/client';
+import { apiClient, extractErrorCode, extractErrorMessage, Project } from '../api/client';
+import { AzureSignInRequired, signInToAzure } from '../api/azureAuth';
 import { useFeatures } from '../api/features';
 import {
   AzureApproval,
@@ -31,7 +32,8 @@ export function AzureApprovePage() {
   const [whatIfs, setWhatIfs] = useState<AzureWhatIf[]>([]);
   const [approvals, setApprovals] = useState<AzureApproval[]>([]);
   const [env, setEnv] = useState<TargetEnv>('dev');
-  const [source, setSource] = useState<'planned' | 'arm'>('planned');
+  const [source, setSource] = useState<'planned' | 'arm' | 'live'>('planned');
+  const [signInNeeded, setSignInNeeded] = useState(false);
   const [pasted, setPasted] = useState('');
   const [comments, setComments] = useState('');
   const [rai, setRai] = useState<string[]>([]);
@@ -42,6 +44,8 @@ export function AzureApprovePage() {
     if (!id) return;
     const [s, b, w, a] = await Promise.all([azureBuilderApi.state(id), azureBuilderApi.iacBundles(id), azureBuilderApi.whatIfs(id), azureBuilderApi.approvals(id)]);
     setState(s);
+    // With a live connection the server can run the what-if itself - the evidence a deployment from the app needs.
+    if (s.connection?.source === 'live') setSource((prev) => (prev === 'planned' ? 'live' : prev));
     setBundle(b[0] ?? null);
     setWhatIfs(w);
     setApprovals(a);
@@ -59,13 +63,15 @@ export function AzureApprovePage() {
 
   const act = async (fn: () => Promise<unknown>, fallback: string) => {
     setError(null);
+    setSignInNeeded(false);
     setBusy(true);
     try {
       await fn();
       await load();
       return true;
     } catch (err) {
-      setError(extractErrorMessage(err, fallback));
+      setSignInNeeded(err instanceof AzureSignInRequired || extractErrorCode(err) === 'AZURE_SIGN_IN_REQUIRED');
+      setError(err instanceof AzureSignInRequired ? err.message : extractErrorMessage(err, fallback));
       return false;
     } finally {
       setBusy(false);
@@ -134,6 +140,11 @@ export function AzureApprovePage() {
             <div className="card" style={{ marginBottom: 16 }} aria-label="What-if">
               <div className="metric-label" style={{ marginBottom: 8 }}>What-if for {env}</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                {state.connection?.source === 'live' && (
+                  <label className={`checkbox-chip${source === 'live' ? ' checked' : ''}`}>
+                    <input type="radio" name="source" checked={source === 'live'} onChange={() => setSource('live')} /> Live ARM what-if (your Azure sign-in)
+                  </label>
+                )}
                 <label className={`checkbox-chip${source === 'planned' ? ' checked' : ''}`}>
                   <input type="radio" name="source" checked={source === 'planned'} onChange={() => setSource('planned')} /> Offline plan (from the design)
                 </label>
@@ -141,7 +152,12 @@ export function AzureApprovePage() {
                   <input type="radio" name="source" checked={source === 'arm'} onChange={() => setSource('arm')} /> Paste an ARM what-if
                 </label>
               </div>
-              {source === 'planned' ? (
+              {source === 'live' ? (
+                <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 8px' }}>
+                  Compiles bundle v{bundle.version} with the {env} parameters and asks Azure what it would change in {state.connection?.resourceGroup}, as you. Nothing is
+                  deployed. This is the evidence a deployment from the app (Phase 6) requires; the resource group must already exist.
+                </p>
+              ) : source === 'planned' ? (
                 <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 8px' }}>
                   Lists what this bundle creates in {env} and what it only references, and applies the approval rules. It does not call Azure - for evidence from the subscription itself, paste an ARM what-if.
                 </p>
@@ -152,7 +168,8 @@ export function AzureApprovePage() {
                   <textarea aria-label="ARM what-if output" rows={6} value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder='{ "status": "Succeeded", "changes": [ ... ] }' style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: 12 }} />
                 </>
               )}
-              <button className="primary-btn" type="button" disabled={busy || stale || (source === 'arm' && !pasted.trim())} onClick={onWhatIf}>{busy ? 'Running...' : `Run what-if for ${env}`}</button>
+              {signInNeeded && <button type="button" className="primary-btn" style={{ marginRight: 8 }} onClick={() => signInToAzure().catch((e) => setError(extractErrorMessage(e, 'Could not start the Azure sign-in.')))}>Sign in to Azure</button>}
+              <button className="primary-btn" type="button" disabled={busy || stale || (source === 'arm' && !pasted.trim())} onClick={onWhatIf}>{busy ? (source === 'live' ? 'Asking Azure (up to a few minutes)...' : 'Running...') : `Run what-if for ${env}`}</button>
             </div>
 
             {w && r && (
@@ -160,7 +177,7 @@ export function AzureApprovePage() {
                 <div className="card" style={{ marginBottom: 16 }} aria-label="Validation report">
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
                     <span className={`status-pill ${r.approvable ? 'validated' : 'danger'}`}>{r.approvable ? 'Approvable' : 'Blocked'}</span>
-                    <span className="status-pill">{r.source === 'arm' ? 'ARM what-if' : 'Offline plan'}</span>
+                    <span className="status-pill">{r.source === 'arm' ? (r.armOrigin === 'live' ? 'Live ARM what-if' : 'Pasted ARM what-if') : 'Offline plan'}</span>
                     {(['Create', 'Modify', 'Delete', 'NoChange'] as ChangeType[]).map((t) => <span key={t} className={`status-pill ${r.counts[t] ? CHANGE_PILL[t] : ''}`}>{t} {r.counts[t]}</span>)}
                     <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>{new Date(w.createdAt).toLocaleString()} · hash {short(w.iacHash)}</span>
                   </div>

@@ -1,7 +1,7 @@
 import { apiClient } from './client';
 import { armHeaders } from './azureAuth';
 
-// Azure AI Factory Builder - mirrors backend/src/azure-builder (Wave 1: Phases 0 Connect and 1 Discover; Wave 2: Phase 2 Use case intake; Wave 3: Phase 3 Architect; Wave 4: Phase 4 Generate IaC; Wave 5: Phase 5 Validate & approve; Wave 6a: live Connect and Discover).
+// Azure AI Factory Builder - mirrors backend/src/azure-builder (Wave 1: Phases 0 Connect and 1 Discover; Wave 2: Phase 2 Use case intake; Wave 3: Phase 3 Architect; Wave 4: Phase 4 Generate IaC; Wave 5: Phase 5 Validate & approve; Wave 6a: live Connect and Discover; Wave 6b: live what-if and Deploy).
 
 export type DeploymentModel = 'centralised' | 'hub_and_spoke' | 'federated';
 export type AzureRole = 'owner' | 'contributor' | 'reader' | 'unknown';
@@ -256,6 +256,8 @@ export interface ValidationReport {
   architectureVersion: number;
   useCaseVersion: number;
   source: 'planned' | 'arm';
+  /** For an ARM what-if: pasted, or run by the server with the user's Azure sign-in (only a live one can back a deployment). */
+  armOrigin?: 'pasted' | 'live';
   compile: { status: string; tool: string | null };
   missingInputs: InputName[];
   counts: Record<ChangeType, number>;
@@ -327,6 +329,32 @@ export interface ProfileFormInput {
   modelQuota?: Array<Partial<ModelQuota>>;
 }
 
+/** Phase 6 - one deployment of an approved bundle as an Azure Deployment Stack (mirrors azure-deployment.entity.ts). */
+export interface AzureDeployment {
+  id: string;
+  deployedByEmail: string;
+  azureUser: string | null;
+  environment: TargetEnv;
+  iacVersion: number;
+  iacHash: string;
+  approvalId: string;
+  whatIfId: string;
+  subscriptionId: string;
+  resourceGroup: string;
+  stackName: string;
+  stackId: string | null;
+  denyMode: 'denyDelete' | 'none';
+  state: 'running' | 'succeeded' | 'failed' | 'canceled';
+  provisioningState: string;
+  outputs: Record<string, unknown>;
+  resourceIds: string[];
+  errors: Array<{ code: string; message: string; resource: string | null }>;
+  compiledWith: string;
+  finishedAt: string | null;
+  lastCheckedAt: string | null;
+  createdAt: string;
+}
+
 export interface DiscoveryQuery { id: string; title: string; query: string }
 
 export interface LiveSubscription { subscriptionId: string; displayName: string; tenantId: string; state: string }
@@ -367,12 +395,18 @@ export const azureBuilderApi = {
   architectures: (projectId: string) => apiClient.get<AzureArchitecture[]>(`${base(projectId)}/architectures`).then((r) => r.data),
   generateIac: (projectId: string, body: { workload?: string; inputs?: Partial<Record<TargetEnv, EnvInputs>> }) => apiClient.post<AzureIacBundle>(`${base(projectId)}/iac`, body).then((r) => r.data),
   iacBundles: (projectId: string) => apiClient.get<AzureIacBundle[]>(`${base(projectId)}/iac`).then((r) => r.data),
-  runWhatIf: (projectId: string, body: { environment: TargetEnv; source: 'planned' | 'arm'; result?: string }) =>
-    apiClient.post<AzureWhatIf>(`${base(projectId)}/what-ifs`, body).then((r) => r.data),
+  runWhatIf: async (projectId: string, body: { environment: TargetEnv; source: 'planned' | 'arm' | 'live'; result?: string }) =>
+    apiClient.post<AzureWhatIf>(`${base(projectId)}/what-ifs`, body, body.source === 'live' ? { headers: await armHeaders() } : undefined).then((r) => r.data),
   whatIfs: (projectId: string) => apiClient.get<AzureWhatIf[]>(`${base(projectId)}/what-ifs`).then((r) => r.data),
   decide: (projectId: string, body: { environment: TargetEnv; decision: 'approved' | 'rejected'; comments?: string; raiChecklist?: string[] }) =>
     apiClient.post<AzureApproval>(`${base(projectId)}/approvals`, body).then((r) => r.data),
   approvals: (projectId: string) => apiClient.get<AzureApproval[]>(`${base(projectId)}/approvals`).then((r) => r.data),
+  // Phase 6 - Deploy (Wave 6b): deploy and refresh carry the Azure sign-in; the history does not need it.
+  deploy: async (projectId: string, environment: TargetEnv) =>
+    apiClient.post<AzureDeployment>(`${base(projectId)}/deployments`, { environment }, { headers: await armHeaders() }).then((r) => r.data),
+  deployments: (projectId: string) => apiClient.get<AzureDeployment[]>(`${base(projectId)}/deployments`).then((r) => r.data),
+  refreshDeployment: async (projectId: string, deploymentId: string) =>
+    apiClient.post<AzureDeployment>(`${base(projectId)}/deployments/${deploymentId}/refresh`, {}, { headers: await armHeaders() }).then((r) => r.data),
   downloadIac: (projectId: string, version: number) => apiClient.get<Blob>(`${base(projectId)}/iac/${version}/download`, { responseType: 'blob' }).then((r) => r.data),
 };
 

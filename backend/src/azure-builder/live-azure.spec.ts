@@ -4,7 +4,7 @@ import { actionAllowed, discoverLive, effectivePermissions, quotaFromUsages, rol
 
 // What Microsoft.Authorization/permissions returns for the built-in roles.
 const OWNER = [{ actions: ['*'], notActions: [] }];
-const CONTRIBUTOR = [{ actions: ['*'], notActions: ['Microsoft.Authorization/*/Delete', 'Microsoft.Authorization/*/Write', 'Microsoft.Authorization/elevateAccess/Action', 'Microsoft.Blueprint/blueprintAssignments/write'] }];
+const CONTRIBUTOR = [{ actions: ['*'], notActions: ['Microsoft.Authorization/*/Delete', 'Microsoft.Authorization/*/Write', 'Microsoft.Authorization/elevateAccess/Action', 'Microsoft.Blueprint/blueprintAssignments/write', 'Microsoft.Resources/deploymentStacks/manageDenySetting/action'] }];
 const READER = [{ actions: ['*/read'], notActions: [] }];
 const RBAC_ADMIN = [{ actions: ['Microsoft.Authorization/roleAssignments/write', 'Microsoft.Authorization/roleAssignments/delete', '*/read'], notActions: [] }];
 

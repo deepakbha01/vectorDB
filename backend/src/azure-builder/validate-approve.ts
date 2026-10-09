@@ -61,6 +61,8 @@ export interface ValidationReport {
   architectureVersion: number;
   useCaseVersion: number;
   source: WhatIfSource;
+  /** For an ARM what-if: pasted by the user, or run by the server with the user's Azure sign-in. Only a live one can back a deployment from the app. */
+  armOrigin?: 'pasted' | 'live';
   compile: { status: string; tool: string | null };
   missingInputs: InputName[];
   counts: Record<ChangeType, number>;
