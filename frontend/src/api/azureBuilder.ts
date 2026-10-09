@@ -1,7 +1,7 @@
 import { apiClient } from './client';
 import { armHeaders } from './azureAuth';
 
-// Azure AI Factory Builder - mirrors backend/src/azure-builder (Wave 1: Phases 0 Connect and 1 Discover; Wave 2: Phase 2 Use case intake; Wave 3: Phase 3 Architect; Wave 4: Phase 4 Generate IaC; Wave 5: Phase 5 Validate & approve; Wave 6a: live Connect and Discover; Wave 6b: live what-if and Deploy).
+// Azure AI Factory Builder - mirrors backend/src/azure-builder (Wave 1: Phases 0 Connect and 1 Discover; Wave 2: Phase 2 Use case intake; Wave 3: Phase 3 Architect; Wave 4: Phase 4 Generate IaC; Wave 5: Phase 5 Validate & approve; Wave 6a: live Connect and Discover; Wave 6b: live what-if and Deploy; Wave 6c: Operate).
 
 export type DeploymentModel = 'centralised' | 'hub_and_spoke' | 'federated';
 export type AzureRole = 'owner' | 'contributor' | 'reader' | 'unknown';
@@ -344,7 +344,7 @@ export interface AzureDeployment {
   stackName: string;
   stackId: string | null;
   denyMode: 'denyDelete' | 'none';
-  state: 'running' | 'succeeded' | 'failed' | 'canceled';
+  state: 'running' | 'succeeded' | 'failed' | 'canceled' | 'tearing_down' | 'torn_down' | 'teardown_failed';
   provisioningState: string;
   outputs: Record<string, unknown>;
   resourceIds: string[];
@@ -352,6 +352,27 @@ export interface AzureDeployment {
   compiledWith: string;
   finishedAt: string | null;
   lastCheckedAt: string | null;
+  createdAt: string;
+}
+
+export type CheckStatus = 'passed' | 'failed' | 'warning' | 'skipped';
+
+/** Phase 7 - a smoke test, drift check, budget change or teardown on a deployment (mirrors azure-operate-check.entity.ts). */
+export interface AzureOperateCheck {
+  id: string;
+  createdByEmail: string;
+  deploymentId: string;
+  environment: TargetEnv;
+  kind: 'smoke' | 'drift' | 'budget' | 'teardown';
+  status: 'passed' | 'failed' | 'warning' | 'info';
+  summary: string;
+  result: {
+    checks?: Array<{ name: string; status: CheckStatus; detail: string; resources?: string[] }>;
+    items?: Array<{ resource: string; type: string; changeType: string; propertyChanges: number }>;
+    amount?: number;
+    contactEmails?: string[];
+    [key: string]: unknown;
+  };
   createdAt: string;
 }
 
@@ -405,6 +426,16 @@ export const azureBuilderApi = {
   deploy: async (projectId: string, environment: TargetEnv) =>
     apiClient.post<AzureDeployment>(`${base(projectId)}/deployments`, { environment }, { headers: await armHeaders() }).then((r) => r.data),
   deployments: (projectId: string) => apiClient.get<AzureDeployment[]>(`${base(projectId)}/deployments`).then((r) => r.data),
+  // Phase 7 - Operate (Wave 6c): every action carries the Azure sign-in; the history does not need it.
+  smokeTests: async (projectId: string, deploymentId: string) =>
+    apiClient.post<AzureOperateCheck>(`${base(projectId)}/deployments/${deploymentId}/smoke-tests`, {}, { headers: await armHeaders() }).then((r) => r.data),
+  driftCheck: async (projectId: string, deploymentId: string) =>
+    apiClient.post<AzureOperateCheck>(`${base(projectId)}/deployments/${deploymentId}/drift`, {}, { headers: await armHeaders() }).then((r) => r.data),
+  setBudget: async (projectId: string, deploymentId: string, body: { amountUsd?: number; contactEmails?: string[] }) =>
+    apiClient.post<AzureOperateCheck>(`${base(projectId)}/deployments/${deploymentId}/budget`, body, { headers: await armHeaders() }).then((r) => r.data),
+  teardown: async (projectId: string, deploymentId: string, confirm: string) =>
+    apiClient.post<AzureDeployment>(`${base(projectId)}/deployments/${deploymentId}/teardown`, { confirm }, { headers: await armHeaders() }).then((r) => r.data),
+  operateChecks: (projectId: string) => apiClient.get<AzureOperateCheck[]>(`${base(projectId)}/operate-checks`).then((r) => r.data),
   refreshDeployment: async (projectId: string, deploymentId: string) =>
     apiClient.post<AzureDeployment>(`${base(projectId)}/deployments/${deploymentId}/refresh`, {}, { headers: await armHeaders() }).then((r) => r.data),
   downloadIac: (projectId: string, version: number) => apiClient.get<Blob>(`${base(projectId)}/iac/${version}/download`, { responseType: 'blob' }).then((r) => r.data),

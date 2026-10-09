@@ -8,7 +8,7 @@ import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
 const cell = { padding: '6px 8px', verticalAlign: 'top' as const };
-const STATE_PILL: Record<AzureDeployment['state'], string> = { running: 'warning', succeeded: 'validated', failed: 'danger', canceled: 'danger' };
+const STATE_PILL: Record<AzureDeployment['state'], string> = { running: 'warning', succeeded: 'validated', failed: 'danger', canceled: 'danger', tearing_down: 'warning', torn_down: '', teardown_failed: 'danger' };
 /** How often a running deployment is re-read from Azure while this page is open. */
 const POLL_MS = 15_000;
 
@@ -64,7 +64,7 @@ export function AzureDeployPage() {
   }, [id, features.azureBuilder]);
 
   // Follow running deployments: the server holds no Azure token, so the open page asks it to re-read Azure with a fresh one.
-  const running = deployments.filter((d) => d.state === 'running');
+  const running = deployments.filter((d) => d.state === 'running' || d.state === 'tearing_down');
   useEffect(() => {
     if (!id || running.length === 0 || signInNeeded) return;
     const timer = setInterval(async () => {
@@ -110,6 +110,7 @@ export function AzureDeployPage() {
     if (a.decision !== 'approved') return { ok: false, label: 'rejected', reason: `The latest ${e} decision is a rejection: ${a.comments ?? ''}` };
     if (!(w?.source === 'arm' && w.report.armOrigin === 'live')) return { ok: false, label: 'needs live what-if', reason: `The ${e} approval rests on ${w?.source === 'arm' ? 'a pasted' : 'the offline'} what-if. Run a live what-if in Phase 5 and approve again.` };
     if (deployments.some((d) => d.environment === e && d.state === 'running')) return { ok: false, label: 'deploying', reason: `A ${e} deployment is running.` };
+    if (deployments.some((d) => d.environment === e && d.state === 'tearing_down')) return { ok: false, label: 'deploying', reason: `The ${e} stack is being torn down.` };
     return { ok: true, label: 'ready', reason: null };
   };
   const ready = readiness(env);
@@ -185,7 +186,7 @@ export function AzureDeployPage() {
                 {deployments.map((d) => (
                   <div key={d.id} style={{ borderTop: '1px solid var(--border)', padding: '10px 0' }}>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span className={`status-pill ${STATE_PILL[d.state]}`}>{d.state}</span>
+                      <span className={`status-pill ${STATE_PILL[d.state]}`}>{d.state.replace('_', ' ')}</span>
                       <strong style={{ fontSize: 13 }}>{d.environment}</strong>
                       <span style={{ fontSize: 12 }}>bundle v{d.iacVersion} · {d.stackName} · {d.provisioningState}</span>
                       <span style={{ fontSize: 12, color: 'var(--muted)' }}>· {d.denyMode === 'denyDelete' ? 'deny-delete on' : 'no deny settings (needs Owner)'}</span>
@@ -218,7 +219,7 @@ export function AzureDeployPage() {
                         </tbody>
                       </table>
                     )}
-                    {d.state === 'succeeded' && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{d.resourceIds.length} resource(s) managed by the stack.</div>}
+                    {d.state === 'succeeded' && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{d.resourceIds.length} resource(s) managed by the stack. <Link to={`/projects/${project.id}/azure-builder/operate`}>Operate it (Phase 7)</Link></div>}
                   </div>
                 ))}
               </div>

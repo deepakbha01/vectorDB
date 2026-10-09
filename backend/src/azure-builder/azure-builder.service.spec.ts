@@ -17,7 +17,8 @@ function memoryRepo() {
   return {
     rows,
     create: (x: any) => ({ ...x }),
-    save: async (x: any) => { const saved = { id: `id-${rows.length + 1}`, createdAt: new Date(), ...x }; rows.push(saved); return saved; },
+    // Like the database: saving a row that has an id updates it in place.
+    save: async (x: any) => { const i = x.id ? rows.findIndex((r) => r.id === x.id) : -1; if (i >= 0) { rows[i] = { ...rows[i], ...x }; return rows[i]; } const saved = { id: `id-${rows.length + 1}`, createdAt: new Date(), ...x }; rows.push(saved); return saved; },
     count: async ({ where }: any) => matching(where).length,
     find: async ({ where }: any) => matching(where),
     findOne: async ({ where }: any) => matching(where)[0] ?? null,
@@ -40,10 +41,11 @@ function setup(discovery: any = null) {
   const whatIfs = memoryRepo();
   const approvals = memoryRepo();
   const deployments = memoryRepo();
+  const operateChecks = memoryRepo();
   const projects = { findOne: jest.fn().mockResolvedValue({ id: P, name: 'HR Policy Assistant', businessUseCase: 'Employees ask HR policy questions and get grounded answers with citations from the policy handbook.' }) };
   const discoveryService = { getLatest: jest.fn().mockResolvedValue(discovery ? { assessment: discovery } : null) };
-  const service = new AzureBuilderService(connections as any, profiles as any, useCases as any, architectures as any, iacBundles as any, whatIfs as any, approvals as any, deployments as any, projects as any, discoveryService as any);
-  return { service, connections, profiles, useCases, architectures, iacBundles, whatIfs, approvals, deployments, projects };
+  const service = new AzureBuilderService(connections as any, profiles as any, useCases as any, architectures as any, iacBundles as any, whatIfs as any, approvals as any, deployments as any, operateChecks as any, projects as any, discoveryService as any);
+  return { service, connections, profiles, useCases, architectures, iacBundles, whatIfs, approvals, deployments, operateChecks, projects };
 }
 
 const intake = {
@@ -621,5 +623,135 @@ describe('AzureBuilderService - pattern override and a resubmitted intake', () =
 
     const changed = await service.submitUseCase(P, user, { ...copilot, business: { ...copilot.business, problem: 'Forecast weekly demand and predict churn from tabular sales history' }, data: [{ ...intake.data[0], source: 'Sales warehouse', format: 'sql tables' }] });
     expect(changed.spec.pattern).toMatchObject({ id: 'predictive-ml', overriddenBy: null });
+  });
+});
+
+describe('AzureBuilderService - Operate (Wave 6c)', () => {
+  const TENANT = 'ef04bcd8-91ce-495c-9393-c645d394493c';
+  const SUB = '51bfc241-927a-44b4-9dc8-2a3af25352b4';
+  const RG = 'evectorizeresoruces';
+  const other = { id: 'u2', email: 'approver@example.com', role: 'architect' } as any;
+  const admin = { id: 'u3', email: 'admin@example.com', role: 'admin' } as any;
+  const token = () => {
+    const part = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    return `${part({ alg: 'none' })}.${part({ aud: 'https://management.azure.com/', tid: TENANT, upn: 'owner@contoso.com', exp: Math.floor(Date.now() / 1000) + 3600 })}.sig`;
+  };
+  const inputs = { dev: { vnetAddressPrefix: '10.20.0.0/22', privateDnsZoneResourceGroupId: `/subscriptions/${SUB}/resourceGroups/rg-hub-dns` } };
+  const stackId = `/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Resources/deploymentStacks/azb-hrpoliassi-dev`;
+  const oai = `/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.CognitiveServices/accounts/oai-hr`;
+  const envBefore = { ...process.env };
+
+  /** ARM as seen after a successful deployment; `gone` makes the stack 404 (deleted). */
+  function fakeArm() {
+    const state = { gone: false, whatIf: null as unknown };
+    const answer = async (path: string): Promise<any> => {
+      if (/permissions/.test(path)) return { value: [{ actions: ['*'], notActions: [] }] };
+      if (/\/locations\?/.test(path)) return { value: [{ name: 'centralindia' }] };
+      if (/accounts\/oai-hr\/deployments/.test(path)) return { value: [{ name: 'gpt-4o', properties: { provisioningState: 'Succeeded' } }, { name: 'text-embedding-3-large', properties: { provisioningState: 'Succeeded' } }] };
+      if (/deploymentStacks/.test(path)) {
+        if (state.gone) throw new ArmError(404, 'DeploymentStackNotFound', 'gone');
+        return { id: stackId, properties: { provisioningState: 'succeeded', resources: [{ id: oai }] } };
+      }
+      if (/ResourceGraph/.test(path)) return { data: [{ id: oai, name: 'oai-hr', type: 'microsoft.cognitiveservices/accounts', provisioningState: 'Succeeded', publicNetworkAccess: 'Disabled' }] };
+      if (/resourcegroups\/[^/?]+\?/.test(path)) return { location: 'centralindia' };
+      if (/\/subscriptions\/[^/]+\?/.test(path)) return { displayName: 'Evectorize Test', tenantId: TENANT };
+      throw new Error(`unexpected ${path}`);
+    };
+    const arm = {
+      state,
+      get: jest.fn(answer),
+      post: jest.fn(answer),
+      list: jest.fn(async (p: string) => (await answer(p)).value),
+      put: jest.fn(async () => ({ id: stackId, properties: { provisioningState: 'deploying' } })),
+      delete: jest.fn(async () => undefined),
+      postLongRunning: jest.fn(async () => state.whatIf),
+    };
+    return arm as any;
+  }
+
+  /** A project deployed to dev and refreshed to success. */
+  async function deployed() {
+    const ctx = setup();
+    const arm = fakeArm();
+    ctx.service.armClientFor = () => arm;
+    (ctx.service as any).compile = jest.fn().mockResolvedValue({ template: {}, parameters: {}, tool: 'Bicep CLI version 0.48.1' });
+    await ctx.service.connectLive(P, user, token(), { subscriptionId: SUB, resourceGroup: RG, resourceGroupMode: ResourceGroupMode.EXISTING, region: 'centralindia', deploymentModel: DeploymentModel.HUB_AND_SPOKE });
+    await ctx.service.discover(P, user, { source: ProfileSource.SAMPLE });
+    await ctx.service.submitUseCase(P, user, intake);
+    await ctx.service.generateArchitecture(P, user, {});
+    await ctx.service.generateIac(P, user, { inputs });
+    const plan = await ctx.service.runWhatIf(P, user, { environment: 'dev', source: 'planned' });
+    const noChange = { status: 'Succeeded', properties: { changes: plan.changes.map((c) => ({ resourceId: c.resourceId, changeType: c.changeType, after: { location: c.location ?? 'centralindia', tags: {} } })) } };
+    arm.state.whatIf = noChange;
+    await ctx.service.runWhatIf(P, user, { environment: 'dev', source: 'live' }, token());
+    await ctx.service.decide(P, other, { environment: 'dev', decision: 'approved' });
+    const d = await ctx.service.deploy(P, user, token(), { environment: 'dev' });
+    await ctx.service.refreshDeployment(P, user, token(), d.id);
+    // After the deployment, a what-if of the same bundle finds nothing to change.
+    arm.state.whatIf = { status: 'Succeeded', properties: { changes: plan.changes.map((c) => ({ resourceId: c.resourceId, changeType: 'NoChange', after: { location: c.location ?? 'centralindia', tags: {} } })) } };
+    return { ...ctx, arm, d, plan };
+  }
+
+  beforeEach(() => {
+    process.env.AZURE_BUILDER_ENTRA_CLIENT_ID = 'ba6bfea9-3b98-45bf-bcc5-a9929849f229';
+    process.env.AZURE_BUILDER_ENTRA_TENANT_ID = TENANT;
+    delete process.env.AZURE_BUILDER_BICEP_PATH;
+  });
+  afterEach(() => { process.env = { ...envBefore }; });
+
+  it('smoke tests read the stack, Resource Graph and the model deployments, and are recorded', async () => {
+    const { service, d, arm } = await deployed();
+    const c = await service.runSmokeTests(P, user, token(), d.id);
+    expect(c).toMatchObject({ kind: 'smoke', environment: 'dev', deploymentId: d.id });
+    const checks = (c.result as any).checks as Array<{ name: string; status: string }>;
+    expect(checks.find((x) => x.name === 'Model deployments')!.status).toBe('passed');
+    expect(checks.find((x) => x.name === 'Reachable from inside the VNet')!.status).toBe('skipped');
+    expect(arm.post).toHaveBeenCalledWith(expect.stringContaining('Microsoft.ResourceGraph'), expect.objectContaining({ subscriptions: [SUB] }));
+    expect((await service.operateHistory(P, user))[0].kind).toBe('smoke');
+  });
+
+  it('budget defaults to the use case budget and the signed-in Azure user', async () => {
+    const { service, d, arm } = await deployed();
+    const c = await service.setBudget(P, user, token(), d.id, {});
+    expect(arm.put).toHaveBeenLastCalledWith(expect.stringContaining(`/resourceGroups/${RG}/providers/Microsoft.Consumption/budgets/azb-hrpoliassi-dev-budget?`), expect.objectContaining({ properties: expect.objectContaining({ amount: 3000, timeGrain: 'Monthly' }) }));
+    expect(c.result).toMatchObject({ amount: 3000, contactEmails: ['owner@contoso.com'], thresholds: [80, 100] });
+    const custom = await service.setBudget(P, user, token(), d.id, { amountUsd: 500, contactEmails: ['finops@contoso.com'] });
+    expect(custom.result).toMatchObject({ amount: 500, contactEmails: ['finops@contoso.com'] });
+  });
+
+  it('drift is a live what-if of the deployed bundle: no change passes, a modified resource is drift', async () => {
+    const { service, d, arm, plan } = await deployed();
+    expect((await service.runDriftCheck(P, user, token(), d.id)).status).toBe('passed');
+    const modified = plan.changes.find((c) => c.changeType === 'Create')!;
+    arm.state.whatIf = { status: 'Succeeded', properties: { changes: [{ resourceId: modified.resourceId, changeType: 'Modify', delta: [{}, {}], before: { tags: {} }, after: { location: 'centralindia', tags: {} } }] } };
+    const drift = await service.runDriftCheck(P, user, token(), d.id);
+    expect(drift.status).toBe('warning');
+    expect((drift.result as any).items).toEqual([expect.objectContaining({ resource: modified.resourceId, changeType: 'Modify', propertyChanges: 2 })]);
+    expect(arm.postLongRunning).toHaveBeenLastCalledWith(expect.stringContaining('/deployments/azb-hrpoliassi-dev-drift/whatIf'), expect.anything());
+  });
+
+  it('teardown needs the typed environment, deletes the budget and the stack, and follows it until the stack is gone', async () => {
+    const { service, d, arm } = await deployed();
+    await expect(service.teardown(P, user, token(), d.id, { confirm: 'prod' })).rejects.toThrow('Type "dev"');
+    const t = await service.teardown(P, user, token(), d.id, { confirm: 'dev' });
+    expect(t.state).toBe('tearing_down');
+    expect(arm.delete.mock.calls.map((c: any[]) => c[0])).toEqual([
+      expect.stringContaining('/providers/Microsoft.Consumption/budgets/azb-hrpoliassi-dev-budget?'),
+      expect.stringContaining(`${stackId}?unmanageAction.Resources=delete&unmanageAction.ResourceGroups=detach`),
+    ]);
+    await expect(service.deploy(P, user, token(), { environment: 'dev' })).rejects.toThrow('being torn down');
+    expect((await service.refreshDeployment(P, user, token(), d.id)).state).toBe('tearing_down');
+    arm.state.gone = true;
+    const done = await service.refreshDeployment(P, user, token(), d.id);
+    expect(done).toMatchObject({ state: 'torn_down', provisioningState: 'deleted' });
+    await expect(service.teardown(P, user, token(), d.id, { confirm: 'dev' })).rejects.toThrow('torn down');
+    await expect(service.runSmokeTests(P, user, token(), d.id)).rejects.toThrow('torn down');
+  });
+
+  it('only an admin can tear down production', async () => {
+    const { service, deployments, d } = await deployed();
+    deployments.rows.push({ ...d, id: 'prod-1', environment: 'prod', state: 'succeeded', createdAt: new Date() });
+    await expect(service.teardown(P, user, token(), 'prod-1', { confirm: 'prod' })).rejects.toBeInstanceOf(ForbiddenException);
+    expect((await service.teardown(P, admin, token(), 'prod-1', { confirm: 'prod' })).state).toBe('tearing_down');
   });
 });

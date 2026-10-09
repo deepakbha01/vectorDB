@@ -39,6 +39,7 @@ import { AzureIacPage } from './pages/AzureIacPage';
 import { AzureApprovePage } from './pages/AzureApprovePage';
 import { AzureCallbackPage } from './pages/AzureCallbackPage';
 import { AzureDeployPage } from './pages/AzureDeployPage';
+import { AzureOperatePage } from './pages/AzureOperatePage';
 
 export function App() {
   return (
@@ -83,6 +84,7 @@ export function App() {
           <Route path="/projects/:id/azure-builder/iac" element={<AzureIacPage />} />
           <Route path="/projects/:id/azure-builder/approve" element={<AzureApprovePage />} />
           <Route path="/projects/:id/azure-builder/deploy" element={<AzureDeployPage />} />
+          <Route path="/projects/:id/azure-builder/operate" element={<AzureOperatePage />} />
           <Route path="/azure-builder/callback" element={<AzureCallbackPage />} />
         </Route>
 

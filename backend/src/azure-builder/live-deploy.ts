@@ -90,7 +90,8 @@ export async function getDeploymentStack(arm: ArmClient, stackId: string): Promi
   return arm.get<ArmStack>(`${stackId}?api-version=${API.stacks}`);
 }
 
-export type DeploymentState = 'running' | 'succeeded' | 'failed' | 'canceled';
+/** Deploy states, then the teardown states Phase 7 adds (tearing_down -> torn_down, or teardown_failed). */
+export type DeploymentState = 'running' | 'succeeded' | 'failed' | 'canceled' | 'tearing_down' | 'torn_down' | 'teardown_failed';
 
 export interface DeploymentError {
   code: string;

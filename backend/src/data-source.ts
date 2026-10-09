@@ -41,6 +41,7 @@ import { AzureIacBundle } from './azure-builder/azure-iac-bundle.entity';
 import { AzureWhatIf } from './azure-builder/azure-what-if.entity';
 import { AzureApproval } from './azure-builder/azure-approval.entity';
 import { AzureDeployment } from './azure-builder/azure-deployment.entity';
+import { AzureOperateCheck } from './azure-builder/azure-operate-check.entity';
 import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entity';
 
 config();
@@ -106,6 +107,7 @@ export const AppDataSource = new DataSource({
     AzureWhatIf,
     AzureApproval,
     AzureDeployment,
+    AzureOperateCheck,
     AiTokenAlert,
   ],
   migrations: ['src/migrations/*.ts'],

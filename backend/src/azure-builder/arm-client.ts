@@ -96,6 +96,11 @@ export class ArmClient {
     return this.request<T>('PUT', path, body);
   }
 
+  /** DELETE; 200, 202 (accepted, finishing asynchronously) and 204 all count as done here. */
+  async delete(path: string): Promise<void> {
+    await this.request<unknown>('DELETE', path);
+  }
+
   /**
    * A POST that ARM may answer with 202 Accepted (e.g. what-if): polls the Location (or
    * Azure-AsyncOperation) URL until it returns the result, for at most `maxWaitMs`.
