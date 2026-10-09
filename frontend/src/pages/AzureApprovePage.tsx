@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { apiClient, extractErrorCode, extractErrorMessage, Project } from '../api/client';
-import { AzureSignInRequired, signInToAzure } from '../api/azureAuth';
+import { AzureSignInRequired, azureErrorText, signInToAzure } from '../api/azureAuth';
 import { useFeatures } from '../api/features';
 import {
   AzureApproval,
@@ -168,7 +168,7 @@ export function AzureApprovePage() {
                   <textarea aria-label="ARM what-if output" rows={6} value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder='{ "status": "Succeeded", "changes": [ ... ] }' style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: 12 }} />
                 </>
               )}
-              {signInNeeded && <button type="button" className="primary-btn" style={{ marginRight: 8 }} onClick={() => signInToAzure().catch((e) => setError(extractErrorMessage(e, 'Could not start the Azure sign-in.')))}>Sign in to Azure</button>}
+              {signInNeeded && <button type="button" className="primary-btn" style={{ marginRight: 8 }} onClick={() => signInToAzure().catch((e) => setError(azureErrorText(e, 'Could not start the Azure sign-in.')))}>Sign in to Azure</button>}
               <button className="primary-btn" type="button" disabled={busy || stale || (source === 'arm' && !pasted.trim())} onClick={onWhatIf}>{busy ? (source === 'live' ? 'Asking Azure (up to a few minutes)...' : 'Running...') : `Run what-if for ${env}`}</button>
             </div>
 
