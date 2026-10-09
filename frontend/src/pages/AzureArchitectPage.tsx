@@ -10,7 +10,7 @@ const ZONES: Array<{ id: Zone; label: string }> = [
   { id: 'edge', label: 'Entry' },
   { id: 'app', label: 'Application' },
   { id: 'ai', label: 'AI models' },
-  { id: 'data', label: 'Data and secrets' },
+  { id: 'data', label: 'Data, vector store and secrets' },
   { id: 'network', label: 'Network' },
   { id: 'monitoring', label: 'Monitoring' },
 ];
@@ -30,6 +30,9 @@ const KIND_STYLE: Record<ConnectionKind, { color: string; dash?: string; label: 
   workspace: { color: 'var(--muted)', dash: '4 3', label: 'Workspace', minor: true },
   diagnostics: { color: 'var(--muted)', dash: '2 4', label: 'Diagnostics', minor: true },
 };
+
+/** What a component does in the RAG design, shown on its box where the Azure service name alone does not say it. */
+const ROLE: Record<string, string> = { search: 'Vector store', storage: 'Source documents', aoai: 'Chat + embedding models' };
 
 const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
@@ -103,6 +106,7 @@ function ArchitectureDiagram({ spec, selected, onSelect, showAll }: { spec: Arch
                 }}
               >
                 <div style={{ fontWeight: 600 }}>{c.label}</div>
+                {ROLE[c.id] && <div style={{ color: 'var(--primary-text)', fontSize: 11, fontWeight: 600 }}>{ROLE[c.id]}</div>}
                 <div style={{ color: 'var(--muted)', fontSize: 11 }}>{c.reuseExisting ? 'existing - reused' : c.optional ? 'optional' : c.type}</div>
               </button>
             ))}
@@ -119,6 +123,52 @@ function ArchitectureDiagram({ spec, selected, onSelect, showAll }: { spec: Arch
 }
 
 /** Azure AI Factory Builder - Phase 3 (Architect): rules-engine design, diagram, cost estimate and ADR drafts. */
+/**
+ * Where the vector store sits in the RAG design and how data flows through it. The diagram names it by its
+ * Azure service (Azure AI Search), which does not say "vector database" - this panel does.
+ */
+function VectorStorePanel({ spec }: { spec: ArchitectureSpec }) {
+  const search = spec.components.find((c) => c.id === 'search');
+  if (!search) return null;
+  const p = search.params as { sku?: string; replicaCount?: number; partitionCount?: number; semanticRanker?: string };
+  const models = (spec.components.find((c) => c.id === 'aoai')?.params.deployments as Array<{ name: string; model: string }> | undefined) ?? [];
+  const chat = models.find((m) => m.name === 'chat');
+  const embedding = models.find((m) => m.name !== 'chat');
+  const linked = (from: string, to: string, kind: string) => spec.connections.some((c) => c.from === from && c.to === to && c.kind === kind);
+  const cost = spec.cost.lineItems.filter((l) => l.component === 'search');
+  const decision = spec.decisions.find((d) => /ai search/i.test(d.choice));
+  const semantic = p.semanticRanker && p.semanticRanker !== 'disabled';
+  const rows: Array<[string, string]> = [
+    ['Vector store', `Azure AI Search, ${p.sku ?? spec.sizing.searchTier} tier, ${p.replicaCount ?? spec.sizing.searchReplicas} replica(s) x ${p.partitionCount ?? spec.sizing.searchPartitions} partition(s)`],
+    ['Where it sits', spec.private
+      ? 'In the use-case spoke VNet, behind a private endpoint in snet-private-endpoints. Public network access is disabled and only Entra ID (managed identity) can call it.'
+      : 'On a public endpoint with Entra ID authentication - this design has no private endpoints.'],
+    ['Index', `~${fmt(spec.sizing.chunks)} chunks · ~${spec.sizing.vectorGb} GB of vectors · ~${spec.sizing.indexGb} GB index · vector + keyword (hybrid) search${semantic ? ' with semantic re-ranking' : ''}`],
+    ['Ingestion', `${linked('search', 'storage', 'indexer') ? 'An indexer pulls the documents from Storage (documents container)' : 'The app pushes the documents'}; embeddings by ${embedding?.model ?? 'the embedding model'} on Azure OpenAI${linked('search', 'aoai', 'shared-private-link') ? ' over a shared private link' : ''}.`],
+    ['Query path', `Assistant API → AI Search (top matching chunks) → ${chat?.model ?? 'the chat model'} answers with citations.`],
+    ...(cost.length ? [['Cost', `${usd(cost.reduce((t, l) => t + l.monthlyUsd, 0))}/month - ${cost.map((l) => `${l.item} (${l.quantity})`).join(', ')}`] as [string, string]] : []),
+    ...(decision ? [['Decision', `${decision.adr}: ${decision.choice}. ${decision.reason}`] as [string, string]] : []),
+  ];
+  return (
+    <div className="card" style={{ marginBottom: 16 }} aria-label="Retrieval and vector store">
+      <div className="metric-label" style={{ marginBottom: 8 }}>Retrieval and vector store</div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <tbody>
+          {rows.map(([k, v]) => (
+            <tr key={k} style={{ borderBottom: '1px solid var(--border)' }}>
+              <td style={{ padding: '6px 8px', fontWeight: 600, whiteSpace: 'nowrap', verticalAlign: 'top' }}>{k}</td>
+              <td style={{ padding: '6px 8px' }}>{v}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '8px 0 0' }}>
+        The vector database chosen in the Evectorize track (Phase 4) does not apply here: the Azure RAG pattern uses Azure AI Search as its vector store.
+      </p>
+    </div>
+  );
+}
+
 export function AzureArchitectPage() {
   const { id } = useParams<{ id: string }>();
   const features = useFeatures();
@@ -233,7 +283,7 @@ export function AzureArchitectPage() {
                     <div className="card"><div className="metric-label">One-time (first index)</div><div className="metric-value">{usd(spec.cost.oneTimeUsd)}</div></div>
                     <div className="card"><div className="metric-label">Components</div><div className="metric-value">{spec.components.length}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{spec.components.filter((c) => c.reuseExisting).length} reused</div></div>
                     <div className="card"><div className="metric-label">Chat model</div><div className="metric-value" style={{ fontSize: 18 }}>{spec.sizing.deploymentSku}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{spec.sizing.deploymentSku === 'ProvisionedManaged' ? `${spec.sizing.deploymentCapacity} PTU` : `${fmt(spec.sizing.deploymentCapacity)}K TPM`} · peak ~{fmt(spec.sizing.peakTpm)} TPM</div></div>
-                    <div className="card"><div className="metric-label">AI Search</div><div className="metric-value" style={{ fontSize: 18 }}>{spec.sizing.searchTier}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{spec.sizing.searchReplicas} replica(s) x {spec.sizing.searchPartitions} partition(s) · ~{spec.sizing.indexGb} GB</div></div>
+                    <div className="card"><div className="metric-label">Vector store (AI Search)</div><div className="metric-value" style={{ fontSize: 18 }}>{spec.sizing.searchTier}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{spec.sizing.searchReplicas} replica(s) x {spec.sizing.searchPartitions} partition(s) · ~{spec.sizing.indexGb} GB</div></div>
                   </div>
                   {spec.warnings.length > 0 && (
                     <ul style={{ fontSize: 13, margin: '12px 0 0', paddingLeft: 18, color: 'var(--warning)' }} aria-label="Warnings">
@@ -241,6 +291,8 @@ export function AzureArchitectPage() {
                     </ul>
                   )}
                 </div>
+
+                <VectorStorePanel spec={spec} />
 
                 <div className="card" style={{ marginBottom: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>

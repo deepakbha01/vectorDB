@@ -92,10 +92,10 @@ export const CLASSIFIER_ID = 'deterministic-keyword-v1';
  * marks a stem that matches as a prefix (orchestrat* -> orchestrate, orchestration).
  */
 const KEYWORDS: Record<SolutionPattern, string[]> = {
-  'rag-assistant': ['question', 'answer', 'q&a', 'knowledge', 'policy', 'policies', 'search', 'find', 'lookup', 'document', 'manual', 'handbook', 'guideline', 'faq', 'sop', 'ground', 'cite', 'citation'],
+  'rag-assistant': ['question', 'answer', 'q&a', 'knowledge', 'policy', 'policies', 'search', 'find', 'lookup', 'document', 'manual', 'handbook', 'guideline', 'faq', 'sop', 'ground', 'cite', 'citation', 'rag', 'retriev*', 'retrieval-augmented', 'evidence', 'semantic search', 'vector'],
   'agentic-workflow': ['automate', 'automation', 'workflow', 'agent', 'agentic', 'multi-step', 'orchestrat*', 'tool', 'action', 'approve', 'approval', 'trigger', 'book', 'schedule', 'update record', 'create ticket', 'raise ticket'],
   'document-intelligence': ['extract', 'extraction', 'invoice', 'receipt', 'form', 'contract', 'ocr', 'scan', 'field', 'key-value', 'purchase order', 'claim form', 'kyc', 'digitis*', 'digitiz*'],
-  'conversational-copilot': ['chat', 'chatbot', 'assistant', 'conversation', 'copilot', 'helpdesk', 'help desk', 'customer service', 'virtual agent', 'self-service', 'deflect'],
+  'conversational-copilot': ['chat', 'chatbot', 'conversation', 'copilot', 'helpdesk', 'help desk', 'customer service', 'virtual agent', 'self-service', 'deflect'],
   'predictive-ml': ['forecast', 'predict', 'prediction', 'churn', 'propensity', 'score', 'scoring', 'classification', 'anomaly', 'demand', 'regression', 'tabular', 'time series', 'fraud'],
 };
 
@@ -117,6 +117,8 @@ export function classifyUseCase(a: IntakeAnswers): ClassificationDetail {
   const add = (p: SolutionPattern, points: number, why: string) => { scores[p] += points; signals[p].push(why); };
 
   for (const p of SOLUTION_PATTERNS) for (const kw of KEYWORDS[p.id]) if (matchesKeyword(text, kw)) add(p.id, 1, `"${kw}"`);
+  // Nearly every RAG app is called an assistant too, so the word alone does not decide between the two.
+  if (matchesKeyword(text, 'assistant')) { add('conversational-copilot', 0.5, '"assistant"'); add('rag-assistant', 0.5, '"assistant"'); }
 
   // Structured signals from the data and channels
   const formats = a.data.map((d) => `${d.source} ${d.format}`).join(' ');

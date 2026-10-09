@@ -99,3 +99,26 @@ describe('buildUseCaseSpec', () => {
     expect(over.pattern.rationale).toContain('Overridden by architect@example.com');
   });
 });
+
+describe('classifyUseCase - RAG wording and the word "assistant"', () => {
+  // Regression: this description was classified as a conversational copilot (2 vs 1.5) because "RAG",
+  // "retrieving" and "evidence" were not RAG signals and "assistant" counted for the copilot only.
+  const patient360 = withText(
+    'Patient 360° AI Assistant',
+    'Build an AI assistant that provides clinicians and care teams with a unified view of patient history by retrieving relevant clinical notes, diagnoses, medications, lab results, imaging summaries, and treatment history. The solution uses enterprise search, RAG, and contextual retrieval to provide evidence-based responses while maintaining privacy and compliance.',
+    { users: { ...base.users, channels: ['web', 'teams', 'api', 'email'] as any } },
+  );
+
+  it('classifies an assistant described as retrieval / RAG over records as a RAG knowledge assistant', () => {
+    const c = classifyUseCase(patient360);
+    expect(c.pattern).toBe('rag-assistant');
+    expect(c.signals['rag-assistant']).toEqual(expect.arrayContaining(['"rag"', '"retriev*"', '"evidence"', '"search"']));
+    expect(c.scores['rag-assistant']).toBeGreaterThan(c.scores['conversational-copilot'] * 2);
+  });
+
+  it('treats "assistant" as evidence for both the RAG assistant and the copilot, not the copilot alone', () => {
+    const c = classifyUseCase(withText('Sales assistant', 'An assistant for the sales team'));
+    expect(c.scores['rag-assistant']).toBe(c.scores['conversational-copilot']);
+    expect(c.signals['conversational-copilot']).toContain('"assistant"');
+  });
+});
