@@ -200,6 +200,12 @@ describe('parseBicepDiagnostics', () => {
     expect(v.status).toBe('skipped');
     expect(v.reason).toContain('AZURE_BUILDER_BICEP_PATH');
   });
+
+  it('skips with the reason when the configured Bicep CLI cannot be started', async () => {
+    const v = await validateIacBundle([], path.join(__dirname, 'no-such-bicep.exe'));
+    expect(v.status).toBe('skipped');
+    expect(v.reason).toMatch(/could not be started \(exit code ENOENT/);
+  });
 });
 
 // Compiles the generated bundles with the real Bicep CLI (restores AVM modules from the public
