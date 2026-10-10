@@ -58,6 +58,20 @@ export interface ArmDeploymentInput {
 export class IacCompileError extends Error {}
 
 /**
+ * `bicep --version`, or an IacCompileError that says the CLI itself could not be started - with
+ * its exit code and first stderr line - rather than an unexplained server error.
+ */
+export async function bicepVersion(bicepPath: string): Promise<string> {
+  try {
+    return (await run(bicepPath, ['--version'], { timeout: 30_000 })).stdout.trim();
+  } catch (err) {
+    const e = err as { code?: string | number; killed?: boolean; stderr?: string };
+    const detail = e.killed ? 'it did not answer within 30 s' : [e.code !== undefined ? `exit code ${e.code}` : '', (e.stderr ?? '').trim().split(/\r?\n/)[0]].filter(Boolean).join(': ') || 'no output';
+    throw new IacCompileError(`The Bicep CLI at AZURE_BUILDER_BICEP_PATH could not be started (${detail}). Check the path and that the server has free memory, then retry.`);
+  }
+}
+
+/**
  * Compiles `infra/params/<env>.bicepparam` (and through it main.bicep and the AVM modules) into an
  * ARM template and parameters with `bicep build-params --stdout` - for a live what-if or deployment
  * of exactly these bytes. Needs the Bicep CLI; no shell.
@@ -67,7 +81,7 @@ export async function compileForArm(files: IacFile[], env: TargetEnv, bicepPath:
   const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'azb-arm-'));
   try {
     await writeBundle(root, files);
-    const tool = (await run(bicepPath, ['--version'], { timeout: 30_000 })).stdout.trim();
+    const tool = await bicepVersion(bicepPath);
     let stdout: string;
     try {
       ({ stdout } = await run(bicepPath, ['build-params', `infra/params/${env}.bicepparam`, '--stdout'], { cwd: root, timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }));
@@ -105,9 +119,9 @@ export async function validateIacBundle(files: IacFile[], bicepPath: string | un
     let output = '';
     let version = '';
     try {
-      version = (await run(bicepPath, ['--version'], { timeout: 30_000 })).stdout.trim();
+      version = await bicepVersion(bicepPath);
     } catch (err) {
-      return { status: 'skipped', tool: null, checkedAt, commands: [], diagnostics: [], reason: `The Bicep CLI at AZURE_BUILDER_BICEP_PATH could not be run: ${(err as Error).message}` };
+      return { status: 'skipped', tool: null, checkedAt, commands: [], diagnostics: [], reason: (err as Error).message };
     }
     for (const args of commands) {
       try {

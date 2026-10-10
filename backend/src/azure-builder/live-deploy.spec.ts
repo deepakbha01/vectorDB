@@ -72,6 +72,12 @@ describe('compileForArm', () => {
     await expect(compileForArm([], 'dev', undefined)).rejects.toBeInstanceOf(IacCompileError);
   });
 
+  it('reports a Bicep CLI that cannot be started as a compile error, not a server error', async () => {
+    const err = await compileForArm([], 'dev', path.join(__dirname, 'no-such-bicep.exe')).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(IacCompileError);
+    expect((err as Error).message).toMatch(/could not be started \(exit code ENOENT/);
+  });
+
   // Integration: runs the real Bicep CLI (and restores AVM modules from the public registry) when AZURE_BUILDER_BICEP_PATH is set.
   const bicep = process.env.AZURE_BUILDER_BICEP_PATH;
   (bicep ? it : it.skip)('compiles a generated bundle environment into an ARM template and parameters', async () => {
