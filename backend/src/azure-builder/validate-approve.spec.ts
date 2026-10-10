@@ -151,3 +151,35 @@ describe('ARM what-if import and the approval rules (spec 4.6)', () => {
     expect(bad.problems[0]).toContain('--no-pretty-print');
   });
 });
+
+describe('assessWhatIf - locations what-if reports as template expressions', () => {
+  const assessArm = (raw: string) => {
+    const r = parseArmWhatIf(raw, UC);
+    return { r, a: assessWhatIf(r.changes, ctx({ source: 'arm', armStatus: r.status, armError: r.error, armProblems: r.problems })) };
+  };
+  // A private endpoint follows its VNet's region, which what-if cannot evaluate when the VNet is created in the same
+  // deployment: it reports `[coalesce(null(), reference('<vnet id>', '2020-06-01', 'Full').location)]` instead.
+  const vnet = plan.find((c) => c.changeType === 'Create' && /\/virtualNetworks\/[^/]+$/.test(c.resourceId))!;
+  const vnetId = vnet.resourceId.replace(/xxxx/g, 'ab12');
+  const followVnet = (c: any) => (c.resourceId.includes('/privateEndpoints/') ? { ...c, after: { ...c.after, location: `[coalesce(null(), reference('${vnetId}', '2020-06-01', 'Full').location)]` } } : c);
+  const endpoints = () => JSON.parse(armFor(plan, followVnet)).changes.filter((c: any) => c.resourceId.includes('/privateEndpoints/'));
+
+  it('takes the location from the referenced VNet instead of comparing the expression as text', () => {
+    expect(endpoints().length).toBeGreaterThan(0);
+    const { a } = assessArm(armFor(plan, followVnet));
+    expect(a.blocking.join(' ')).not.toContain('which the policy does not allow');
+  });
+
+  it('still blocks when the referenced VNet is in a disallowed region, naming that region', () => {
+    const vnetInEastUs = (c: any) => (c.resourceId === vnetId ? { ...c, after: { ...c.after, location: 'eastus' } } : followVnet(c));
+    const blocking = assessArm(armFor(plan, vnetInEastUs)).a.blocking.join(' ');
+    expect(blocking).toMatch(/privateEndpoints \S+ would be placed in eastus \(the region of [^)]+\), which the policy does not allow/);
+  });
+
+  it('records a location it cannot resolve as a risk, not a block', () => {
+    const unknown = (c: any) => (c.resourceId.includes('/privateEndpoints/') ? { ...c, after: { ...c.after, location: "[reference('/subscriptions/x/resourceGroups/y/providers/Microsoft.Network/virtualNetworks/elsewhere').location]" } } : c);
+    const { a } = assessArm(armFor(plan, unknown));
+    expect(a.blocking.join(' ')).not.toContain('which the policy does not allow');
+    expect(a.risks.join(' ')).toContain('its region is only known at deployment');
+  });
+});
