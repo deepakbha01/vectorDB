@@ -421,6 +421,8 @@ export function fromInferenceArchitecture(a: AiInferenceArchitecture): DecisionR
 /** Spec §9 Infrastructure Decision Record, in the standard format: the decision is the placement of each component. */
 export function fromInfrastructureDesign(d: AiInfrastructureDesign): DecisionRecord {
   const r = d.result;
+  // Only a stack that shapes the chosen design (not the on-premises what-if) belongs in the record.
+  const stack = r.onPremStack?.appliesTo === 'chosen' ? r.onPremStack : null;
   const all = r.placements.flatMap((p) => p.candidates.map((c) => ({ id: `${p.component}:${c.target}:${c.platform}`, label: `${p.componentLabel}: ${c.label}`, eligibility: c.eligibility, score: c.score, notes: [...c.failures, ...c.conditions, ...c.notes] })));
   // Alternatives: the best other usable placement for each component, at most two overall (spec §17).
   const alternatives = pickAlternatives(
@@ -437,11 +439,11 @@ export function fromInfrastructureDesign(d: AiInfrastructureDesign): DecisionRec
     status: r.deploymentModel.kind === 'not_feasible' ? 'not_feasible' : r.placements.some((p) => p.chosen?.eligibility === 'conditional') ? 'conditional' : 'decided',
     recommendation: r.deploymentModel.kind === 'not_feasible' ? null : { id: r.deploymentModel.targets.join('+'), label: r.deploymentModel.summary },
     confidence: r.confidence,
-    why: r.placements.map((p) => `${p.componentLabel}: ${p.why}`),
+    why: [...r.placements.map((p) => `${p.componentLabel}: ${p.why}`), ...(stack ? [`On-premises stack: ${stack.why}`] : [])],
     candidates: all,
     alternatives,
-    tradeoffs: [...r.sections.availability.slice(0, 2), ...r.sections.network.filter((n) => n.startsWith('Private interconnect'))],
-    risks: r.placements.flatMap((p) => (p.chosen?.conditions ?? []).map((c) => `${p.componentLabel}: ${c}`)),
+    tradeoffs: [...r.sections.availability.slice(0, 2), ...r.sections.network.filter((n) => n.startsWith('Private interconnect')), ...(stack?.support ? [`Support: ${stack.support.contract}`] : [])],
+    risks: [...r.placements.flatMap((p) => (p.chosen?.conditions ?? []).map((c) => `${p.componentLabel}: ${c}`)), ...(stack?.chosen?.conditions ?? []).map((c) => `On-premises stack: ${c}`)],
     assumptions: Object.entries(d.sources).map(([k, s]) => ({ statement: `${k}: ${s.detail}`, evidenceType: 'assumption' as const })),
     evidence: r.sizing,
     benchmarkRequired: r.benchmarkRequired,

@@ -405,6 +405,7 @@ export class AiFactoryService {
         ? section('infrastructure_design', 'full', {
             deploymentModel: infra.result.deploymentModel.summary,
             placements: Object.fromEntries(infra.result.placements.map((pl) => [pl.componentLabel, pl.chosen?.label ?? 'not feasible'])),
+            ...(infra.result.onPremStack?.appliesTo === 'chosen' && infra.result.onPremStack.chosen ? { onPremStack: infra.result.onPremStack.chosen.label } : {}),
             confidence: infra.result.confidence,
             vectorDeploymentPlan: dep ? `v${dep.version} (${dep.platform})` : null,
           })

@@ -17,9 +17,10 @@ import { AiInferenceArchitecture } from '../inference-architecture/inference-arc
 import { AiInfrastructureDesign } from './infrastructure.entity';
 import { designInfrastructure } from './infrastructure.engine';
 import { CreateInfrastructureDesignDto } from './create-infrastructure-design.dto';
-import { ComponentNeed, InfraContext, InfrastructureResult, PlatformKind, ServingFacts, TargetId } from './infrastructure.types';
+import { ComponentNeed, FineTuningNeed, InfraContext, InfrastructureResult, PlatformKind, ServingFacts, TargetId } from './infrastructure.types';
+import { AiModelSelection } from '../model-selection/model-selection.entity';
 
-export type InfraSource = { source: 'user' | 'workload_profile' | 'discovery' | 'inference' | 'inference_architecture' | 'vector_db_selection' | 'capacity' | 'default'; detail: string };
+export type InfraSource = { source: 'user' | 'workload_profile' | 'discovery' | 'inference' | 'inference_architecture' | 'vector_db_selection' | 'capacity' | 'model_selection' | 'default'; detail: string };
 
 const ALL_TARGETS: TargetId[] = ['on_premises', 'azure', 'aws', 'oci', 'gcp'];
 /** Discovery's operational capability expressed on the inference assessment's scale (a DBA runs VMs, not a platform). */
@@ -43,6 +44,8 @@ export interface InfraInputs {
   architecture: AiInferenceArchitecture | null;
   adr: ArchitectureDecisionRecord | null;
   capacity: CapacityPlan | null;
+  /** Optional so callers written before Wave 13 still type-check. */
+  selection?: AiModelSelection | null;
 }
 
 /** Pure: builds the placement context from the latest records and says where each input came from. */
@@ -87,6 +90,15 @@ export function resolveInfraContext(dto: CreateInfrastructureDesignDto, x: Infra
         : null,
     'part_time',
     'not stated - assumed part-time',
+  );
+  const existingStorageVendors = pick<string[]>('existingStorageVendors', dto.existingStorageVendors, null, [], 'not stated - no estate reuse assumed');
+  const existingHypervisor = pick<string | null>('existingHypervisor', dto.existingHypervisor, null, null, 'not stated');
+  const fineTuning = pick<FineTuningNeed>(
+    'fineTuning',
+    dto.fineTuning,
+    x.selection ? { value: x.selection.requirements.fineTuning ?? 'none', source: 'model_selection', detail: `Model Selection v${x.selection.version}: fine-tuning` } : null,
+    'none',
+    'no Model Selection - assumed none',
   );
   const availabilityTargetPercent = pick('availabilityTargetPercent', undefined, x.discovery ? { value: x.discovery.availabilityTargetPercent, source: 'discovery', detail: `${dv}: availability target` } : x.inference ? { value: x.inference.inputsUsed.availabilityTargetPercent, source: 'inference', detail: `Inference assessment v${x.inference.version}` } : null, 99.5, 'default 99.5%');
 
@@ -155,6 +167,7 @@ export function resolveInfraContext(dto: CreateInfrastructureDesignDto, x: Infra
     vector: vectorFacts,
     inference: inferenceFacts,
     securityControls: x.profile?.result.securityRequirements.controls ?? [],
+    estate: { storageVendors: existingStorageVendors, hypervisor: existingHypervisor, fineTuning },
   };
   if (x.discovery) sources.availabilityAndDr = { source: 'discovery', detail: `${dv}: availability, RPO / RTO, multi-region` };
   return { context, sources };
@@ -175,6 +188,7 @@ export class InfrastructureDesignService {
     @InjectRepository(AiInferenceArchitecture) private readonly architectures: Repository<AiInferenceArchitecture>,
     @InjectRepository(ArchitectureDecisionRecord) private readonly adrs: Repository<ArchitectureDecisionRecord>,
     @InjectRepository(CapacityPlan) private readonly capacity: Repository<CapacityPlan>,
+    @InjectRepository(AiModelSelection) private readonly selections: Repository<AiModelSelection>,
   ) {}
 
   private servingFacts(): ServingFacts {
@@ -187,17 +201,18 @@ export class InfrastructureDesignService {
     const project = await this.projectsService.findOne(projectId, requester);
     const where = { project: { id: projectId } };
     const order = { createdAt: 'DESC' as const };
-    const [profile, discovery, inference, architecture, adr, capacity] = await Promise.all([
+    const [profile, discovery, inference, architecture, adr, capacity, selection] = await Promise.all([
       this.profiles.findOne({ where, order }),
       this.discovery.findOne({ where, order }),
       this.inference.findOne({ where, order }),
       this.architectures.findOne({ where, order }),
       this.adrs.findOne({ where, order }),
       this.capacity.findOne({ where, order }),
+      this.selections.findOne({ where, order }),
     ]);
     const gpuMemory = (id: string) => this.inferenceConfig.getGpus().find((g) => g.id === id)?.memoryGb ?? null;
     const haThreshold = this.inferenceConfig.getSizing().haAvailabilityThreshold ?? 99.9;
-    return resolveInfraContext(dto, { project, profile, discovery, inference, architecture, adr, capacity }, this.servingFacts(), gpuMemory, haThreshold);
+    return resolveInfraContext(dto, { project, profile, discovery, inference, architecture, adr, capacity, selection }, this.servingFacts(), gpuMemory, haThreshold);
   }
 
   async getDefaults(projectId: string, requester: AuthenticatedUser): Promise<{ context: InfraContext; sources: Record<string, InfraSource>; preview: InfrastructureResult }> {

@@ -5,10 +5,48 @@ export type TargetId = 'on_premises' | 'azure' | 'aws' | 'oci' | 'gcp';
 export type PlatformKind = 'kubernetes' | 'vm' | 'managed' | 'saas' | 'in_app';
 export type ComponentId = 'inference' | 'vector_database' | 'application';
 
+export type FineTuningNeed = 'none' | 'adapter' | 'full';
+
+/** Mirrors estateStorageVendors / estateHypervisors in backend config/infrastructure-targets.yaml. */
+export const ESTATE_STORAGE_VENDORS: Record<string, string> = { netapp: 'NetApp', nutanix: 'Nutanix', dell_emc: 'Dell / EMC', vast_data: 'VAST Data', ddn: 'DDN', other: 'Other' };
+export const ESTATE_HYPERVISORS: Record<string, string> = { vmware: 'VMware vSphere', nutanix_ahv: 'Nutanix AHV', hyper_v: 'Microsoft Hyper-V', none: 'None / bare metal' };
+
 export interface CreateInfrastructureDesignInput {
   hasKubernetes?: boolean;
   hasGpu?: boolean;
   multipleOnPremSites?: boolean;
+  existingStorageVendors?: string[];
+  existingHypervisor?: string;
+  fineTuning?: FineTuningNeed;
+}
+
+export interface StackCandidate {
+  id: string;
+  label: string;
+  eligibility: Eligibility;
+  failures: string[];
+  conditions: string[];
+  notes: string[];
+  passed: string[];
+  score: number;
+  scoreBreakdown: ScoreContribution[];
+  bestFor: string;
+  costRating: number;
+}
+
+export interface OnPremStackResult {
+  appliesTo: 'chosen' | 'if_on_premises';
+  gpusSized: number;
+  fineTuning: FineTuningNeed;
+  chosen: StackCandidate | null;
+  candidates: StackCandidate[];
+  why: string;
+  compute: string | null;
+  platform: string | null;
+  storagePlan: Array<{ tier: 'block' | 'file' | 'object' | 'parallel' | 'local_nvme'; purpose: string; product: string; sizeGb: number | null; basis: string }>;
+  recovery: { modelLoadGbPerMinute: number; restoreGbPerMinute: number; modelLoadMinutes: number | null; restoreMinutes: number | null } | null;
+  support: { contract: string; ownership: string; telemetry: string; practices: string[] } | null;
+  benchmarkRequired: string[];
 }
 
 export interface PlacementCandidate {
@@ -44,6 +82,8 @@ export interface InfrastructureResult {
   sizing: Array<{ label: string; value: string; evidenceType: EvidenceType }>;
   wouldChangeIf: string[];
   benchmarkRequired: string[];
+  /** Wave 13 - null when on-premises is not allowed; absent on results saved before it. */
+  onPremStack?: OnPremStackResult | null;
 }
 
 export interface InfraContext {
@@ -58,6 +98,7 @@ export interface InfraContext {
   multipleOnPremSites: boolean;
   opsCapability: string;
   components: Array<{ id: ComponentId; label: string; platforms: PlatformKind[]; gpuLabel: string | null; detail: string }>;
+  estate?: { storageVendors: string[]; hypervisor: string | null; fineTuning: FineTuningNeed };
 }
 
 export type InfraSources = Record<string, { source: string; detail: string }>;

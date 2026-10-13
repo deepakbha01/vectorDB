@@ -61,8 +61,17 @@ export function estimateRecovery(ctx: OperationsContext, cat: OperationsCatalogu
   else {
     const onPrem = ctx.deployment?.targets.includes('on_premises') ?? false;
     steps.push({ step: `Provision replacement capacity (${onPrem ? 'on-premises, spare hardware assumed' : 'cloud'})`, minutes: onPrem ? r.provisioningMinutes.on_premises : r.provisioningMinutes.cloud });
-    if (ctx.vector) steps.push({ step: `Restore ${ctx.vector.storageGb} GB of vector data`, minutes: Math.ceil(ctx.vector.storageGb / r.restoreGbPerMinute) });
-    if (ctx.inference && !ctx.inference.managed) steps.push({ step: `Load ${ctx.inference.weightsGb} GB of model weights`, minutes: Math.ceil(ctx.inference.weightsGb / r.modelLoadGbPerMinute) });
+    // The on-premises stack's planning throughput, where the Infrastructure Design chose one; the generic rates otherwise.
+    const st = ctx.deployment?.onPremStorage ?? null;
+    const on = st ? ` on ${st.label} (planning throughput)` : '';
+    if (ctx.vector) {
+      const rate = st?.restoreGbPerMinute ?? r.restoreGbPerMinute;
+      steps.push({ step: `Restore ${ctx.vector.storageGb} GB of vector data${st?.restoreGbPerMinute ? on : ''}`, minutes: Math.ceil(ctx.vector.storageGb / rate) });
+    }
+    if (ctx.inference && !ctx.inference.managed) {
+      const rate = st?.modelLoadGbPerMinute ?? r.modelLoadGbPerMinute;
+      steps.push({ step: `Load ${ctx.inference.weightsGb} GB of model weights${st?.modelLoadGbPerMinute ? on : ''}`, minutes: Math.ceil(ctx.inference.weightsGb / rate) });
+    }
     steps.push({ step: 'Validate before taking traffic', minutes: r.validationMinutes });
   }
   const estimated = steps.reduce((s, x) => s + x.minutes, 0);

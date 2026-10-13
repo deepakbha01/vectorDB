@@ -146,6 +146,16 @@ export interface PatternCatalogEntry {
   candidateTechnologyCategories: string[];
   validationRequirements: string[];
   defaultAssessment: Partial<DiscoveryAssessmentInput>;
+  /** Wave 13 reference guidance for consultants - directional, seeds nothing (stack ids from onPremStacks). */
+  infrastructureFitment?: {
+    footprint: string;
+    primaryStacks: string[];
+    alternativeStacks: string[];
+    cloudFirstWhen: string;
+    storageEmphasis: string[];
+    why: string[];
+    watchOuts: string[];
+  };
   /** Optional token metadata (validation spec S1-S2); null values mean Not configured. */
   tokenObservabilityProfile?: {
     workloadType: string;

@@ -1,5 +1,6 @@
 import { ComponentNeed, InfraContext, InfrastructureCatalogue, InfrastructureResult, Placement, PlacementCandidate, PlatformKind, TargetId } from './infrastructure.types';
 import { ScoreContribution, scoreBreakdown } from '../eligibility/score-breakdown';
+import { recommendOnPremStack } from './onprem-stack.engine';
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
 const gb = (n: number) => `${Math.round(n * 10) / 10} GB`;
@@ -137,6 +138,21 @@ export function designInfrastructure(ctx: InfraContext, cat: InfrastructureCatal
 
   const sections = buildSections(ctx, cat, placements, chosenTargets);
   const sizing = buildSizing(ctx, cat);
+  const onPremStack = recommendOnPremStack(ctx, cat, placements);
+  // The stack only shapes the chosen design when something actually lands on-premises; otherwise it stays a what-if.
+  const stack = onPremStack?.appliesTo === 'chosen' && onPremStack.chosen ? onPremStack : null;
+  if (stack) {
+    sections.compute.push(`On-premises stack: ${stack.compute}`, `Platform: ${stack.platform}`);
+    sections.storage.push(...stack.storagePlan.map((r) => `${r.purpose}: ${r.product}${r.sizeGb !== null ? ` - ~${r.sizeGb} GB` : ''} (${r.basis})`));
+    if (stack.recovery) {
+      const parts = [
+        stack.recovery.modelLoadMinutes !== null ? `model reload ~${stack.recovery.modelLoadMinutes} min` : null,
+        stack.recovery.restoreMinutes !== null ? `vector restore ~${stack.recovery.restoreMinutes} min` : null,
+      ].filter((p): p is string => !!p);
+      if (parts.length) sections.disasterRecovery.push(`On ${stack.chosen!.label}: ${parts.join(', ')} at planning throughput (measure in the PoC)`);
+    }
+    sizing.push({ label: 'On-premises stack', value: stack.chosen!.label, evidenceType: 'vendor_listed' });
+  }
 
   return {
     rulesVersion: cat.rulesVersion,
@@ -151,12 +167,15 @@ export function designInfrastructure(ctx: InfraContext, cat: InfrastructureCatal
         return alt ? [`${p.componentLabel}: ${alt.label} would score higher but ${alt.failures[0].charAt(0).toLowerCase()}${alt.failures[0].slice(1)}`] : [];
       }),
       'Allowed deployment targets, data classification, availability / DR targets, or the inference GPU sizing change.',
+      ...(stack ? ['On-premises stack: the existing storage vendor / hypervisor, GPUs at peak or the fine-tuning need change.'] : []),
     ],
     benchmarkRequired: [
       ...placements.flatMap((p) => (p.chosen?.conditions ?? []).map((c) => `Validate (${p.componentLabel.toLowerCase()}): ${c}`)),
       ...(kind === 'hybrid' ? ['Measure round-trip latency between targets on the request path (application ↔ vector database ↔ inference) against the latency budget.'] : []),
       'Run a DR drill (restore from backup and fail over) and record the achieved RPO / RTO.',
+      ...(stack ? [...stack.chosen!.conditions.map((c) => `Validate (on-premises stack): ${c}`), ...stack.benchmarkRequired] : []),
     ],
+    onPremStack,
   };
 }
 
