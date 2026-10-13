@@ -21,6 +21,13 @@
 # `useCase` ({name} = the application name) are offered as editable defaults.
 # The pattern with the most keyword matches wins (see use-case-suggestion.ts).
 
+# `infrastructureFitment` (Wave 13) is reference guidance for consultants on
+# the Pattern Library page: the typical footprint, which on-premises stacks
+# usually fit (ids from `onPremStacks` in infrastructure-targets.yaml), when a
+# cloud-first design is simpler, what the storage must do well, and watch-outs.
+# It is directional and seeds nothing - the Infrastructure Design phase still
+# picks the stack from the project's own inputs.
+
 patterns:
   - id: enterprise-document-rag
     name: "Enterprise Document RAG"
@@ -51,6 +58,24 @@ patterns:
         - "Retrieved context usually dominates the prompt: size it as top-K × chunk tokens from the RAG design, not a guess."
         - "Multi-turn copilots resend conversation history on every call - cap or summarize it."
         - "A stable system prompt is a good candidate for provider prompt caching."
+    infrastructureFitment:
+      footprint: "Inference: 1-16 GPUs (mid-size open model) or a managed API. Vector data: tens of GB."
+      primaryStacks:
+        - nutanix_hci
+        - dell_netapp
+      alternativeStacks:
+        - dell_powerscale
+      cloudFirstWhen: Data may leave the premises and the team is small - a managed model API plus a managed vector database is simplest.
+      storageEmphasis:
+        - Block (low latency) for the vector database
+        - File for source documents and model weights
+        - Object for document archive and backups
+      why:
+        - Moderate GPU count fits HCI; Nutanix keeps operations simple for a part-time team.
+        - Dell + NetApp wins where documents already sit on ONTAP shares - index in place and replicate to Azure NetApp Files for DR.
+      watchOuts:
+        - Respect source ACLs at retrieval time, not only at ingestion.
+        - Re-sync jobs read the whole corpus - size file throughput for the re-index window.
     defaultAssessment:
       documentCount: 250000
       estimatedVectorCount: 1000000
@@ -92,6 +117,25 @@ patterns:
         - "Keep prompt/response capture off (metadata only) - prompts can carry PHI."
         - "Strict metadata filtering narrows retrieval; measure the real top-K after filtering rather than assuming the maximum."
         - "Clinical answers with citations run longer than chat answers - set output tokens from observed responses."
+    infrastructureFitment:
+      footprint: "Inference: 4-32 GPUs, usually self-hosted for PHI. Vector data: tens to hundreds of GB."
+      primaryStacks:
+        - dell_netapp
+        - dell_powerscale
+      alternativeStacks:
+        - nutanix_hci
+      cloudFirstWhen: A signed BAA / DPA is in place and the provider region meets residency - otherwise keep inference and vectors on-premises.
+      storageEmphasis:
+        - Encrypted block for the vector database
+        - Immutable / tamper-proof snapshots against ransomware
+        - Replication to a second site or sovereign cloud for DR
+      why:
+        - Restricted data raises the weight on data control - on-premises usually wins placement.
+        - NetApp (SnapMirror, tamper-proof snapshots) and Dell (SyncIQ, PowerStore Metro) both replicate natively within typical clinical RPOs.
+        - Nutanix fits hospital or regional sites with small IT teams.
+      watchOuts:
+        - PHI must not reach third-party model APIs without a BAA.
+        - Audit every retrieval and prompt; plan log retention storage.
     defaultAssessment:
       qps: 8
       peakQps: 20
@@ -135,6 +179,24 @@ patterns:
         - "Filings and tables chunk into token-dense passages - check tokens per chunk from the pipeline, not characters."
         - "Summarization requests produce long outputs; output tokens usually cost more than input tokens."
         - "Split Q&A and summarization traffic if their shapes differ - they need different token profiles."
+    infrastructureFitment:
+      footprint: "Inference: 4-32 GPUs, often self-hosted. Vector data: tens to hundreds of GB with long retention."
+      primaryStacks:
+        - dell_netapp
+        - dell_powerscale
+      alternativeStacks:
+        - dell_vast
+      cloudFirstWhen: Regulators accept the provider and region; many firms keep client data on-premises regardless.
+      storageEmphasis:
+        - WORM retention for source records (NetApp SnapLock, PowerScale SmartLock)
+        - Block for the vector database
+        - Synchronous or near-synchronous replication for low RPO
+      why:
+        - Retention and legal-hold rules favour storage with native WORM.
+        - Low RPOs need synchronous replication, which NetApp and Dell offer natively.
+      watchOuts:
+        - Model outputs used in advice may need the same retention as the source records.
+        - Keep an evidence trail of which documents grounded each answer.
     defaultAssessment:
       qps: 10
       peakQps: 30
@@ -175,6 +237,24 @@ patterns:
         - "High concurrency makes small per-request savings material - track tokens per resolved ticket."
         - "Conversation history grows with each turn; it is the usual source of token creep."
         - "Shared instructions and policy text are good candidates for prompt caching."
+    infrastructureFitment:
+      footprint: "Inference: 8-64 GPUs at peak - concurrency-driven and spiky. Vector data: small to moderate."
+      primaryStacks:
+        - dell_netapp
+        - nutanix_hci
+      alternativeStacks:
+        - dell_powerscale
+      cloudFirstWhen: Traffic is very spiky or seasonal - cloud elasticity is cheaper than buying for peak.
+      storageEmphasis:
+        - Fast shared file for model weights so new replicas start quickly
+        - Block for the vector database
+        - Object for transcripts and feedback data
+      why:
+        - Peak concurrency, not data volume, sizes this pattern - GPU count dominates.
+        - Nutanix fits up to about 16-32 GPUs; beyond that Dell compute with NetApp or PowerScale scales further.
+      watchOuts:
+        - Fixed on-premises capacity must be bought for peak - compare against cloud burst.
+        - Cold-start time of a new replica depends on model-load throughput.
     defaultAssessment:
       qps: 40
       peakQps: 120
@@ -213,6 +293,24 @@ patterns:
         - "Most queries are search-only: set the share of requests that are summarized or explained by an LLM."
         - "Search QPS is not LLM QPS - estimating LLM tokens at the full search rate overstates cost."
         - "Telemetry embeddings are generated at ingestion; query-side tokens are small."
+    infrastructureFitment:
+      footprint: Little or no GPU inference; high ingestion; vectors from hundreds of GB to TB; many edge sites.
+      primaryStacks:
+        - nutanix_hci
+        - dell_powerscale
+      alternativeStacks:
+        - dell_vast
+      cloudFirstWhen: Telemetry already lands in a cloud data platform and latency to the sites is acceptable.
+      storageEmphasis:
+        - "Edge: small HCI clusters close to the devices"
+        - "Core: scale-out file / object for the telemetry lake"
+        - Block for the vector database tier
+      why:
+        - Nutanix suits many small edge sites with little IT staff.
+        - A central PowerScale or VAST cluster absorbs sustained ingestion and long retention.
+      watchOuts:
+        - Size for sustained write rate and retention, not only query load.
+        - Plan WAN bandwidth between edge and core.
     defaultAssessment:
       documentCount: 5000000
       estimatedVectorCount: 20000000
@@ -250,6 +348,21 @@ patterns:
         - "Code chunks are token-dense (symbols, whitespace) - measure tokens per chunk with the target model tokenizer."
         - "Inline IDE use means many short calls; completions and chat answers need separate profiles."
         - "Repository context from neighbouring files adds to the prompt beyond retrieved chunks."
+    infrastructureFitment:
+      footprint: "Inference: 1-8 GPUs or a managed coding model. Vector data: small (GB)."
+      primaryStacks:
+        - nutanix_hci
+      alternativeStacks:
+        - dell_netapp
+      cloudFirstWhen: Source code may be processed by the provider - managed coding assistants are the lowest effort.
+      storageEmphasis:
+        - Modest block for the vector database
+        - File for model weights
+      why:
+        - Small footprint - the simplest platform wins; dedicated AI storage is not needed.
+      watchOuts:
+        - Source code is intellectual property - check provider data terms before using a cloud API.
+        - Re-index on every merge; incremental indexing keeps the load small.
     defaultAssessment:
       chunksPerDocument: 8
       qps: 20
@@ -289,6 +402,24 @@ patterns:
         - "LLM use is bursty and incident-driven (summaries, root-cause hints): set the LLM share from incident volume, not from search QPS."
         - "Log lines are verbose - cap retrieved lines in the prompt."
         - "Consider alerts on a daily token budget during incidents."
+    infrastructureFitment:
+      footprint: Little GPU; very high ingestion; TB-scale data with long retention.
+      primaryStacks:
+        - dell_vast
+        - dell_powerscale
+      alternativeStacks:
+        - dell_netapp
+      cloudFirstWhen: Logs are already in a cloud observability platform - add vector search there rather than moving data.
+      storageEmphasis:
+        - Scale-out file / object for raw logs (multi-protocol helps)
+        - Block or local NVMe for the hot vector index
+        - Tiering of cold data to cheaper object storage
+      why:
+        - Volume and write rate dominate - scale-out platforms (VAST, PowerScale) grow capacity without re-architecture.
+        - One namespace over file and object avoids copying logs between systems.
+      watchOuts:
+        - Retention policy drives cost far more than compute.
+        - Keep the hot index small; search older data from object storage.
     defaultAssessment:
       documentCount: 10000000
       estimatedVectorCount: 50000000
@@ -328,6 +459,24 @@ patterns:
         - "Image and audio embeddings are not text tokens - their cost is per item and is not modelled by the text token estimate."
         - "Only captioning, description or answer generation calls an LLM: set that share explicitly."
         - "Vision model inputs are billed as image tokens by most providers; configure prices before relying on the cost."
+    infrastructureFitment:
+      footprint: GPU batch work for image / video embeddings plus serving; large media corpora (TB to PB).
+      primaryStacks:
+        - dell_vast
+        - dell_powerscale
+      alternativeStacks:
+        - dell_ddn
+      cloudFirstWhen: Media already lives in cloud object storage - embed it where it sits.
+      storageEmphasis:
+        - High-throughput file / object for media
+        - GPUDirect Storage for embedding pipelines
+        - Block for the vector database
+      why:
+        - Reading large media files at GPU speed needs scale-out flash with GPUDirect.
+        - DDN is an option when embedding or training runs dominate and the team runs HPC.
+      watchOuts:
+        - Image and video embeddings are sized per item, not per token.
+        - Re-embedding the corpus after a model change is a large batch job - plan the window.
     defaultAssessment:
       embeddingDimension: 1024
       hasGpu: true
@@ -363,6 +512,25 @@ patterns:
         - "No LLM on the request path (vector-only): token cost comes from item embeddings at ingestion, not per request."
         - "If an LLM explains or re-ranks recommendations offline, model it as a separate workload."
         - "Watch embedding tokens when the catalogue is re-embedded after a model change."
+    infrastructureFitment:
+      footprint: High-QPS vector serving (CPU / memory heavy); GPUs mainly for model training.
+      primaryStacks:
+        - dell_netapp
+        - dell_powerscale
+      alternativeStacks:
+        - dell_vast
+        - nutanix_hci
+      cloudFirstWhen: Traffic follows consumer peaks (sales events) - elastic cloud capacity avoids idle hardware.
+      storageEmphasis:
+        - Low-latency block for vector index persistence
+        - File / object for interaction logs and features
+        - Scale-out file if recommendation models are retrained often at scale
+      why:
+        - Serving is memory-bound; storage matters for index rebuilds and feature data.
+        - Frequent large retraining tips the choice towards VAST or PowerScale throughput.
+      watchOuts:
+        - p99 latency, not the average, drives replica count.
+        - Index rebuilds after retraining need a blue-green plan.
     defaultAssessment:
       estimatedVectorCount: 50000000
       qps: 200
@@ -401,6 +569,24 @@ patterns:
         - "Measure tokens per task, not per request: each agent step is a full LLM call that resends the growing context."
         - "Set agent steps from the RAG / agent design or observed traces - the pattern cannot know them."
         - "Memory recall adds retrieved context to every step; keep top-K small and bound the steps (loop guard)."
+    infrastructureFitment:
+      footprint: "Inference: 8-64+ GPUs - several LLM calls per task. Vector memory: small to moderate."
+      primaryStacks:
+        - dell_netapp
+        - dell_powerscale
+      alternativeStacks:
+        - dell_vast
+      cloudFirstWhen: Agent usage is exploratory and unpredictable - start on managed APIs and measure calls per task first.
+      storageEmphasis:
+        - Fast shared file for model weights (several routed models)
+        - Block for the memory store
+        - Object for traces and audit of agent actions
+      why:
+        - Multiple LLM calls per task multiply GPU demand - compute sizing dominates.
+        - Large estates that also fine-tune agent models benefit from VAST throughput.
+      watchOuts:
+        - Agent steps per task are rarely known up front - measure before buying GPUs.
+        - Agents that act need audit trails and approval steps (Security phase).
     defaultAssessment:
       qps: 25
       peakQps: 75
@@ -438,6 +624,22 @@ patterns:
         - "Hybrid retrieval itself uses no LLM tokens; only an answer or rerank step does - set that share."
         - "A cross-encoder reranker adds reranking tokens per query (candidates × (query + chunk))."
         - "Keep keyword-only traffic out of the LLM share."
+    infrastructureFitment:
+      footprint: Inference optional; CPU-heavy keyword + vector search; moderate data.
+      primaryStacks:
+        - nutanix_hci
+        - dell_netapp
+      alternativeStacks:
+        - dell_powerscale
+      cloudFirstWhen: A managed search service already in use offers vector search.
+      storageEmphasis:
+        - Block for search and vector indexes
+        - File / object for the source corpus
+      why:
+        - Compute and memory for the search engine matter more than storage throughput.
+        - Simple platforms are enough unless the corpus is very large.
+      watchOuts:
+        - Two index types (keyword and vector) double rebuild work - size the window.
     defaultAssessment:
       recallTarget: 0.9
       requiresHybridSearch: true
@@ -477,6 +679,25 @@ patterns:
         - "Tree navigation makes several LLM calls per question (choose sections, then read) - set calls per request from traced runs, not a guess."
         - "Long-context reads send whole documents: prompt caching decides the cost, so measure the cache hit rate."
         - "Index build is a one-time LLM pass over every document - count it separately from per-query tokens."
+    infrastructureFitment:
+      footprint: GPU-heavy long-context inference; little or no vector storage.
+      primaryStacks:
+        - dell_netapp
+        - dell_powerscale
+      alternativeStacks:
+        - nutanix_hci
+        - dell_vast
+      cloudFirstWhen: Long-context managed models are allowed - avoids buying high-memory GPUs.
+      storageEmphasis:
+        - Fast shared file for large model weights
+        - File for the structured document set
+        - Minimal block storage - no vector database
+      why:
+        - Long prompts make GPU memory and count the main cost; storage needs are modest.
+        - Nutanix fits small deployments; larger GPU pools sit on Dell compute.
+      watchOuts:
+        - Several navigation calls per question - measure tokens per answer before sizing.
+        - Long-context models need high-memory GPUs (H200-class) - check procurement lead time.
     defaultAssessment:
       documentCount: 300
       qps: 1
@@ -527,6 +748,24 @@ patterns:
         - "At this QPS even a 1% LLM share is a large token volume - set the share and utilization explicitly."
         - "Average QPS rarely runs all day: set utilization instead of assuming 100%."
         - "Prefer caching answers for popular queries before adding LLM calls to the hot path."
+    infrastructureFitment:
+      footprint: Thousands of QPS on the vector tier (CPU / memory); GPUs optional for reranking.
+      primaryStacks:
+        - dell_netapp
+        - dell_powerscale
+      alternativeStacks:
+        - nutanix_hci
+        - dell_vast
+      cloudFirstWhen: Users are spread across regions - cloud regions put replicas near them.
+      storageEmphasis:
+        - Low-latency NVMe block for index persistence and fast replica rebuild
+        - Object for snapshots and backups
+      why:
+        - The vector tier is memory-bound; storage matters for how fast large replicas recover.
+        - Synchronous-capable block storage (NetApp, PowerStore) supports multi-site HA.
+      watchOuts:
+        - Replica rebuild time after a node loss can breach the SLA - measure restore throughput.
+        - Shard and replica layout drives cost more than the storage vendor.
     defaultAssessment:
       estimatedVectorCount: 100000000
       qps: 300

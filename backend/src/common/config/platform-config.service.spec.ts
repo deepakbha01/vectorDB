@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import * as yaml from 'js-yaml';
 import { PlatformConfigService } from './platform-config.service';
 
 describe('PlatformConfigService', () => {
@@ -48,6 +51,21 @@ describe('PlatformConfigService', () => {
     const mix = ['queryMixExactPercent', 'queryMixMultiHopPercent', 'queryMixSemanticPercent', 'queryMixAnalyticsPercent', 'queryMixRelationshipPercent']
       .map((k) => p.defaultAssessment[k] as number);
     expect(mix.reduce((a, b) => a + b, 0)).toBe(100);
+  });
+
+  it('gives every pattern infrastructure fitment guidance that names only stacks the infrastructure catalogue defines', () => {
+    const infra = yaml.load(fs.readFileSync(path.join(__dirname, '../../../config/infrastructure-targets.yaml'), 'utf8')) as { onPremStacks: Record<string, unknown> };
+    const stacks = new Set(Object.keys(infra.onPremStacks));
+    for (const pattern of service.getPatternCatalog()) {
+      const f = pattern.infrastructureFitment;
+      expect(f).toBeDefined();
+      expect(typeof f.footprint).toBe('string');
+      expect(typeof f.cloudFirstWhen).toBe('string');
+      expect(f.primaryStacks.length).toBeGreaterThan(0);
+      for (const id of [...f.primaryStacks, ...f.alternativeStacks]) expect(stacks.has(id)).toBe(true);
+      expect(new Set([...f.primaryStacks, ...f.alternativeStacks]).size).toBe(f.primaryStacks.length + f.alternativeStacks.length);
+      for (const k of ['storageEmphasis', 'why', 'watchOuts']) expect(f[k].length).toBeGreaterThan(0);
+    }
   });
 
   it("does not fabricate a decision - every pattern's defaultAssessment is a partial input, never a platform pick", () => {
