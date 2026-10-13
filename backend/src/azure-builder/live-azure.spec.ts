@@ -94,10 +94,10 @@ describe('verifyTarget', () => {
       [/permissions/, { value: CONTRIBUTOR }],
       [/\/locations\?/, { value: [{ name: 'centralindia' }] }],
       [/resourcegroups\/evectorizeresoruces\?/, { location: 'centralindia' }],
-      [/\/subscriptions\/[^/]+\?/, { displayName: 'Evectorize Test', tenantId: 'ef04bcd8-91ce-495c-9393-c645d394493c' }],
+      [/\/subscriptions\/[^/]+\?/, { displayName: 'eVectorize Test', tenantId: 'ef04bcd8-91ce-495c-9393-c645d394493c' }],
     ]);
     const t = await verifyTarget(arm, SUB, 'evectorizeresoruces', 'centralindia');
-    expect(t).toMatchObject({ subscriptionName: 'Evectorize Test', resourceGroupExists: true, regionKnown: true, role: AzureRole.CONTRIBUTOR });
+    expect(t).toMatchObject({ subscriptionName: 'eVectorize Test', resourceGroupExists: true, regionKnown: true, role: AzureRole.CONTRIBUTOR });
     expect(t.permissions.scope).toBe(`/subscriptions/${SUB}/resourceGroups/evectorizeresoruces`);
     expect(arm.list).toHaveBeenCalledWith(expect.stringContaining('/resourceGroups/evectorizeresoruces/providers/Microsoft.Authorization/permissions'));
   });
@@ -107,7 +107,7 @@ describe('verifyTarget', () => {
       [/permissions/, { value: OWNER }],
       [/\/locations\?/, { value: [{ name: 'centralindia' }] }],
       [/resourcegroups\/rg-new\?/, new ArmError(404, 'ResourceGroupNotFound', 'not found')],
-      [/\/subscriptions\/[^/]+\?/, { displayName: 'Evectorize Test', tenantId: 't' }],
+      [/\/subscriptions\/[^/]+\?/, { displayName: 'eVectorize Test', tenantId: 't' }],
     ]);
     const t = await verifyTarget(arm, SUB, 'rg-new', 'eastus');
     expect(t).toMatchObject({ resourceGroupExists: false, regionKnown: false, role: AzureRole.OWNER });

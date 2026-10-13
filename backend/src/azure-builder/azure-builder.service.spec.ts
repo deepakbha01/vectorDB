@@ -162,7 +162,7 @@ describe('AzureBuilderService - Phase 2 use case intake', () => {
     expect(o.classification.pattern).toBe('rag-assistant');
   });
 
-  it('prefills the wizard from the project, its connection and Evectorize Discovery, saying where each value came from', async () => {
+  it('prefills the wizard from the project, its connection and eVectorize Discovery, saying where each value came from', async () => {
     const { service } = setup({ environment: 'production', concurrentUsers: 150, documentCount: 4000, avgDocumentSizeKb: 512, containsPii: true, regulatoryRequirements: 'DPDP, ISO 27001', targetP95LatencyMs: 2500, availabilityTargetPercent: 99.9, monthlyBudgetUsd: 4000 });
     await service.connect(P, user, { ...connectDto });
     const p = await service.intakePrefill(P, user);
@@ -394,8 +394,8 @@ describe('AzureBuilderService - live Azure (Wave 6a)', () => {
       if (/ResourceGraph/.test(path)) return { data: [{ id: `/subscriptions/${SUB}/resourceGroups/rg-mon/providers/Microsoft.OperationalInsights/workspaces/log-1`, name: 'log-1', type: 'microsoft.operationalinsights/workspaces', location: 'centralindia' }] };
       if (/policyAssignments|usages/.test(path)) return { value: [] };
       if (/secureScores/.test(path)) throw new ArmError(404, 'NotFound', 'x');
-      if (/\/subscriptions\/[^/]+\?/.test(path)) return { displayName: 'Evectorize Test', tenantId: overrides.tenantId ?? TENANT };
-      if (/\/subscriptions\?/.test(path)) return { value: [{ subscriptionId: SUB, displayName: 'Evectorize Test', tenantId: TENANT, state: 'Enabled' }] };
+      if (/\/subscriptions\/[^/]+\?/.test(path)) return { displayName: 'eVectorize Test', tenantId: overrides.tenantId ?? TENANT };
+      if (/\/subscriptions\?/.test(path)) return { value: [{ subscriptionId: SUB, displayName: 'eVectorize Test', tenantId: TENANT, state: 'Enabled' }] };
       throw new Error(`unexpected ${path}`);
     };
     return { get: jest.fn(answer), post: jest.fn(answer), list: jest.fn(async (p: string) => (await answer(p)).value) } as any;
@@ -425,7 +425,7 @@ describe('AzureBuilderService - live Azure (Wave 6a)', () => {
     const t = token();
     const c = await service.connectLive(P, user, t, { ...liveDto });
     expect(seen).toEqual([t]);
-    expect(c).toMatchObject({ source: ConnectionSource.LIVE, tenantId: TENANT, subscriptionName: 'Evectorize Test', region: 'centralindia', role: AzureRole.CONTRIBUTOR, azureUser: 'architect@contoso.com' });
+    expect(c).toMatchObject({ source: ConnectionSource.LIVE, tenantId: TENANT, subscriptionName: 'eVectorize Test', region: 'centralindia', role: AzureRole.CONTRIBUTOR, azureUser: 'architect@contoso.com' });
     expect(c.permission).toMatchObject({ verified: true, canDeploy: true, canAssignRoles: false });
     expect(c.permission.note).toContain('Role Based Access Control Administrator');
     expect(JSON.stringify(connections.rows)).not.toContain(t);
@@ -472,7 +472,7 @@ describe('AzureBuilderService - live Azure (Wave 6a)', () => {
 
   it('lists subscriptions for the signed-in user', async () => {
     const { service } = liveSetup();
-    await expect(service.liveSubscriptions(P, user, token())).resolves.toEqual([{ subscriptionId: SUB, displayName: 'Evectorize Test', tenantId: TENANT, state: 'Enabled' }]);
+    await expect(service.liveSubscriptions(P, user, token())).resolves.toEqual([{ subscriptionId: SUB, displayName: 'eVectorize Test', tenantId: TENANT, state: 'Enabled' }]);
   });
 });
 
@@ -497,7 +497,7 @@ describe('AzureBuilderService - live what-if and Deploy (Wave 6b)', () => {
       if (/\/locations\?/.test(path)) return { value: [{ name: 'centralindia' }] };
       if (/deploymentStacks/.test(path)) return opts.stack ?? { id: stackId, properties: { provisioningState: 'succeeded', outputs: { apiUrl: { type: 'String', value: 'https://api' } }, resources: [{ id: `${RG}/search` }] } };
       if (/resourcegroups\/[^/?]+\?/.test(path)) return { location: 'centralindia' };
-      if (/\/subscriptions\/[^/]+\?/.test(path)) return { displayName: 'Evectorize Test', tenantId: TENANT };
+      if (/\/subscriptions\/[^/]+\?/.test(path)) return { displayName: 'eVectorize Test', tenantId: TENANT };
       throw new Error(`unexpected ${path}`);
     };
     return {
@@ -666,7 +666,7 @@ describe('AzureBuilderService - Operate (Wave 6c)', () => {
       }
       if (/ResourceGraph/.test(path)) return { data: [{ id: oai, name: 'oai-hr', type: 'microsoft.cognitiveservices/accounts', provisioningState: 'Succeeded', publicNetworkAccess: 'Disabled' }] };
       if (/resourcegroups\/[^/?]+\?/.test(path)) return { location: 'centralindia' };
-      if (/\/subscriptions\/[^/]+\?/.test(path)) return { displayName: 'Evectorize Test', tenantId: TENANT };
+      if (/\/subscriptions\/[^/]+\?/.test(path)) return { displayName: 'eVectorize Test', tenantId: TENANT };
       throw new Error(`unexpected ${path}`);
     };
     const arm = {

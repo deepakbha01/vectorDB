@@ -3,7 +3,7 @@ import { apiClient, extractErrorMessage } from './client';
 
 /**
  * Azure sign-in for the Azure Builder's live mode (Wave 6, spec 9.1). Separate
- * from the Evectorize login: the user signs in to their Azure tenant with MSAL
+ * from the eVectorize login: the user signs in to their Azure tenant with MSAL
  * (authorization code + PKCE, no client secret) and the browser asks for a
  * delegated ARM token, which goes to the backend in the X-Azure-Token header
  * of the live calls only. Tokens stay in sessionStorage - gone when the tab closes.
@@ -97,7 +97,7 @@ export async function completeAzureSignIn(): Promise<string> {
   return returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/dashboard';
 }
 
-/** Forgets the Azure sign-in in this browser tab (the Evectorize login is untouched). */
+/** Forgets the Azure sign-in in this browser tab (the eVectorize login is untouched). */
 export async function signOutOfAzure(): Promise<void> {
   const app = await msal();
   if (!app) return;

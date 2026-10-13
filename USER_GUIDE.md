@@ -1,4 +1,4 @@
-# Evectorize - User Guide
+# eVectorize - User Guide
 
 This walks through the platform end to end: assessing a workload, designing
 a pipeline, provisioning, ingesting data, and tuning/planning for scale.

@@ -118,7 +118,7 @@ export class AzureBuilderController {
 
   // ---- Phase 2 - Use case intake ----
 
-  /** Wizard defaults from the project, its connection and its Evectorize Discovery, with where each came from. */
+  /** Wizard defaults from the project, its connection and its eVectorize Discovery, with where each came from. */
   @Get('use-cases/prefill')
   prefill(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.service.intakePrefill(projectId, user);

@@ -79,7 +79,7 @@ export function liveAzureConfig(env: NodeJS.ProcessEnv = process.env): LiveAzure
   return { enabled: !!(clientId && tenantId), clientId, tenantId, scopes: ['https://management.azure.com/user_impersonation'] };
 }
 
-/** Azure needs a fresh sign-in. Not a 401: that status signs the user out of Evectorize itself. */
+/** Azure needs a fresh sign-in. Not a 401: that status signs the user out of eVectorize itself. */
 function azureSignInRequired(message: string) {
   return new BadRequestException({ message, errorCode: 'AZURE_SIGN_IN_REQUIRED' });
 }
@@ -166,7 +166,7 @@ export class AzureBuilderService {
 
   // ---- Phase 2 - Use case intake ----
 
-  /** Wizard defaults from what the project already knows (name, use case, connection, Evectorize Discovery). */
+  /** Wizard defaults from what the project already knows (name, use case, connection, eVectorize Discovery). */
   async intakePrefill(projectId: string, user: AuthenticatedUser) {
     const project = await this.projectsService.findOne(projectId, user);
     const connection = await this.latestConnection(projectId);
@@ -568,7 +568,7 @@ export class AzureBuilderService {
         template: compiled.template,
         parameters: compiled.parameters,
         denyMode,
-        description: `Evectorize Azure Builder: ${useCase.spec.name} (${env}), IaC bundle v${bundle.version}, sha256 ${hash.slice(0, 12)}`,
+        description: `eVectorize Azure Builder: ${useCase.spec.name} (${env}), IaC bundle v${bundle.version}, sha256 ${hash.slice(0, 12)}`,
         tags: { useCaseId: useCase.id, environment: env, 'azb-iac-version': String(bundle.version), 'azb-iac-hash': hash.slice(0, 16) },
       }),
     );

@@ -101,7 +101,7 @@ export function AzureLiveConnect({ projectId, onConnected }: { projectId: string
         {account && <span className="status-pill validated">Signed in as {account.username}</span>}
       </div>
       <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 0 }}>
-        You sign in to Microsoft directly; Evectorize gets a short-lived token to read Azure as you, for the request that needs it. It is
+        You sign in to Microsoft directly; eVectorize gets a short-lived token to read Azure as you, for the request that needs it. It is
         never stored. Azure, not this form, says what you are allowed to do on the target.
       </p>
 
