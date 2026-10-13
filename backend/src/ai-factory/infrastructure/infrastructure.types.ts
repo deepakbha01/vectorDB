@@ -28,6 +28,43 @@ export interface InfrastructureCatalogue {
   scoringWeights: Record<'elasticity' | 'operationalSimplicity' | 'dataControl' | 'availability' | 'coLocation', number>;
   restrictedDataControlMultiplier: number;
   assumptions: { applicationNodes: number; applicationVcpusPerNode: number; modelVersionsKept: number; warmStandbyRtoMinutes: number };
+  /** Wave 13 on-premises reference stacks (absent in older / test catalogues - then no stack is recommended). */
+  onPremStacks?: Record<string, OnPremStackSpec>;
+  estateStorageVendors?: Record<string, string>;
+  estateHypervisors?: Record<string, string>;
+  stackScoringWeights?: Record<StackCriterion, number>;
+  trainingThroughputMultiplier?: number;
+  snapshotReserve?: number;
+}
+
+export type StorageTier = 'block' | 'file' | 'object' | 'parallel';
+export type StackCriterion = 'scaleFit' | 'estateReuse' | 'operationalSimplicity' | 'dataProtection' | 'throughput' | 'hybridCloud';
+export type FineTuningNeed = 'none' | 'adapter' | 'full';
+
+/** One on-premises compute + storage + platform reference stack (config/infrastructure-targets.yaml onPremStacks). */
+export interface OnPremStackSpec {
+  label: string;
+  vendors: string[];
+  hypervisors: string[];
+  compute: string;
+  platform: string;
+  tiers: Record<StorageTier, string | null>;
+  gpus: { min: number; sweetSpotMax: number; max: number | null };
+  trainingCapable: boolean;
+  opsRequirement: string;
+  replication: { syncSupported: boolean; minAsyncRpoMinutes: number };
+  cloudExtension: TargetId[];
+  throughput: { modelLoadGbPerMinute: number; restoreGbPerMinute: number };
+  ratings: { operationalSimplicity: number; throughput: number; cost: number };
+  bestFor: string;
+  support: { contract: string; ownership: string; telemetry: string };
+}
+
+/** What the customer already runs on-premises, and whether the stack must train. */
+export interface OnPremEstate {
+  storageVendors: string[];
+  hypervisor: string | null;
+  fineTuning: FineTuningNeed;
 }
 
 /** A component to place, with what it needs from a target. */
@@ -71,6 +108,8 @@ export interface InfraContext {
     autoscaling: string | null;
   } | null;
   securityControls: string[];
+  /** Absent on contexts saved before Wave 13. */
+  estate?: OnPremEstate;
 }
 
 /** What placement needs to know about each serving option (from config/serving.yaml). */
@@ -120,5 +159,45 @@ export interface InfrastructureResult {
   };
   sizing: Array<{ label: string; value: string; evidenceType: EvidenceType }>;
   wouldChangeIf: string[];
+  benchmarkRequired: string[];
+  /** Wave 13: on-premises stack recommendation; null when on-premises is not allowed (absent on older results). */
+  onPremStack?: OnPremStackResult | null;
+}
+
+export interface StackCandidate {
+  id: string;
+  label: string;
+  eligibility: Eligibility;
+  failures: string[];
+  conditions: string[];
+  notes: string[];
+  passed: string[];
+  score: number;
+  scoreBreakdown: ScoreContribution[];
+  bestFor: string;
+  costRating: number;
+}
+
+export interface StoragePlanRow {
+  tier: StorageTier | 'local_nvme';
+  purpose: string;
+  product: string;
+  sizeGb: number | null;
+  basis: string;
+}
+
+export interface OnPremStackResult {
+  /** chosen: a component is placed on-premises; if_on_premises: on-premises is allowed but lost to a cloud target. */
+  appliesTo: 'chosen' | 'if_on_premises';
+  gpusSized: number;
+  fineTuning: FineTuningNeed;
+  chosen: StackCandidate | null;
+  candidates: StackCandidate[];
+  why: string;
+  compute: string | null;
+  platform: string | null;
+  storagePlan: StoragePlanRow[];
+  recovery: { modelLoadGbPerMinute: number; restoreGbPerMinute: number; modelLoadMinutes: number | null; restoreMinutes: number | null } | null;
+  support: { contract: string; ownership: string; telemetry: string; practices: string[] } | null;
   benchmarkRequired: string[];
 }

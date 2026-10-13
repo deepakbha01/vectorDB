@@ -95,7 +95,17 @@ export function resolveOperationsContext(dto: CreateOperationsModelDto, x: Opera
   let deployment: OperationsContext['deployment'] = null;
   if (infra && infra.result.deploymentModel.kind !== 'not_feasible') {
     const targets = [...new Set(infra.result.placements.map((p) => p.chosen?.target).filter((t): t is TargetId => !!t))];
-    deployment = { targets, kind: infra.result.deploymentModel.kind, multipleOnPremSites: infra.context.multipleOnPremSites, hasKubernetes: infra.context.hasKubernetes };
+    // A rate only for the components the stack actually carries (null minutes = that component is not on-premises).
+    const stack = infra.result.onPremStack?.appliesTo === 'chosen' ? infra.result.onPremStack : null;
+    const onPremStorage =
+      stack?.chosen && stack.recovery
+        ? {
+            label: stack.chosen.label,
+            modelLoadGbPerMinute: stack.recovery.modelLoadMinutes !== null ? stack.recovery.modelLoadGbPerMinute : null,
+            restoreGbPerMinute: stack.recovery.restoreMinutes !== null ? stack.recovery.restoreGbPerMinute : null,
+          }
+        : null;
+    deployment = { targets, kind: infra.result.deploymentModel.kind, multipleOnPremSites: infra.context.multipleOnPremSites, hasKubernetes: infra.context.hasKubernetes, onPremStorage };
     const s = `Infrastructure Design v${infra.version}`;
     add('autoscaling', s, infra.result.sections.scaling);
     add('high_availability', s, infra.result.sections.availability);

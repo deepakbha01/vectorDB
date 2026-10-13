@@ -52,7 +52,14 @@ export interface OperationsContext {
   onCallCoverage: OnCallCoverage | null;
   drTested: boolean;
   dr: { tier: DrTier; reason: string };
-  deployment: { targets: TargetId[]; kind: 'single_target' | 'hybrid'; multipleOnPremSites: boolean; hasKubernetes: boolean | null } | null;
+  deployment: {
+    targets: TargetId[];
+    kind: 'single_target' | 'hybrid';
+    multipleOnPremSites: boolean;
+    hasKubernetes: boolean | null;
+    /** Wave 13: the chosen on-premises stack's planning throughput - replaces the generic recovery rates on-premises. */
+    onPremStorage?: { label: string; modelLoadGbPerMinute: number | null; restoreGbPerMinute: number | null } | null;
+  } | null;
   inference: { managed: boolean; minReplicas: number; weightsGb: number; servingLabel: string; gpuUtilizationTarget: number | null; ttftTargetMs: number | null } | null;
   vector: { platform: string; kinds: PlatformKind[]; storageGb: number; memoryGb: number; replicas: number } | null;
   models: { primary: string; secondary: string | null; fallback: string | null } | null;

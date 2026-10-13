@@ -3,7 +3,16 @@ import { Link, useParams } from 'react-router-dom';
 import { apiClient, extractErrorMessage, Project } from '../api/client';
 import { useFeatures } from '../api/features';
 import { Eligibility } from '../api/aiFactory';
-import { CreateInfrastructureDesignInput, InfrastructureDefaults, InfrastructureDesign, InfrastructureResult } from '../api/infrastructure';
+import {
+  CreateInfrastructureDesignInput,
+  ESTATE_HYPERVISORS,
+  ESTATE_STORAGE_VENDORS,
+  FineTuningNeed,
+  InfrastructureDefaults,
+  InfrastructureDesign,
+  InfrastructureResult,
+  OnPremStackResult,
+} from '../api/infrastructure';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 import { EligibilityWhy, ScoreWhy } from '../components/EligibilityWhy';
@@ -16,6 +25,15 @@ const ELIGIBILITY: Record<Eligibility, { label: string; color: string }> = {
 };
 
 const MODEL_COLOR = { single_target: 'var(--primary-text)', hybrid: 'var(--violet)', not_feasible: 'var(--danger)' } as const;
+
+const FINE_TUNING: Record<FineTuningNeed, string> = { none: 'None', adapter: 'Adapter (LoRA)', full: 'Full fine-tuning' };
+const TIER_LABEL: Record<OnPremStackResult['storagePlan'][number]['tier'], string> = {
+  block: 'Block',
+  file: 'File',
+  object: 'Object',
+  parallel: 'Parallel file system',
+  local_nvme: 'Local NVMe',
+};
 
 const SECTIONS: Array<[keyof InfrastructureResult['sections'], string]> = [
   ['compute', 'Compute'],
@@ -72,7 +90,7 @@ export function InfrastructureDesignPage() {
   };
 
   if (!project) return <div className="main-content">Loading...</div>;
-  const boolField = (k: keyof CreateInfrastructureDesignInput, label: string) => {
+  const boolField = (k: 'hasKubernetes' | 'hasGpu' | 'multipleOnPremSites', label: string) => {
     const d = defaults?.context[k];
     const s = defaults?.sources[k];
     return (
@@ -132,6 +150,60 @@ export function InfrastructureDesignPage() {
                     <Bullets items={c.components.map((x) => `${x.label}: ${x.platforms.join(' / ')}${x.gpuLabel ? ` · ${x.gpuLabel}` : ''}${x.detail ? ` - ${x.detail}` : ''}`)} />
                   </div>
                 </section>
+                {c.allowedTargets.includes('on_premises') && (
+                  <section className="discovery-section">
+                    <div className="discovery-section-header">
+                      <span className="discovery-section-index">2</span>
+                      <h2 className="discovery-section-title">On-premises estate</h2>
+                    </div>
+                    <p className="discovery-section-sub">
+                      Picks the on-premises compute + storage stack (Nutanix, Dell / EMC, NetApp, VAST Data, DDN). Reusing what the customer already runs scores higher; full
+                      fine-tuning needs a stack built for training throughput.
+                    </p>
+                    <div className="field">
+                      <label>Storage already run on-premises</label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px', fontSize: 13 }}>
+                        {Object.entries(ESTATE_STORAGE_VENDORS).map(([k, label]) => {
+                          const current = form.existingStorageVendors ?? c.estate?.storageVendors ?? [];
+                          return (
+                            <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400, whiteSpace: 'nowrap' }}>
+                              <input
+                                type="checkbox"
+                                checked={current.includes(k)}
+                                onChange={(e) => setForm((f) => ({ ...f, existingStorageVendors: e.target.checked ? [...current, k] : current.filter((v) => v !== k) }))}
+                              />
+                              {label}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="field-grid">
+                      <div className="field">
+                        <label>Hypervisor already run on-premises</label>
+                        <select value={form.existingHypervisor ?? ''} onChange={(e) => setForm((f) => ({ ...f, existingHypervisor: e.target.value || undefined }))}>
+                          <option value="">Default: not stated</option>
+                          {Object.entries(ESTATE_HYPERVISORS).map(([k, label]) => (
+                            <option key={k} value={k}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label>Fine-tuning on-premises</label>
+                        <select value={form.fineTuning ?? ''} onChange={(e) => setForm((f) => ({ ...f, fineTuning: (e.target.value || undefined) as FineTuningNeed | undefined }))}>
+                          <option value="">{`Default: ${FINE_TUNING[c.estate?.fineTuning ?? 'none']}${defaults.sources.fineTuning ? ` - ${defaults.sources.fineTuning.detail}` : ''}`}</option>
+                          {Object.entries(FINE_TUNING).map(([k, label]) => (
+                            <option key={k} value={k}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </section>
+                )}
                 {error && <div className="error-text">{error}</div>}
                 <div>
                   <button className="primary-btn" type="submit" disabled={saving}>
@@ -199,11 +271,80 @@ function InfrastructureResultView({ r, version, createdAt }: { r: Infrastructure
         </div>
       ))}
 
+      {r.onPremStack && <OnPremStackView s={r.onPremStack} />}
+
       <div className="card-grid">
         <Panel title="Benchmark before production" items={r.benchmarkRequired} />
         <Panel title="What would change this" items={r.wouldChangeIf} />
       </div>
     </div>
+  );
+}
+
+function OnPremStackView({ s }: { s: OnPremStackResult }) {
+  const whatIf = s.appliesTo === 'if_on_premises';
+  return (
+    <>
+      <div className="card" style={{ borderLeft: `4px solid ${s.chosen ? 'var(--primary-text)' : 'var(--danger)'}` }}>
+        <div className="metric-label">
+          On-premises stack{whatIf ? ' · what-if (nothing is placed on-premises in this design)' : ''} · sized for {s.gpusSized} GPU{s.gpusSized === 1 ? '' : 's'} at peak · fine-tuning:{' '}
+          {FINE_TUNING[s.fineTuning]}
+        </div>
+        <div className="metric-value" style={{ fontSize: 18 }}>{s.chosen?.label ?? 'No stack fits'}</div>
+        <div style={{ fontSize: 13, marginTop: 4 }}>{s.why}</div>
+        {s.chosen && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>Best for: {s.chosen.bestFor}</div>}
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
+          Directional catalogue - confirm current models, NVIDIA certifications, support terms and pricing with each vendor.
+        </div>
+      </div>
+
+      {s.chosen && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+          <div className="card" style={{ overflowX: 'auto', gridColumn: '1 / -1' }}>
+            <div className="metric-label">Storage plan by tier</div>
+            <Table
+              headers={['Tier', 'Purpose', 'Product', 'Size', 'Basis']}
+              rows={s.storagePlan.map((x) => [TIER_LABEL[x.tier], x.purpose, x.product, x.sizeGb !== null ? `~${x.sizeGb.toLocaleString()} GB` : '—', x.basis])}
+            />
+          </div>
+          <Panel
+            title="Compute, platform and recovery"
+            items={[
+              ...(s.compute ? [`Compute: ${s.compute}`] : []),
+              ...(s.platform ? [`Platform: ${s.platform}`] : []),
+              ...(s.recovery
+                ? [
+                    `Planning throughput: model load ${s.recovery.modelLoadGbPerMinute} GB/min, restore ${s.recovery.restoreGbPerMinute} GB/min (assumption - measure in the PoC)`,
+                    ...(s.recovery.modelLoadMinutes !== null ? [`Model reload after a failure: ~${s.recovery.modelLoadMinutes} min`] : []),
+                    ...(s.recovery.restoreMinutes !== null ? [`Vector data restore: ~${s.recovery.restoreMinutes} min`] : []),
+                  ]
+                : []),
+            ]}
+          />
+          {s.support && (
+            <Panel
+              title="Customer support model"
+              items={[`Contract: ${s.support.contract}`, `Ownership: ${s.support.ownership}`, `Telemetry: ${s.support.telemetry}`, ...s.support.practices]}
+            />
+          )}
+        </div>
+      )}
+
+      <div className="card" style={{ overflowX: 'auto' }}>
+        <div className="metric-label">On-premises stacks compared (eligibility is decided before scoring)</div>
+        <Table
+          headers={['Stack', 'Eligibility', 'Why this eligibility', 'Score', 'What drives the score', 'Relative cost']}
+          rows={s.candidates.map((x) => [
+            x.label,
+            <span key="e" style={{ color: ELIGIBILITY[x.eligibility].color, fontWeight: 600 }}>{ELIGIBILITY[x.eligibility].label}</span>,
+            <EligibilityWhy key="w" option={x} />,
+            x.score.toFixed(3),
+            <ScoreWhy key="s" option={x} />,
+            `${x.costRating} / 5`,
+          ])}
+        />
+      </div>
+    </>
   );
 }
 

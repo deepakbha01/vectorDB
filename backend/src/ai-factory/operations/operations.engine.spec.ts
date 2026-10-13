@@ -88,6 +88,17 @@ describe('estimateRecovery and planRpo', () => {
     expect(onPrem).toMatchObject({ estimatedMinutes: 195, meets: false });
   });
 
+  it("uses the chosen on-premises stack's throughput for the components it carries", () => {
+    const onPremStorage = { label: 'Dell PowerEdge XE + NetApp ONTAP AFF (AIPod)', modelLoadGbPerMinute: 30, restoreGbPerMinute: 10 };
+    const r = estimateRecovery(ctx({ rtoMinutes: 180, deployment: { ...ctx().deployment!, targets: ['on_premises'], onPremStorage } }), cat);
+    expect(r.steps.map((s) => s.minutes)).toEqual([120, 10, 2, 15]);
+    expect(r.steps[1].step).toMatch(/on Dell PowerEdge XE \+ NetApp ONTAP AFF \(AIPod\) \(planning throughput\)/);
+    expect(r).toMatchObject({ estimatedMinutes: 147, meets: true });
+    // A component the stack does not carry (vector data in a cloud) keeps the generic rate.
+    const partial = estimateRecovery(ctx({ deployment: { ...ctx().deployment!, onPremStorage: { ...onPremStorage, restoreGbPerMinute: null } } }), cat);
+    expect(partial.steps[1].minutes).toBe(50);
+  });
+
   it('uses the standby failover time for warm and active DR', () => {
     expect(estimateRecovery(ctx({ dr: { tier: 'warm', reason: 'x' } }), cat).estimatedMinutes).toBe(15);
     expect(estimateRecovery(ctx({ dr: { tier: 'active', reason: 'x' } }), cat).estimatedMinutes).toBe(2);
@@ -184,7 +195,7 @@ describe('resolveOperationsContext', () => {
     expect(context).toMatchObject({ availabilityTargetPercent: 99.9, rpoMinutes: 15, opsCapability: 'dedicated_team', onCallCoverage: '24x7', agentActs: true, dr: { tier: 'cold' } });
     expect(context.inference).toMatchObject({ managed: false, minReplicas: 2, servingLabel: 'vLLM', gpuUtilizationTarget: 0.7 });
     expect(context.vector).toMatchObject({ platform: 'qdrant', replicas: 2 });
-    expect(context.deployment).toEqual({ targets: ['on_premises'], kind: 'single_target', multipleOnPremSites: true, hasKubernetes: false });
+    expect(context.deployment).toEqual({ targets: ['on_premises'], kind: 'single_target', multipleOnPremSites: true, hasKubernetes: false, onPremStorage: null });
     expect(context.statements.high_availability!.map((s) => s.source)).toEqual(['Inference Architecture v5', 'Infrastructure Design v6', 'Capacity plan v1']);
     expect(sources.onCallCoverage.source).toBe('user');
   });

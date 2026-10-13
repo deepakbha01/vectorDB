@@ -8,7 +8,7 @@
 # on-premises procurement lead time) before committing. Tiers are relative
 # 1-5 planning ratings (5 = most / easiest).
 
-rulesVersion: infrastructure-2026.09-1
+rulesVersion: infrastructure-2026.10-1
 
 targets:
   on_premises:
@@ -110,3 +110,160 @@ assumptions:
   applicationVcpusPerNode: 4
   modelVersionsKept: 2
   warmStandbyRtoMinutes: 60
+
+# ---------------------------------------------------------------------------
+# Wave 13 - on-premises reference stacks (compute + storage + platform).
+# Evaluated whenever on-premises is an allowed target. Like the targets above,
+# every stack is judged by the same rules and none is preferred in code.
+#
+# DIRECTIONAL: product names, GPU ranges, replication RPOs and throughputs are
+# planning figures for comparing stacks, not vendor commitments. Confirm the
+# current models, NVIDIA certifications, support terms and pricing with each
+# vendor, and measure load / restore throughput in the proof of concept.
+# EMC is now the Dell storage line (PowerScale, PowerStore, PowerMax) - one vendor.
+#
+# Fields:
+#   vendors            existing-estate storage keys that count as reuse
+#   hypervisors        existing-estate hypervisors that count as reuse
+#   gpus               { min, sweetSpotMax, max } GPUs at peak the stack is built for
+#                      (below min = oversized; above max = not eligible; max null = no ceiling)
+#   trainingCapable    sustains full fine-tuning / training (parallel throughput, checkpoints)
+#   opsRequirement     minimum ops capability (opsCapabilityOrder) to run it unconditionally
+#   tiers              product per storage tier; null = not offered by the stack
+#   replication        { syncSupported, minAsyncRpoMinutes } natively, without extra products
+#   cloudExtension     targets with a first-party / marketplace service of the same storage OS
+#   throughput         planning GB/min per recovering node: modelLoad (weights), restore (vector data)
+#   ratings            relative 1-5 (5 = most / easiest / costliest)
+# ---------------------------------------------------------------------------
+onPremStacks:
+  nutanix_hci:
+    label: Nutanix HCI + Nutanix Unified Storage
+    vendors: [nutanix]
+    hypervisors: [nutanix_ahv]
+    compute: Nutanix NX or OEM HCI nodes (e.g. Dell XC) with NVIDIA L40S / H100 GPUs
+    platform: Nutanix Enterprise AI on Nutanix Kubernetes Platform (NKP), AHV for VMs
+    tiers:
+      block: Nutanix Volumes (distributed storage fabric on local NVMe)
+      file: Nutanix Files
+      object: Nutanix Objects
+      parallel: null
+    gpus: { min: 0, sweetSpotMax: 16, max: 32 }
+    trainingCapable: false
+    opsRequirement: part_time
+    replication: { syncSupported: true, minAsyncRpoMinutes: 1 }   # Metro Availability / NearSync
+    cloudExtension: [azure, aws]                                   # Nutanix Cloud Clusters (NC2)
+    throughput: { modelLoadGbPerMinute: 15, restoreGbPerMinute: 6 }
+    ratings: { operationalSimplicity: 5, throughput: 2, cost: 2 }
+    bestFor: Inference-only RAG at small to mid scale, branch / edge sites, VMware exits, small operations teams
+    support:
+      contract: One vendor for HCI software and NX hardware (OEM nodes - hardware support from the OEM)
+      ownership: "L1 customer IT; L2 Nutanix support; L3 Nutanix engineering; NVIDIA AI Enterprise for GPU software"
+      telemetry: Nutanix Pulse call-home and Insights (predictive alerts, automatic case creation)
+  dell_powerscale:
+    label: Dell PowerEdge XE + PowerScale / PowerStore (Dell AI Factory)
+    vendors: [dell_emc]
+    hypervisors: []
+    compute: Dell PowerEdge XE GPU servers (8 x H100 / H200 per node)
+    platform: Kubernetes (OpenShift / Rancher / upstream) on bare metal, NVIDIA AI Enterprise
+    tiers:
+      block: Dell PowerStore (NVMe block)
+      file: Dell PowerScale (OneFS scale-out NAS, NFS over RDMA, GPUDirect Storage)
+      object: Dell ObjectScale
+      parallel: Dell PowerScale (NVIDIA DGX SuperPOD-certified configurations)
+    gpus: { min: 8, sweetSpotMax: 256, max: null }
+    trainingCapable: true
+    opsRequirement: dedicated_team
+    replication: { syncSupported: true, minAsyncRpoMinutes: 5 }    # PowerStore Metro / SyncIQ
+    cloudExtension: [azure, aws]                                    # APEX File Storage (OneFS)
+    throughput: { modelLoadGbPerMinute: 30, restoreGbPerMinute: 10 }
+    ratings: { operationalSimplicity: 3, throughput: 4, cost: 3 }
+    bestFor: Enterprise RAG and fine-tuning where one vendor should own compute and storage
+    support:
+      contract: One vendor (Dell ProSupport) for compute and storage; NVIDIA AI Enterprise for GPU software
+      ownership: "L1 customer IT; L2 Dell ProSupport; L3 Dell engineering, NVIDIA for GPU software"
+      telemetry: Dell CloudIQ / APEX AIOps (health, capacity forecasts, automatic case creation)
+  dell_netapp:
+    label: Dell PowerEdge XE + NetApp ONTAP AFF (AIPod)
+    vendors: [netapp]
+    hypervisors: []
+    compute: Dell PowerEdge XE GPU servers (8 x H100 / H200 per node)
+    platform: Kubernetes (OpenShift / Rancher / upstream) with NetApp Trident, NVIDIA AI Enterprise
+    tiers:
+      block: NetApp ONTAP AFF (NVMe/TCP, iSCSI)
+      file: NetApp ONTAP AFF (NFS over RDMA, GPUDirect Storage)
+      object: NetApp ONTAP S3 / StorageGRID
+      parallel: null
+    gpus: { min: 0, sweetSpotMax: 64, max: null }
+    trainingCapable: true
+    opsRequirement: dedicated_team
+    replication: { syncSupported: true, minAsyncRpoMinutes: 5 }    # SnapMirror (sync / async), MetroCluster
+    cloudExtension: [azure, aws, gcp]                               # Azure NetApp Files, FSx for ONTAP, Google Cloud NetApp Volumes
+    throughput: { modelLoadGbPerMinute: 30, restoreGbPerMinute: 10 }
+    ratings: { operationalSimplicity: 3, throughput: 4, cost: 3 }
+    bestFor: Hybrid enterprise RAG on an existing NetApp estate, with DR or bursting to Azure / AWS / GCP
+    support:
+      contract: Two vendors - Dell ProSupport for compute, NetApp SupportEdge for storage - joined by the NVIDIA-validated AIPod design
+      ownership: "L1 customer IT; L2 Dell (compute) / NetApp (storage) - customer or partner triages; L3 vendor engineering"
+      telemetry: NetApp Active IQ (Digital Advisor) + Dell CloudIQ / APEX AIOps
+  dell_vast:
+    label: Dell PowerEdge XE + VAST Data
+    vendors: [vast_data]
+    hypervisors: []
+    compute: Dell PowerEdge XE GPU servers (8 x H100 / H200 per node)
+    platform: Kubernetes with the VAST CSI driver, NVIDIA AI Enterprise
+    tiers:
+      block: VAST (NVMe/TCP block)
+      file: VAST (NFS over RDMA, multi-protocol, GPUDirect Storage)
+      object: VAST (S3 on the same namespace)
+      parallel: VAST (all-flash, NVIDIA DGX SuperPOD-certified)
+    gpus: { min: 16, sweetSpotMax: 4096, max: null }
+    trainingCapable: true
+    opsRequirement: dedicated_team
+    replication: { syncSupported: false, minAsyncRpoMinutes: 15 }
+    cloudExtension: [aws, azure, gcp]                               # VAST on Cloud (marketplace)
+    throughput: { modelLoadGbPerMinute: 60, restoreGbPerMinute: 20 }
+    ratings: { operationalSimplicity: 4, throughput: 5, cost: 4 }
+    bestFor: Large GPU estates that want one data platform for training, inference and RAG (file, object, vectors)
+    support:
+      contract: Two vendors - Dell ProSupport for compute, VAST support for storage
+      ownership: "L1 customer IT; L2 Dell (compute) / VAST (storage); L3 vendor engineering"
+      telemetry: VAST Uplink call-home + Dell CloudIQ / APEX AIOps
+  dell_ddn:
+    label: Dell PowerEdge XE + DDN EXAScaler (A3I)
+    vendors: [ddn]
+    hypervisors: []
+    compute: Dell PowerEdge XE GPU servers (8 x H100 / H200 per node)
+    platform: Kubernetes or Slurm on bare metal with the Lustre client, NVIDIA AI Enterprise
+    tiers:
+      block: null
+      file: DDN EXAScaler (Lustre)
+      object: DDN Infinia
+      parallel: DDN EXAScaler (Lustre, NVIDIA DGX SuperPOD-certified)
+    gpus: { min: 32, sweetSpotMax: 4096, max: null }
+    trainingCapable: true
+    opsRequirement: platform_team
+    replication: { syncSupported: false, minAsyncRpoMinutes: 60 }
+    cloudExtension: [azure, gcp]                                    # Azure Managed Lustre, Google Cloud Managed Lustre (DDN-based)
+    throughput: { modelLoadGbPerMinute: 80, restoreGbPerMinute: 15 }
+    ratings: { operationalSimplicity: 2, throughput: 5, cost: 4 }
+    bestFor: Training and checkpoint-heavy work on large GPU clusters where throughput matters most
+    support:
+      contract: Two vendors - Dell ProSupport for compute, DDN support for storage
+      ownership: "L1 customer IT / HPC team; L2 Dell (compute) / DDN (storage); L3 vendor engineering"
+      telemetry: DDN Insight monitoring + Dell CloudIQ / APEX AIOps
+
+# Existing-estate answers the Infrastructure Design form offers.
+estateStorageVendors: { netapp: NetApp, nutanix: Nutanix, dell_emc: Dell / EMC, vast_data: VAST Data, ddn: DDN, other: Other }
+estateHypervisors: { vmware: VMware vSphere, nutanix_ahv: Nutanix AHV, hyper_v: Microsoft Hyper-V, none: None / bare metal }
+
+stackScoringWeights:
+  scaleFit: 0.25
+  estateReuse: 0.20
+  operationalSimplicity: 0.20
+  dataProtection: 0.15
+  throughput: 0.10
+  hybridCloud: 0.10
+# Full fine-tuning / training makes throughput count more (weight multiplier, re-normalised).
+trainingThroughputMultiplier: 3
+# Extra block capacity kept for snapshots on the vector database volume.
+snapshotReserve: 0.3
