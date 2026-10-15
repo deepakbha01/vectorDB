@@ -253,3 +253,29 @@ describe('buildManagementReport', () => {
     expect(table(doc, 'Assessment scorecard')!.footnote).toBeUndefined();
   });
 });
+
+describe('next-generation roadmap section', () => {
+  const final = (roadmap: unknown): any => ({
+    readiness: { status: 'ready_with_conditions', label: 'PRODUCTION READY WITH CONDITIONS', reasons: [], stages: [] },
+    executiveSummary: { deployment: 'Azure', confidence: 'medium', keyRisks: [] },
+    gaps: [],
+    roadmap,
+  });
+
+  it('lists each roadmap item with its prerequisites', () => {
+    const roadmap = {
+      note: 'A roadmap only.',
+      items: [{ title: 'Next-generation GPU: NVIDIA Vera Rubin NVL72', today: '3 × H200', nextGeneration: '2 × Rubin', impact: 'Cheaper at scale', availability: 'H2 2026', prerequisites: ['Liquid cooling', '~230 kW per rack'], source: 'inference' }],
+    };
+    const doc = buildManagementReport(project, { finalRecommendation: final(roadmap) });
+    const section = doc.sections.find((s) => s.heading === 'Next-generation roadmap')!;
+    expect(section.paragraphs).toEqual(['A roadmap only.']);
+    expect(section.tables![0].rows).toEqual([['Next-generation GPU: NVIDIA Vera Rubin NVL72', '3 × H200', '2 × Rubin', 'Cheaper at scale', 'H2 2026', 'Liquid cooling; ~230 kW per rack']]);
+  });
+
+  it('is left out when there is no roadmap (or an older Final Recommendation)', () => {
+    for (const r of [null, undefined]) {
+      expect(buildManagementReport(project, { finalRecommendation: final(r) }).sections.some((s) => s.heading === 'Next-generation roadmap')).toBe(false);
+    }
+  });
+});

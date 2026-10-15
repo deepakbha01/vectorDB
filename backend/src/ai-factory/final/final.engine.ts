@@ -1,7 +1,7 @@
 import { DecisionRecord, PhaseKey, StateSection } from '../ai-factory.types';
-import { AdrSection, ArchitectureAlternative, ChainStep, FinalInputs, FinalResult, GateStage, GateStageKey, Readiness, StageStatus, TechnicalRecommendation } from './final.types';
+import { AdrSection, ArchitectureAlternative, ChainStep, FinalInputs, FinalResult, GateStage, GateStageKey, Readiness, RoadmapFacts, RoadmapItem, StageStatus, TechnicalRecommendation } from './final.types';
 
-export const FINAL_RULES_VERSION = 'final-2026.09-1';
+export const FINAL_RULES_VERSION = 'final-2026.10-1';
 const READINESS_LABEL: Record<Readiness, string> = {
   production_ready: 'PRODUCTION READY',
   ready_with_conditions: 'PRODUCTION READY WITH CONDITIONS',
@@ -262,7 +262,54 @@ export function buildFinalRecommendation(x: FinalInputs): FinalResult {
 
   const gaps = [...new Set([...readiness.stages.filter((g) => g.status === 'further_assessment').flatMap((g) => g.reasons), ...decisions.flatMap((r) => r.gaps)])];
 
-  return { rulesVersion: FINAL_RULES_VERSION, readiness, executiveSummary, technical, architecture, alternatives, adr, implementationPlan, gaps };
+  return { rulesVersion: FINAL_RULES_VERSION, readiness, executiveSummary, technical, architecture, alternatives, adr, implementationPlan, gaps, roadmap: buildRoadmap(x.roadmap) };
+}
+
+/**
+ * Next-generation roadmap: hardware not yet generally available that would
+ * change the design, with what has to be ready first. Never feeds the
+ * readiness gate - the verdict stays on hardware that can be bought today.
+ */
+export function buildRoadmap(f: RoadmapFacts | undefined): FinalResult['roadmap'] {
+  if (!f) return null;
+  const items: RoadmapItem[] = [];
+  const n = f.nextGeneration;
+  if (n) {
+    const prerequisites: string[] = [];
+    if (n.rackSystem) {
+      const rs = n.rackSystem;
+      prerequisites.push(
+        `${rs.cooling === 'liquid' ? 'Direct-to-chip liquid cooling' : 'Rack cooling'} for on-premises racks (or cloud capacity from a provider that offers ${rs.label})`,
+        `~${rs.rackPowerKw} kW per rack${rs.rackPowerEstimated ? ' (estimate - confirm with the OEM)' : ''}`,
+        `${rs.cpuLabel} hosts are Arm64: aarch64 builds of the serving runtime and its sidecars`,
+      );
+    }
+    if (n.precision === 'fp4') prerequisites.push('FP4 (NVFP4) quantisation validated on the customer evaluation set');
+    prerequisites.push(`Re-run the Inference assessment with contracted prices once it is available (Inference v${n.inferenceVersion} uses an estimate)`);
+    items.push({
+      title: `Next-generation GPU: ${n.rackSystem?.label ?? n.option}`,
+      today: n.today,
+      nextGeneration: n.option,
+      impact: n.meetsTargets ? n.comparison : `${n.comparison} - it would not change the decision as sized.`,
+      availability: n.availabilityNote,
+      prerequisites,
+      source: 'inference',
+    });
+  }
+  if (f.previewHostCpu) {
+    const h = f.previewHostCpu;
+    items.push({
+      title: `Host CPU: ${h.label}`,
+      today: `${h.label} chosen for the on-premises CPU nodes (Infrastructure Design v${h.infrastructureVersion})`,
+      nextGeneration: h.label,
+      impact: 'Arm64 host for the vector database, application and agent tools',
+      availability: h.availabilityNote,
+      prerequisites: ['arm64 builds of every image on the CPU nodes', 'A confirmed delivery date from the server partner before fixing the go-live plan', 'x86 or Grace as the fallback host if delivery slips'],
+      source: 'infrastructure_design',
+    });
+  }
+  if (!items.length) return null;
+  return { items, note: 'A roadmap only: the readiness verdict and the architecture above use hardware that can be bought today. Re-assess when these become generally available.' };
 }
 
 const combine = (a: { status: StageStatus; reasons: string[] }, b: { status: StageStatus; reasons: string[] }) => ({ status: worst(a.status, b.status), reasons: [...a.reasons, ...b.reasons] });

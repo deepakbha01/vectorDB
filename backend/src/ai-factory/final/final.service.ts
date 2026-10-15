@@ -10,7 +10,11 @@ import { ConfigService } from '@nestjs/config';
 import { FeaturesController } from '../../features/features.controller';
 import { AiFinalRecommendation, FinalProvenance } from './final.entity';
 import { buildFinalRecommendation } from './final.engine';
-import { FinalInputs, FinalResult } from './final.types';
+import { FinalInputs, FinalResult, RoadmapFacts } from './final.types';
+import { AiFactoryConfigService } from '../ai-factory-config.service';
+import { InferenceConfigService } from '../../inference/inference-config.service';
+import { InferenceAssessment } from '../../inference/inference-assessment.entity';
+import { AiInfrastructureDesign } from '../infrastructure/infrastructure.entity';
 
 /**
  * Final AI Architecture Recommendation (spec §15-§18, §25, §26). Reads the AI
@@ -25,7 +29,11 @@ export class FinalRecommendationService {
     private readonly projectsService: ProjectsService,
     private readonly aiFactory: AiFactoryService,
     private readonly config: ConfigService,
+    private readonly cfg: AiFactoryConfigService,
+    private readonly inferenceConfig: InferenceConfigService,
     @InjectRepository(AiFinalRecommendation) private readonly finals: Repository<AiFinalRecommendation>,
+    @InjectRepository(InferenceAssessment) private readonly inference: Repository<InferenceAssessment>,
+    @InjectRepository(AiInfrastructureDesign) private readonly infrastructure: Repository<AiInfrastructureDesign>,
   ) {}
 
   private async inputs(projectId: string, requester: AuthenticatedUser): Promise<FinalInputs> {
@@ -33,7 +41,47 @@ export class FinalRecommendationService {
     const [overview, decisions] = await Promise.all([this.aiFactory.getOverview(projectId, requester), this.aiFactory.getDecisionRecords(projectId, requester)]);
     // Token evidence joins the cost gate only where Token Observability is switched on.
     const tokenObservability = new FeaturesController(this.config).flags().tokenObservability;
-    return { projectName: project.name, state: overview.state, lineage: overview.phases, decisions, tokenObservability };
+    return { projectName: project.name, state: overview.state, lineage: overview.phases, decisions, tokenObservability, roadmap: await this.roadmapFacts(projectId) };
+  }
+
+  /** Next-generation facts from the latest Inference and Infrastructure records (the decision records do not carry them). */
+  private async roadmapFacts(projectId: string): Promise<RoadmapFacts> {
+    const where = { project: { id: projectId } };
+    const order = { createdAt: 'DESC' as const };
+    const [inf, infra] = await Promise.all([this.inference.findOne({ where, order }), this.infrastructure.findOne({ where, order })]);
+
+    let nextGeneration: RoadmapFacts['nextGeneration'] = null;
+    const ng = inf?.result.nextGenerationOption ?? null;
+    if (inf && ng) {
+      const r = inf.result;
+      const rec = r.recommendedGpuOption;
+      const today =
+        r.decision === 'managed_api'
+          ? `Managed API (${r.managedApi.tierLabel})`
+          : rec
+            ? `${rec.totalGpusAtPeak} × ${rec.gpuLabel} (${rec.precision.toUpperCase()})`
+            : 'No configuration meets the latency targets';
+      const sys = this.inferenceConfig.systemForGpu(ng.option.gpuId);
+      nextGeneration = {
+        inferenceVersion: inf.version,
+        today,
+        option: `${ng.option.totalGpusAtPeak} × ${ng.option.gpuLabel} (${ng.option.precision.toUpperCase()})`,
+        precision: ng.option.precision,
+        meetsTargets: ng.option.meetsTtft && ng.option.meetsTpot,
+        comparison: ng.comparison,
+        availabilityNote: ng.availabilityNote,
+        rackSystem: sys ? { label: sys.label, rackPowerKw: sys.rackPowerKw, rackPowerEstimated: !!sys.rackPowerEstimated, cooling: sys.cooling, cpuLabel: sys.cpuLabel } : null,
+      };
+    }
+
+    // A preview host CPU only matters when CPU nodes actually land on-premises.
+    let previewHostCpu: RoadmapFacts['previewHostCpu'] = null;
+    const host = infra?.context.hostCpu ? this.cfg.getInfrastructureCatalogue().hostCpus?.[infra.context.hostCpu] : undefined;
+    const cpuOnPrem = !!infra?.result.placements.some((p) => p.component !== 'inference' && p.chosen?.target === 'on_premises');
+    if (infra && host?.availability === 'preview' && cpuOnPrem) {
+      previewHostCpu = { infrastructureVersion: infra.version, label: host.label.split(' (')[0], availabilityNote: host.availabilityNote ?? 'Not yet generally available.' };
+    }
+    return { nextGeneration, previewHostCpu };
   }
 
   async preview(projectId: string, requester: AuthenticatedUser): Promise<FinalResult> {

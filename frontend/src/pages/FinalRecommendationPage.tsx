@@ -226,6 +226,19 @@ function FinalView({ r }: { r: FinalResult }) {
         </div>
       </div>
 
+      {r.roadmap && r.roadmap.items.length > 0 && (
+        <div className="card" style={{ marginBottom: 16, overflowX: 'auto' }}>
+          <div className="metric-label">
+            Next-generation roadmap <span className="status-pill">preview hardware</span>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 8px' }}>{r.roadmap.note}</p>
+          <Table
+            headers={['Item', 'Today', 'Next generation', 'Impact', 'Availability', 'Before adopting']}
+            rows={r.roadmap.items.map((i) => [i.title, i.today, i.nextGeneration, i.impact, i.availability, <Bullets key="p" items={i.prerequisites} />])}
+          />
+        </div>
+      )}
+
       {r.gaps.length > 0 && (
         <div className="card" style={{ borderLeft: '4px solid var(--warning)' }}>
           <div className="metric-label">Open gaps across the assessment</div>
