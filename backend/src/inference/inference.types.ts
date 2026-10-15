@@ -42,9 +42,17 @@ export interface GpuSpec {
   bandwidthGbps: number;
   fp16Tflops: number;
   fp8Tflops?: number;
+  /** Dense FP4 (NVFP4) tensor throughput - Blackwell and later only. */
+  fp4Tflops?: number;
   hourlyUsd: number;
   interconnect?: 'nvlink' | 'pcie';
+  /** 'preview' = announced or ramping, not yet generally available: never the recommendation, reported as a next-generation option. Absent = 'ga'. */
+  availability?: GpuAvailability;
+  /** When and where a preview GPU is expected to be available. */
+  availabilityNote?: string;
 }
+
+export type GpuAvailability = 'ga' | 'preview';
 
 export interface ModelSpec {
   id: string;
@@ -65,6 +73,9 @@ export interface PrecisionSpec {
   kvBytes: number;
   requiresFp8Hardware: boolean;
   computeUsesFp8: boolean;
+  /** Needs FP4 tensor cores (gpu.fp4Tflops); prefill then runs at the FP4 rate. */
+  requiresFp4Hardware?: boolean;
+  computeUsesFp4?: boolean;
   qualityNote: string;
 }
 
@@ -122,6 +133,7 @@ export interface ModelFootprint {
 export interface GpuOption {
   gpuId: string;
   gpuLabel: string;
+  gpuAvailability: GpuAvailability;
   precision: string;
   tensorParallel: number;
   footprint: ModelFootprint;
@@ -181,6 +193,13 @@ export interface InferenceForecastPoint {
   managedApiMonthlyUsd: number;
 }
 
+export interface NextGenerationOption {
+  option: GpuOption;
+  availabilityNote: string;
+  /** Plain-language comparison with the recommended (generally available) option. */
+  comparison: string;
+}
+
 export interface CalculationStep {
   step: string;
   formula: string;
@@ -191,7 +210,10 @@ export interface InferenceAssessmentResult {
   rulesVersion: string;
   demand: DemandProfile;
   gpuOptions: GpuOption[];
+  /** Cheapest SLO-compliant option on a generally available GPU. */
   recommendedGpuOption: GpuOption | null;
+  /** Best option on a preview GPU, compared with the recommendation - a roadmap item, never the decision. */
+  nextGenerationOption: NextGenerationOption | null;
   managedApi: ManagedApiCost;
   decision: InferenceDecision;
   decisionRationale: string[];

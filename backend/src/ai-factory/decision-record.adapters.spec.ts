@@ -164,6 +164,15 @@ describe('fromInferenceAssessment', () => {
     const none = fromInferenceAssessment({ ...assessment('none_feasible'), result: { ...assessment('none_feasible').result, recommendedGpuOption: null } });
     expect(none).toMatchObject({ status: 'not_feasible', recommendation: null, confidence: 'low' });
   });
+
+  it('marks an option on a preview GPU conditional, with its availability first', () => {
+    const a = assessment('self_hosted');
+    a.result.gpuOptions.push({ ...option('rubin', true, 15000), gpuAvailability: 'preview' });
+    a.result.nextGenerationOption = { availabilityNote: 'Ramping into production.' };
+    const rubin = fromInferenceAssessment(a).candidates.find((c) => c.id === 'rubin:fp8');
+    expect(rubin?.eligibility).toBe('conditional');
+    expect(rubin?.notes[0]).toBe('Next generation, not yet generally available - Ramping into production.');
+  });
 });
 
 describe('compareStates', () => {

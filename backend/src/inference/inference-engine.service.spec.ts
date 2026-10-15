@@ -114,6 +114,60 @@ describe('InferenceEngineService', () => {
       expect(ids.filter((id) => id.startsWith('a10'))).toEqual([]);
     });
 
+    it('evaluates FP4 only on GPUs with FP4 tensor cores, at 4.5 bits per weight and the FP4 prefill rate', () => {
+      const model = cfg.getModels().find((m) => m.id === 'llama-3.3-70b')!;
+      const fp4 = engine.selfHostedOptions(baseInput(cfg, { model, precision: 'fp4', allowedGpuIds: ['h100-80', 'b200-180'] }), engine.demand(baseInput(cfg, { model })));
+      expect(fp4.map((o) => o.gpuId)).toEqual(['b200-180']);
+      expect(fp4[0].footprint.weightsGb).toBeCloseTo(model.paramsB * 0.5625, 6);
+
+      const input8 = baseInput(cfg, { model, precision: 'fp8', allowedGpuIds: ['b200-180'] });
+      const [fp8] = engine.selfHostedOptions(input8, engine.demand(input8));
+      expect(fp4[0].ttftMs).toBeLessThan(fp8.ttftMs);
+    });
+  });
+
+  describe('preview (next-generation) GPUs', () => {
+    const { cfg, engine } = makeEngine();
+    const rubin = () => cfg.getGpus().find((g) => g.id === 'rubin-288')!;
+
+    it('lists Rubin as a preview GPU with an availability note', () => {
+      expect(rubin()).toMatchObject({ availability: 'preview', memoryGb: 288 });
+      expect(rubin().availabilityNote).toBeTruthy();
+      expect(cfg.getGpus().filter((g) => g.id !== 'rubin-288').every((g) => (g.availability ?? 'ga') === 'ga')).toBe(true);
+    });
+
+    // A preview GPU priced far below everything else would win on cost - it must still never be the recommendation.
+    const cheapRubin = () => {
+      const c = new InferenceConfigService({} as ConfigService);
+      c.setCatalogue({ ...catalogue, gpus: catalogue.gpus.map((g: any) => (g.id === 'rubin-288' ? { ...g, hourlyUsd: 0.01 } : g)) });
+      return { c, e: new InferenceEngineService(c) };
+    };
+
+    it('never recommends a preview GPU, and reports it as the next-generation option instead', () => {
+      const { c, e } = cheapRubin();
+      const result = e.assess(baseInput(c, { allowThirdPartyApi: false }));
+      expect(result.gpuOptions.some((o) => o.gpuId === 'rubin-288' && o.gpuAvailability === 'preview')).toBe(true);
+      expect(result.recommendedGpuOption?.gpuAvailability).toBe('ga');
+      expect(result.nextGenerationOption?.option.gpuId).toBe('rubin-288');
+      expect(result.nextGenerationOption?.comparison).toMatch(/% less\)\.$/);
+      expect(result.forecast.every((f) => f.selfHostedGpuId !== 'rubin-288')).toBe(true);
+    });
+
+    it('says so when only the preview GPU meets the targets', () => {
+      const { c, e } = cheapRubin();
+      const result = e.assess(baseInput(c, { allowThirdPartyApi: false, allowedGpuIds: ['rubin-288'] }));
+      expect(result.recommendedGpuOption).toBeNull();
+      expect(result.decision).toBe('none_feasible');
+      expect(result.nextGenerationOption?.comparison).toMatch(/^No generally available GPU meets the latency targets/);
+    });
+
+    it('has no next-generation option when no preview GPU is allowed', () => {
+      expect(engine.assess(baseInput(cfg, { allowedGpuIds: ['h100-80'] })).nextGenerationOption).toBeNull();
+    });
+  });
+
+  describe('GPU options (continued)', () => {
+
     it('keeps the batch within KV memory and the TPOT budget, and TPOT within target when met', () => {
       const input = baseInput(cfg);
       for (const o of engine.selfHostedOptions(input, engine.demand(input))) {

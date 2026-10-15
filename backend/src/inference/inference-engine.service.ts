@@ -17,6 +17,7 @@ import {
   ModelFootprint,
   ModelSourcing,
   ModelSpec,
+  NextGenerationOption,
   PrecisionSpec,
 } from './inference.types';
 
@@ -112,7 +113,8 @@ export class InferenceEngineService {
     const maxBatchByTpot = Math.max(0, Math.floor((tpotBudget * effBandwidth - activeWeightBytes) / kvReadPerSeq));
     const batchSize = Math.max(1, Math.min(maxBatchByMemory, maxBatchByTpot, s.maxBatchPerReplica));
 
-    const tflops = (precision.computeUsesFp8 && gpu.fp8Tflops ? gpu.fp8Tflops : gpu.fp16Tflops) * 1e12;
+    const tflops =
+      (precision.computeUsesFp4 && gpu.fp4Tflops ? gpu.fp4Tflops : precision.computeUsesFp8 && gpu.fp8Tflops ? gpu.fp8Tflops : gpu.fp16Tflops) * 1e12;
     const prefillCompute = (2 * input.model.activeParamsB * GB * input.avgInputTokens) / (tp * tflops * s.prefillMfu * tpEff);
     const prefillSeconds = Math.max(prefillCompute, activeWeightBytes / effBandwidth);
 
@@ -128,6 +130,7 @@ export class InferenceEngineService {
     const opt: GpuOption = {
       gpuId: gpu.id,
       gpuLabel: gpu.label,
+      gpuAvailability: gpu.availability ?? 'ga',
       precision: precision.id,
       tensorParallel: tp,
       footprint: fp,
@@ -191,6 +194,7 @@ export class InferenceEngineService {
     for (const gpu of gpus) {
       for (const precision of precisions) {
         if (precision.requiresFp8Hardware && !gpu.fp8Tflops) continue;
+        if (precision.requiresFp4Hardware && !gpu.fp4Tflops) continue;
         const configs = (s.tensorParallelOptions as number[])
           .map((tp) => this.evaluateConfig(gpu, precision, tp, input, demand))
           .filter((o): o is GpuOption => o !== null);
@@ -281,6 +285,30 @@ export class InferenceEngineService {
     });
   }
 
+  /** Best preview-GPU option (cheapest meeting the SLOs, else the first ranked) and how it compares with the recommendation. */
+  private nextGeneration(options: GpuOption[], recommended: GpuOption | null): NextGenerationOption | null {
+    const preview = options.filter((o) => o.gpuAvailability === 'preview');
+    const best = this.cheapestMeeting(preview) ?? preview[0];
+    if (!best) return null;
+    const gpu = this.cfg.getGpus().find((g) => g.id === best.gpuId);
+    const nx = `${best.totalGpusAtPeak} × ${best.gpuLabel} (${best.precision.toUpperCase()})`;
+    let comparison: string;
+    if (!(best.meetsTtft && best.meetsTpot)) {
+      comparison = `${nx} would not meet the latency targets either.`;
+    } else if (!recommended) {
+      comparison = `No generally available GPU meets the latency targets, but ${nx} would, at about ${usd(best.monthlyTotalUsd)}/month.`;
+    } else {
+      const diff = Math.round((1 - best.monthlyTotalUsd / recommended.monthlyTotalUsd) * 100);
+      const cost = diff > 0 ? `${diff}% less` : diff < 0 ? `${-diff}% more` : 'about the same';
+      // At small volume the minimum replica count, not the demand, sets the preview GPU's size.
+      const atMinimum = diff < 0 && best.replicasAtPeak <= best.minReplicas;
+      comparison =
+        `${nx} at peak vs ${recommended.totalGpusAtPeak} × ${recommended.gpuLabel} today: ${usd(best.monthlyTotalUsd)} vs ${usd(recommended.monthlyTotalUsd)}/month (${cost}).` +
+        (atMinimum ? ' That is its minimum footprint for availability - it pays off only at much higher volume.' : '');
+    }
+    return { option: best, availabilityNote: gpu?.availabilityNote ?? 'Not yet generally available.', comparison };
+  }
+
   // ------------------------------------------------------------------ assess
   assess(input: InferenceEngineInput): InferenceAssessmentResult {
     const p = this.cfg.getPricing();
@@ -291,7 +319,10 @@ export class InferenceEngineService {
 
     const selfHostedInScope = input.modelSourcing !== ModelSourcing.MANAGED_API;
     const options = this.selfHostedOptions(input, demand);
-    const recommended = this.cheapestMeeting(options);
+    // Only GPUs that can be bought today drive the decision, break-even and forecast; preview GPUs are a roadmap comparison.
+    const available = options.filter((o) => o.gpuAvailability === 'ga');
+    const recommended = this.cheapestMeeting(available);
+    const nextGeneration = this.nextGeneration(options, recommended);
     const managedApi = this.managedApiCost(input, demand);
     const apiAllowed = !managedApi.excluded;
 
@@ -366,12 +397,13 @@ export class InferenceEngineService {
       demand,
       gpuOptions: options,
       recommendedGpuOption: recommended,
+      nextGenerationOption: nextGeneration,
       managedApi,
       decision,
       decisionRationale: rationale,
-      breakEven: this.breakEven(input, options),
-      forecast: this.forecast(input, options),
-      workings: this.workings(input, demand, recommended ?? options[0] ?? null, managedApi),
+      breakEven: this.breakEven(input, available),
+      forecast: this.forecast(input, available),
+      workings: this.workings(input, demand, recommended ?? available[0] ?? null, managedApi),
       risks,
       assumptions,
     };

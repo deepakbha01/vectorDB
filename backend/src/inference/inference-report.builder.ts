@@ -65,7 +65,7 @@ export function buildInferenceReport(projectName: string, a: InferenceAssessment
           {
             headers: ['GPU', 'Precision', 'TP', 'Batch', 'TTFT ms', 'TPOT ms', 'Replicas (peak)', 'GPUs', 'Monthly', '$/1M tokens', 'Meets SLO'],
             rows: r.gpuOptions.map((o) => [
-              o.gpuLabel,
+              o.gpuAvailability === 'preview' ? `${o.gpuLabel} (preview)` : o.gpuLabel,
               o.precision.toUpperCase(),
               String(o.tensorParallel),
               String(o.batchSize),
@@ -80,6 +80,20 @@ export function buildInferenceReport(projectName: string, a: InferenceAssessment
           },
         ],
       },
+      // Assessments saved before preview GPUs existed have no nextGenerationOption.
+      ...(r.nextGenerationOption
+        ? [
+            {
+              heading: 'Next-generation option (not yet generally available)',
+              fields: [
+                { label: 'Option', value: `${r.nextGenerationOption.option.totalGpusAtPeak} × ${r.nextGenerationOption.option.gpuLabel} (${r.nextGenerationOption.option.precision.toUpperCase()})` },
+                { label: 'Compared with today', value: r.nextGenerationOption.comparison },
+                { label: 'Availability', value: r.nextGenerationOption.availabilityNote },
+              ],
+              lists: [{ items: ['A roadmap comparison only: the recommendation above uses GPUs that can be bought today.'] }],
+            },
+          ]
+        : []),
       {
         heading: 'Growth forecast',
         tables: [

@@ -210,18 +210,32 @@ export function InferencePage() {
             )}
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>GPUs available (none ticked = all)</label>
-              <div className="checkbox-grid">
-                {catalogue.gpus.map((g) => {
-                  const checked = form.allowedGpuIds?.includes(g.id) ?? false;
-                  return (
-                    <label key={g.id} className={`checkbox-chip${checked ? ' checked' : ''}`} title={`${g.bandwidthGbps} GB/s · ${g.interconnect ?? ''} · $${g.hourlyUsd}/h on-demand`}>
-                      <input type="checkbox" checked={checked}
-                        onChange={(e) => set('allowedGpuIds', e.target.checked ? [...(form.allowedGpuIds ?? []), g.id] : (form.allowedGpuIds ?? []).filter((x) => x !== g.id))} />
-                      {g.label}
-                    </label>
-                  );
-                })}
-              </div>
+              {(['ga', 'preview'] as const).map((group) => {
+                const gpus = catalogue.gpus.filter((g) => (g.availability ?? 'ga') === group);
+                if (!gpus.length) return null;
+                return (
+                  <div key={group} style={{ marginBottom: 8 }}>
+                    {group === 'preview' && (
+                      <div style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0' }}>
+                        Next generation (preview) - sized and costed for comparison, never recommended; shown in the report as a roadmap option.
+                      </div>
+                    )}
+                    <div className="checkbox-grid">
+                      {gpus.map((g) => {
+                        const checked = form.allowedGpuIds?.includes(g.id) ?? false;
+                        return (
+                          <label key={g.id} className={`checkbox-chip${checked ? ' checked' : ''}`}
+                            title={`${g.bandwidthGbps} GB/s · ${g.interconnect ?? ''} · $${g.hourlyUsd}/h on-demand${g.fp4Tflops ? ' · FP4' : ''}${g.availabilityNote ? `\n${g.availabilityNote}` : ''}`}>
+                            <input type="checkbox" checked={checked}
+                              onChange={(e) => set('allowedGpuIds', e.target.checked ? [...(form.allowedGpuIds ?? []), g.id] : (form.allowedGpuIds ?? []).filter((x) => x !== g.id))} />
+                            {g.label}{group === 'preview' && <span className="status-pill" style={{ marginLeft: 6 }}>preview</span>}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             <Check label="Autoscale replicas with load" checked={form.autoscaling ?? true} onChange={(v) => set('autoscaling', v)} />
           </Section>
@@ -290,7 +304,10 @@ export function InferencePage() {
                   const ok = o.meetsTtft && o.meetsTpot;
                   const isRec = rec && o.gpuId === rec.gpuId && o.precision === rec.precision;
                   return [
-                    <span key="g" title={o.notes.join('\n')}>{isRec ? '★ ' : ''}{o.gpuLabel}{o.notes.length ? ' ⓘ' : ''}</span>,
+                    <span key="g" title={o.notes.join('\n')}>
+                      {isRec ? '★ ' : ''}{o.gpuLabel}{o.notes.length ? ' ⓘ' : ''}
+                      {o.gpuAvailability === 'preview' && <span className="status-pill" style={{ marginLeft: 6 }}>preview</span>}
+                    </span>,
                     o.precision.toUpperCase(),
                     o.tensorParallel,
                     o.batchSize,
@@ -304,8 +321,20 @@ export function InferencePage() {
                   ];
                 })}
               />
-              <p style={{ fontSize: 12, color: 'var(--muted)', margin: '8px 0 0' }}>★ recommended · hover ⓘ for notes (quality, interconnect, memory limits). Monthly = GPUs + infrastructure overhead + platform team.</p>
+              <p style={{ fontSize: 12, color: 'var(--muted)', margin: '8px 0 0' }}>★ recommended · preview = not yet generally available, never recommended · hover ⓘ for notes (quality, interconnect, memory limits). Monthly = GPUs + infrastructure overhead + platform team.</p>
             </div>
+
+            {r.nextGenerationOption && (
+              <div className="card" style={{ marginBottom: 16, borderLeft: '4px solid var(--warning)' }}>
+                <div className="metric-label">Next-generation option <span className="status-pill">preview</span></div>
+                <div style={{ fontSize: 14, fontWeight: 600, margin: '4px 0' }}>
+                  {r.nextGenerationOption.option.totalGpusAtPeak} × {r.nextGenerationOption.option.gpuLabel} ({r.nextGenerationOption.option.precision.toUpperCase()})
+                </div>
+                <div style={{ fontSize: 13 }}>{r.nextGenerationOption.comparison}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{r.nextGenerationOption.availabilityNote}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>A roadmap comparison only - the recommendation above uses GPUs that can be bought today.</div>
+              </div>
+            )}
 
             <div className="card-grid" style={{ marginBottom: 16 }}>
               <div className="card" style={{ overflowX: 'auto' }}>

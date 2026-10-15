@@ -16,8 +16,12 @@ export interface GpuSpec {
   bandwidthGbps: number;
   fp16Tflops: number;
   fp8Tflops?: number;
+  fp4Tflops?: number;
   hourlyUsd: number;
   interconnect?: 'nvlink' | 'pcie';
+  /** 'preview' = not yet generally available; never recommended. Absent = 'ga'. */
+  availability?: 'ga' | 'preview';
+  availabilityNote?: string;
 }
 
 export interface ModelSpec {
@@ -91,6 +95,8 @@ export interface CreateInferenceAssessmentInput {
 export interface GpuOption {
   gpuId: string;
   gpuLabel: string;
+  /** Absent on assessments saved before preview GPUs existed. */
+  gpuAvailability?: 'ga' | 'preview';
   precision: string;
   tensorParallel: number;
   footprint: { weightsGb: number; kvBytesPerToken: number; kvGbPerAvgSequence: number; kvGbPerMaxContextSequence: number };
@@ -124,6 +130,8 @@ export interface InferenceAssessmentResult {
   };
   gpuOptions: GpuOption[];
   recommendedGpuOption: GpuOption | null;
+  /** Best option on a not-yet-available GPU; absent on older assessments. */
+  nextGenerationOption?: { option: GpuOption; availabilityNote: string; comparison: string } | null;
   managedApi: {
     tierLabel: string;
     inputPer1M: number;

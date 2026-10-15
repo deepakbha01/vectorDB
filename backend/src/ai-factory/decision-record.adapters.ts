@@ -321,12 +321,18 @@ export function fromInferenceAssessment(a: InferenceAssessment): DecisionRecord 
   const optId = (o: { gpuId: string; precision: string }) => `${o.gpuId}:${o.precision}`;
   const optLabel = (o: { gpuLabel: string; precision: string; totalGpusAtPeak: number }) => `${o.totalGpusAtPeak} × ${o.gpuLabel} (${o.precision.toUpperCase()})`;
 
+  // A preview GPU can't be bought yet: at best conditional, with its availability first in the notes.
   const gpuCandidates: DecisionCandidate[] = r.gpuOptions.map((o) => ({
     id: optId(o),
     label: optLabel(o),
-    eligibility: o.meetsTtft && o.meetsTpot ? 'eligible' : 'not_eligible',
+    eligibility: !(o.meetsTtft && o.meetsTpot) ? 'not_eligible' : o.gpuAvailability === 'preview' ? 'conditional' : 'eligible',
     score: null,
-    notes: [`${usd(o.monthlyTotalUsd)}/month`, `TTFT ${Math.round(o.ttftMs)} ms, ${o.tpotMs.toFixed(1)} ms/token`, ...o.notes],
+    notes: [
+      ...(o.gpuAvailability === 'preview' ? [`Next generation, not yet generally available${r.nextGenerationOption ? ` - ${r.nextGenerationOption.availabilityNote}` : ''}`] : []),
+      `${usd(o.monthlyTotalUsd)}/month`,
+      `TTFT ${Math.round(o.ttftMs)} ms, ${o.tpotMs.toFixed(1)} ms/token`,
+      ...o.notes,
+    ],
   }));
   const apiCandidate: DecisionCandidate = {
     id: 'managed_api',
