@@ -10,6 +10,7 @@ import {
 } from '../api/inference';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
+import { LlmSummaryCard } from '../components/LlmSummaryCard';
 
 const DEFAULT_FORM: CreateInferenceAssessmentInput = {
   workloadType: 'rag',
@@ -260,6 +261,8 @@ export function InferencePage() {
                   rows={r.workings.map((w) => [w.step, <code key="f" style={{ fontSize: 12 }}>{w.formula}</code>, <strong key="r">{w.result}</strong>])} />
               )}
             </div>
+
+            {id && <LlmSummaryCard key={assessment.id} projectId={id} subject="inference" />}
 
             <div className="card-grid" style={{ marginBottom: 16 }}>
               <Metric label="Peak load" value={`${fmt(r.demand.peakRps, 2)} req/s`} sub={`${fmt(r.demand.peakOutputTokensPerSec, 0)} output tokens/s`} />

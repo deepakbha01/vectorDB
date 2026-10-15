@@ -72,6 +72,7 @@ import { AzureApproval } from './azure-builder/azure-approval.entity';
 import { AzureDeployment } from './azure-builder/azure-deployment.entity';
 import { AzureOperateCheck } from './azure-builder/azure-operate-check.entity';
 import { AzureBuilderModule } from './azure-builder/azure-builder.module';
+import { LlmSummaryModule } from './llm-summary/llm-summary.module';
 import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entity';
 
 @Module({
@@ -175,6 +176,7 @@ import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entit
     DataExplorerModule,
     ConnectionProfilesModule,
     AzureBuilderModule,
+    LlmSummaryModule,
   ],
   controllers: [HealthController, FeaturesController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

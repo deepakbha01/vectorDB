@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { LlmSummaryCard } from '../components/LlmSummaryCard';
 import {
   apiClient,
   ArchitectureDecisionRecord,
@@ -287,6 +288,7 @@ function AdrView({ adr, projectId }: { adr: ArchitectureDecisionRecord; projectI
 
       {adr.decisionStatus !== undefined && <DecisionStatusCard adr={adr} />}
       <BudgetAndComplianceCard adr={adr} />
+      <LlmSummaryCard key={adr.id} projectId={projectId} subject="vector-db-selection" />
       <WhatIfAnalysisCard projectId={projectId} />
 
       <button
