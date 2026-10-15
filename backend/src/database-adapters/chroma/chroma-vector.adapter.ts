@@ -90,9 +90,9 @@ export class ChromaVectorAdapter implements VectorDatabaseAdapter, VectorExplore
   /**
    * Chroma has only HNSW (no native IVF/PQ), so every Phase 3 decision maps to it. Its build
    * parameters (ef_construction, max_neighbors) can only be set when a collection is created -
-   * Chroma 1.x rejects them in modify() - while ef_search can change at any time. An empty
-   * collection is therefore re-created with the full configuration; one that already holds
-   * data keeps its build parameters and only takes the new ef_search.
+   * Chroma 1.x rejects them in modify(). An empty collection is therefore re-created with the
+   * full configuration; one that already holds data keeps its build parameters and only has
+   * the new ef_search stored (see searchParamsFixedAtBuild - the live index keeps its own).
    */
   async createVectorIndex(collectionOrTableName: string, indexType: IndexType, parameters: IndexTuningParameter[], metric?: SimilarityMetric): Promise<void> {
     const p = (name: string) => parameters.find((x) => x.name === name)?.value;
@@ -114,8 +114,17 @@ export class ChromaVectorAdapter implements VectorDatabaseAdapter, VectorExplore
   }
 
   /**
+   * Measured on a Chroma 1.x server: modify() stores a new ef_search in the collection's
+   * configuration, but a collection that already holds data keeps searching with the value it
+   * was created with (recall does not move). Benchmarks therefore build one collection per value.
+   */
+  searchParamsFixedAtBuild(): boolean {
+    return true;
+  }
+
+  /**
    * Chroma has no per-query ef_search: it is a collection setting. A search that asks for one
-   * sets it first, once per value, and parallel searches for the same value share that update.
+   * stores it first, once per value, and parallel searches for the same value share that update.
    */
   private readonly efSearchApplied = new Map<string, { value: number; done: Promise<unknown> }>();
 

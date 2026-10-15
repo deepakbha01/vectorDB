@@ -22,6 +22,8 @@ const UPSERT_BATCH_SIZE = 500;
 const DEFAULT_THROUGHPUT_CONCURRENCY = 4;
 /** Queries run on an exact scan: enough to show it is not an index, without reading the table hundreds of times. */
 const EXACT_SCAN_MAX_QUERIES = 20;
+/** Untimed searches before each variant's timed pass. */
+const WARMUP_QUERIES = 10;
 
 export const EXACT_SCAN_NOTE =
   'Not representative: the target has no vector index support (PostgreSQL without pgvector), so every search was an exact ' +
@@ -97,14 +99,25 @@ export class BenchmarkService {
     let searchMode: SearchMode = 'ann';
     let runValues = variantValues;
     let runQueries = queries;
-    try {
+    // Builds the ephemeral collection and loads the corpus, with `value` as the search parameter's build-time setting.
+    const build = async (value: number) => {
+      const configuration = indexDesign.configuration.some((c) => c.name === searchParamName)
+        ? indexDesign.configuration.map((c) => (c.name === searchParamName ? { ...c, value } : c))
+        : [...indexDesign.configuration, { name: searchParamName, value }];
       await adapter.createSchema({ collectionOrTableName: collectionName, dimension, metric: indexDesign.inputsUsed.metric, metadataFields: [] });
-      searchMode = (await adapter.searchMode?.()) ?? 'ann';
-      await adapter.createVectorIndex(collectionName, indexDesign.decision, indexDesign.configuration, indexDesign.inputsUsed.metric);
+      await adapter.createVectorIndex(collectionName, indexDesign.decision, configuration, indexDesign.inputsUsed.metric);
       for (let i = 0; i < corpus.length; i += UPSERT_BATCH_SIZE) {
         const batch = corpus.slice(i, i + UPSERT_BATCH_SIZE).map((c) => ({ id: c.id, vector: c.vector, metadata: {} }));
         await adapter.upsert(collectionName, batch);
       }
+      return value;
+    };
+    // Where the parameter is fixed at build time, every value needs its own freshly built index.
+    const rebuildPerValue = adapter.searchParamsFixedAtBuild?.() ?? false;
+
+    try {
+      let builtWith = await build(rebuildPerValue ? variantValues[0] : baselineValue);
+      searchMode = (await adapter.searchMode?.()) ?? 'ann';
 
       // An exact scan ignores the search parameter, so every variant would be identical - and each search
       // reads the whole table into the application, which is slow. Run only the baseline, on a few queries.
@@ -115,6 +128,16 @@ export class BenchmarkService {
 
       variantResults = [];
       for (const value of runValues) {
+        if (rebuildPerValue && searchMode === 'ann' && value !== builtWith) {
+          await adapter.dropSchema(collectionName, true);
+          builtWith = await build(value);
+        }
+        // Untimed warm-up so the first variant is not charged for cold caches and connections.
+        if (searchMode === 'ann') {
+          for (const query of runQueries.slice(0, WARMUP_QUERIES)) {
+            await adapter.search(collectionName, { vector: query.vector, topK, searchParams: { [searchParamName]: value } });
+          }
+        }
         const latencies: number[] = [];
         let recallSum = 0;
         for (const query of runQueries) {
@@ -164,7 +187,7 @@ export class BenchmarkService {
     const bottlenecks =
       searchMode === 'exact_scan'
         ? [EXACT_SCAN_NOTE]
-        : this.identifyBottlenecks(variantResults, targetP95, targetRecall);
+        : this.identifyBottlenecks(variantResults, targetP95, targetRecall, indexDesign.decision);
     const recommendedVariant = this.pickRecommendedVariant(variantResults, targetP95, targetRecall);
     const baseline = variantResults.find((v) => v.isBaseline)!;
 
@@ -209,7 +232,7 @@ export class BenchmarkService {
     return this.reports.find({ where: { project: { id: projectId } }, order: { version: 'DESC' } });
   }
 
-  private identifyBottlenecks(variants: VariantResult[], targetP95: number, targetRecall: number): string[] {
+  private identifyBottlenecks(variants: VariantResult[], targetP95: number, targetRecall: number, indexType: string): string[] {
     const bottlenecks: string[] = [];
     const overLatency = variants.filter((v) => v.p95LatencyMs > targetP95);
     const underRecall = variants.filter((v) => v.avgRecall < targetRecall);
@@ -221,7 +244,11 @@ export class BenchmarkService {
     }
 
     if (underRecall.length === variants.length) {
-      bottlenecks.push(`Every tested configuration falls short of the ${targetRecall} recall target - consider HNSW or a higher search-time parameter range.`);
+      bottlenecks.push(
+        indexType === 'hnsw'
+          ? `Every tested configuration falls short of the ${targetRecall} recall target - raise M / efConstruction in Index Design (graph quality) or test a higher efSearch range. Synthetic random vectors are the worst case for recall; confirm on real embeddings.`
+          : `Every tested configuration falls short of the ${targetRecall} recall target - consider HNSW or a higher search-time parameter range.`,
+      );
     } else if (underRecall.length > 0) {
       bottlenecks.push(`${underRecall.length} of ${variants.length} configurations fall short of the ${targetRecall} recall target.`);
     }

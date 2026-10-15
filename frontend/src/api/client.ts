@@ -880,6 +880,8 @@ export interface CreateBenchmarkInput {
   queryCount?: number;
   topK?: number;
   variants?: number[];
+  /** Parallel clients for the throughput pass (1-32; server default 4). */
+  concurrency?: number;
 }
 
 export interface ResourceEstimate {
