@@ -2,7 +2,7 @@ import { CanActivate, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FeaturesController } from '../features/features.controller';
 
-/** Hides the LLM summary endpoint unless LLM_SUMMARY_ENABLED is on and an LLM is configured, matching GET /api/features. */
+/** Hides the LLM summary and integration endpoints unless LLM_SUMMARY_ENABLED is on, matching GET /api/features. */
 @Injectable()
 export class LlmSummaryEnabledGuard implements CanActivate {
   private readonly features: FeaturesController;

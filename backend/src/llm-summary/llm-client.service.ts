@@ -4,37 +4,56 @@ import { ConfigService } from '@nestjs/config';
 type Protocol = 'openai' | 'azure-openai' | 'anthropic';
 
 interface ProviderPreset {
+  label: string;
   /** Which wire format the provider speaks. */
   protocol: Protocol;
-  /** Used when LLM_BASE_URL is empty; '' means LLM_BASE_URL is required. */
+  /** Used when no base URL is given; '' means one is required. */
   defaultBaseUrl: string;
   /** Local servers usually run without a key. */
   keyOptional?: boolean;
+  /** Shown as a placeholder in the integrations form. */
+  exampleModel: string;
 }
 
 /**
- * Supported LLM_PROVIDER values. Most hosted providers expose an
- * OpenAI-compatible chat-completions API, so adding one is a new row here.
+ * Supported providers (LLM_PROVIDER or a saved integration). Most hosted
+ * providers expose an OpenAI-compatible chat-completions API, so adding one is
+ * a new row here.
  */
 export const LLM_PROVIDERS = {
-  openai: { protocol: 'openai', defaultBaseUrl: 'https://api.openai.com/v1' },
-  'azure-openai': { protocol: 'azure-openai', defaultBaseUrl: '' },
-  anthropic: { protocol: 'anthropic', defaultBaseUrl: 'https://api.anthropic.com' },
-  gemini: { protocol: 'openai', defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
-  mistral: { protocol: 'openai', defaultBaseUrl: 'https://api.mistral.ai/v1' },
-  groq: { protocol: 'openai', defaultBaseUrl: 'https://api.groq.com/openai/v1' },
-  deepseek: { protocol: 'openai', defaultBaseUrl: 'https://api.deepseek.com/v1' },
-  xai: { protocol: 'openai', defaultBaseUrl: 'https://api.x.ai/v1' },
-  openrouter: { protocol: 'openai', defaultBaseUrl: 'https://openrouter.ai/api/v1' },
-  together: { protocol: 'openai', defaultBaseUrl: 'https://api.together.xyz/v1' },
-  ollama: { protocol: 'openai', defaultBaseUrl: 'http://localhost:11434/v1', keyOptional: true },
+  openai: { label: 'OpenAI', protocol: 'openai', defaultBaseUrl: 'https://api.openai.com/v1', exampleModel: 'gpt-4o' },
+  'azure-openai': { label: 'Azure OpenAI', protocol: 'azure-openai', defaultBaseUrl: '', exampleModel: 'your deployment name' },
+  anthropic: { label: 'Anthropic (Claude)', protocol: 'anthropic', defaultBaseUrl: 'https://api.anthropic.com', exampleModel: 'claude-sonnet-5-5' },
+  gemini: { label: 'Google Gemini', protocol: 'openai', defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', exampleModel: 'gemini-2.5-flash' },
+  mistral: { label: 'Mistral', protocol: 'openai', defaultBaseUrl: 'https://api.mistral.ai/v1', exampleModel: 'mistral-large-latest' },
+  groq: { label: 'Groq', protocol: 'openai', defaultBaseUrl: 'https://api.groq.com/openai/v1', exampleModel: 'llama-3.3-70b-versatile' },
+  deepseek: { label: 'DeepSeek', protocol: 'openai', defaultBaseUrl: 'https://api.deepseek.com/v1', exampleModel: 'deepseek-chat' },
+  xai: { label: 'xAI (Grok)', protocol: 'openai', defaultBaseUrl: 'https://api.x.ai/v1', exampleModel: 'grok-4' },
+  openrouter: { label: 'OpenRouter', protocol: 'openai', defaultBaseUrl: 'https://openrouter.ai/api/v1', exampleModel: 'anthropic/claude-sonnet-5-5' },
+  together: { label: 'Together AI', protocol: 'openai', defaultBaseUrl: 'https://api.together.xyz/v1', exampleModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
+  ollama: { label: 'Ollama (local)', protocol: 'openai', defaultBaseUrl: 'http://localhost:11434/v1', keyOptional: true, exampleModel: 'llama3.1' },
   /** Any other OpenAI-compatible server (vLLM, LM Studio, LiteLLM, an internal gateway). */
-  'openai-compatible': { protocol: 'openai', defaultBaseUrl: '', keyOptional: true },
+  'openai-compatible': { label: 'Other OpenAI-compatible server', protocol: 'openai', defaultBaseUrl: '', keyOptional: true, exampleModel: 'model name on that server' },
   /** Any service that speaks the Anthropic Messages API at its own URL. */
-  'anthropic-compatible': { protocol: 'anthropic', defaultBaseUrl: '' },
+  'anthropic-compatible': { label: 'Other Anthropic-compatible service', protocol: 'anthropic', defaultBaseUrl: '', exampleModel: 'model name on that service' },
 } satisfies Record<string, ProviderPreset>;
 
 export type LlmProvider = keyof typeof LLM_PROVIDERS;
+
+export const isLlmProvider = (p: string): p is LlmProvider => Object.prototype.hasOwnProperty.call(LLM_PROVIDERS, p);
+
+/** The provider list for the integrations form. */
+export function llmProviderCatalogue() {
+  return Object.entries(LLM_PROVIDERS).map(([id, p]: [string, ProviderPreset]) => ({
+    id,
+    label: p.label,
+    defaultBaseUrl: p.defaultBaseUrl || null,
+    baseUrlRequired: !p.defaultBaseUrl,
+    keyOptional: !!p.keyOptional,
+    apiVersionUsed: p.protocol === 'azure-openai',
+    exampleModel: p.exampleModel,
+  }));
+}
 
 export interface LlmSettings {
   provider: LlmProvider;
@@ -62,38 +81,51 @@ const positiveInt = (raw: string | undefined, fallback: number) => {
   return Number.isInteger(n) && n > 0 ? n : fallback;
 };
 
+export interface LlmSettingsInput {
+  provider: string;
+  model: string;
+  apiKey?: string | null;
+  baseUrl?: string | null;
+  apiVersion?: string | null;
+}
+
 /**
- * Reads the LLM_* settings, or returns null when they are incomplete. A key is
+ * Settings from raw values, or null when they are incomplete. A key is
  * optional only for local servers (ollama, openai-compatible) and for openai
- * pointed at a custom LLM_BASE_URL, which predates the openai-compatible preset.
+ * pointed at a custom base URL, which predates the openai-compatible preset.
  */
-export function readLlmSettings(config: ConfigService): LlmSettings | null {
-  const get = (k: string) => String(config.get<string>(k) ?? '').trim();
-  const provider = get('LLM_PROVIDER').toLowerCase();
-  if (!Object.prototype.hasOwnProperty.call(LLM_PROVIDERS, provider)) return null;
-  const preset: ProviderPreset = LLM_PROVIDERS[provider as LlmProvider];
-  const model = get('LLM_MODEL');
-  const apiKey = get('LLM_API_KEY');
-  const customBaseUrl = get('LLM_BASE_URL').replace(/\/+$/, '');
+export function buildLlmSettings(input: LlmSettingsInput, limits: { maxOutputTokens: number; timeoutMs: number }): LlmSettings | null {
+  const provider = String(input.provider ?? '').trim().toLowerCase();
+  if (!isLlmProvider(provider)) return null;
+  const preset: ProviderPreset = LLM_PROVIDERS[provider];
+  const model = String(input.model ?? '').trim();
+  const apiKey = String(input.apiKey ?? '').trim();
+  const customBaseUrl = String(input.baseUrl ?? '').trim().replace(/\/+$/, '');
   const baseUrl = customBaseUrl || preset.defaultBaseUrl;
   if (!model || !baseUrl) return null;
   if (!apiKey && !preset.keyOptional && !(provider === 'openai' && customBaseUrl)) return null;
-  return {
-    provider: provider as LlmProvider,
-    protocol: preset.protocol,
-    model,
-    apiKey,
-    baseUrl,
-    apiVersion: get('LLM_API_VERSION') || '2024-10-21',
-    maxOutputTokens: positiveInt(get('LLM_MAX_OUTPUT_TOKENS'), 1200),
-    timeoutMs: positiveInt(get('LLM_TIMEOUT_MS'), 60000),
-  };
+  return { provider, protocol: preset.protocol, model, apiKey, baseUrl, apiVersion: String(input.apiVersion ?? '').trim() || '2024-10-21', ...limits };
+}
+
+/** Output-token and timeout limits; server-wide, also for saved integrations. */
+export function readLlmLimits(config: ConfigService) {
+  const get = (k: string) => String(config.get<string>(k) ?? '').trim();
+  return { maxOutputTokens: positiveInt(get('LLM_MAX_OUTPUT_TOKENS'), 1200), timeoutMs: positiveInt(get('LLM_TIMEOUT_MS'), 60000) };
+}
+
+/** The server-default LLM from the LLM_* settings, or null when they are incomplete. */
+export function readLlmSettings(config: ConfigService): LlmSettings | null {
+  const get = (k: string) => String(config.get<string>(k) ?? '').trim();
+  return buildLlmSettings(
+    { provider: get('LLM_PROVIDER'), model: get('LLM_MODEL'), apiKey: get('LLM_API_KEY'), baseUrl: get('LLM_BASE_URL'), apiVersion: get('LLM_API_VERSION') },
+    readLlmLimits(config),
+  );
 }
 
 /**
  * Minimal chat-completion client for the optional LLM summary step. Plain
- * fetch, like embedding-client, so no provider SDK is pulled in. The key is
- * read from the environment and never logged or returned.
+ * fetch, like embedding-client, so no provider SDK is pulled in. Keys come
+ * from the environment or a saved integration and are never logged or returned.
  */
 @Injectable()
 export class LlmClientService {
@@ -101,8 +133,9 @@ export class LlmClientService {
 
   constructor(private readonly config: ConfigService) {}
 
-  async complete(system: string, user: string): Promise<LlmCompletion> {
-    const s = readLlmSettings(this.config);
+  /** Uses `settings` (a saved integration) when given, else the server's LLM_* settings. */
+  async complete(system: string, user: string, settings?: LlmSettings): Promise<LlmCompletion> {
+    const s = settings ?? readLlmSettings(this.config);
     if (!s) throw new ServiceUnavailableException('No LLM is configured on this server (see LLM_PROVIDER, LLM_MODEL and LLM_API_KEY).');
     const { url, headers, body } = this.buildRequest(s, system, user);
 

@@ -40,6 +40,7 @@ import { AzureArchitecture } from './azure-builder/azure-architecture.entity';
 import { AzureIacBundle } from './azure-builder/azure-iac-bundle.entity';
 import { AzureWhatIf } from './azure-builder/azure-what-if.entity';
 import { AzureApproval } from './azure-builder/azure-approval.entity';
+import { LlmConnection } from './llm-summary/llm-connection.entity';
 import { AzureDeployment } from './azure-builder/azure-deployment.entity';
 import { AzureOperateCheck } from './azure-builder/azure-operate-check.entity';
 import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entity';
@@ -109,6 +110,7 @@ export const AppDataSource = new DataSource({
     AzureDeployment,
     AzureOperateCheck,
     AiTokenAlert,
+    LlmConnection,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,

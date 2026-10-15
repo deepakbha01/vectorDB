@@ -1,7 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
-import { readLlmSettings } from '../llm-summary/llm-client.service';
 
 export interface FeatureFlags {
   /** AI Factory guided workflow (Waves 1+). Off by default so the existing VectorDB workflow is unchanged. */
@@ -12,7 +11,7 @@ export interface FeatureFlags {
   dataExplorer: boolean;
   /** Azure AI Factory Builder: use case -> Azure architecture -> Bicep. Independent of the AI Factory flag. */
   azureBuilder: boolean;
-  /** Optional LLM-written summaries of assessment results. Needs LLM_SUMMARY_ENABLED plus a complete LLM_* configuration. */
+  /** Optional LLM-written summaries of assessment results. The LLM is chosen from the in-app integrations or the LLM_* settings. */
   llmSummary: boolean;
 }
 
@@ -40,7 +39,7 @@ export class FeaturesController {
       tokenObservability: aiFactory && this.on('TOKEN_OBSERVABILITY_ENABLED'),
       dataExplorer: this.on('DATA_EXPLORER_ENABLED'),
       azureBuilder: this.on('AZURE_BUILDER_ENABLED'),
-      llmSummary: this.on('LLM_SUMMARY_ENABLED') && readLlmSettings(this.config) !== null,
+      llmSummary: this.on('LLM_SUMMARY_ENABLED'),
     };
   }
 }

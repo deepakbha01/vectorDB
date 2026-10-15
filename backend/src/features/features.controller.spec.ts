@@ -33,12 +33,8 @@ describe('FeaturesController', () => {
     expect(controllerWithEnv({ AI_FACTORY_ENABLED: 'true' }).flags().azureBuilder).toBe(false);
   });
 
-  it('turns LLM summaries on only when the flag is set and an LLM is fully configured', () => {
-    const llm = { LLM_PROVIDER: 'anthropic', LLM_MODEL: 'claude-sonnet-5-5', LLM_API_KEY: 'k' };
-    expect(controllerWithEnv({ LLM_SUMMARY_ENABLED: 'true', ...llm }).flags().llmSummary).toBe(true);
-    expect(controllerWithEnv(llm).flags().llmSummary).toBe(false);
-    expect(controllerWithEnv({ LLM_SUMMARY_ENABLED: 'true', LLM_PROVIDER: 'anthropic', LLM_MODEL: 'claude-sonnet-5-5' }).flags().llmSummary).toBe(false);
-    expect(controllerWithEnv({ LLM_SUMMARY_ENABLED: 'true', LLM_PROVIDER: 'openai', LLM_MODEL: 'llama3', LLM_BASE_URL: 'http://localhost:11434/v1' }).flags().llmSummary).toBe(true);
-    expect(controllerWithEnv({ LLM_SUMMARY_ENABLED: 'true', LLM_PROVIDER: 'azure-openai', LLM_MODEL: 'gpt-4o', LLM_API_KEY: 'k' }).flags().llmSummary).toBe(false);
+  it('turns LLM summaries on by their own flag - the LLM itself can be added in the app', () => {
+    expect(controllerWithEnv({ LLM_SUMMARY_ENABLED: 'true' }).flags().llmSummary).toBe(true);
+    expect(controllerWithEnv({ LLM_PROVIDER: 'anthropic', LLM_MODEL: 'claude-sonnet-5-5', LLM_API_KEY: 'k' }).flags().llmSummary).toBe(false);
   });
 });

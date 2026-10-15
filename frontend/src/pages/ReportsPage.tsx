@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { apiClient, Project, ReportFormat, ReportType } from '../api/client';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
+import { LlmSummaryCard } from '../components/LlmSummaryCard';
 
 const REPORT_TYPES: Array<{ type: ReportType; label: string }> = [
   { type: 'discovery', label: 'Discovery: Workload Qualification (Phase 1)' },
@@ -68,6 +69,7 @@ export function ReportsPage() {
           so far. A report can only be generated once its phase has produced at least one deliverable.
         </p>
         {error && <div className="error-text" style={{ marginBottom: 12 }}>{error}</div>}
+        <LlmSummaryCard projectId={project.id} />
         <ul className="project-list">
           {REPORT_TYPES.map((r) => (
             <li key={r.type}>

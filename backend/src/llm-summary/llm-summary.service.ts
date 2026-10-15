@@ -7,6 +7,7 @@ import { InferenceService } from '../inference/inference.service';
 import { FinalRecommendationService } from '../ai-factory/final/final.service';
 import { FeaturesController } from '../features/features.controller';
 import { LlmClientService, LlmProvider } from './llm-client.service';
+import { LlmConnectionsService } from './llm-connections.service';
 import { compactFacts, LlmSummaryAudience, LlmSummarySubject, systemPrompt, userPrompt } from './llm-summary.prompt';
 
 export interface LlmSummary {
@@ -15,6 +16,8 @@ export interface LlmSummary {
   text: string;
   provider: LlmProvider;
   model: string;
+  /** The LLM integration used. */
+  connection: { id: string; name: string };
   generatedAt: string;
   truncated: boolean;
   usage: { inputTokens: number; outputTokens: number } | null;
@@ -43,6 +46,7 @@ export class LlmSummaryService {
   constructor(
     config: ConfigService,
     private readonly llm: LlmClientService,
+    private readonly connections: LlmConnectionsService,
     private readonly projects: ProjectsService,
     private readonly vectorDbSelection: VectorDbSelectionService,
     private readonly inference: InferenceService,
@@ -51,16 +55,18 @@ export class LlmSummaryService {
     this.features = new FeaturesController(config);
   }
 
-  async summarize(projectId: string, subject: LlmSummarySubject, audience: LlmSummaryAudience, user: AuthenticatedUser): Promise<LlmSummary> {
+  async summarize(projectId: string, subject: LlmSummarySubject, audience: LlmSummaryAudience, user: AuthenticatedUser, connectionId?: string): Promise<LlmSummary> {
     const project = await this.projects.findOne(projectId, user);
     const record = await this.load(projectId, subject, user);
-    const completion = await this.llm.complete(systemPrompt(audience), userPrompt(subject, project.name, compactFacts(record.facts)));
+    const llm = await this.connections.resolve(connectionId);
+    const completion = await this.llm.complete(systemPrompt(audience), userPrompt(subject, project.name, compactFacts(record.facts)), llm.settings);
     return {
       subject,
       audience,
       text: completion.text,
       provider: completion.provider,
       model: completion.model,
+      connection: { id: llm.connectionId, name: llm.connectionName },
       generatedAt: new Date().toISOString(),
       truncated: completion.truncated,
       usage: completion.usage,

@@ -17,6 +17,7 @@ import { CapacityPage } from './pages/CapacityPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { AuditLogPage } from './pages/AuditLogPage';
 import { UsersManagementPage } from './pages/UsersManagementPage';
+import { LlmIntegrationsPage } from './pages/LlmIntegrationsPage';
 import { InferencePage } from './pages/InferencePage';
 import { AiFactoryPage } from './pages/AiFactoryPage';
 import { WorkloadProfilePage } from './pages/WorkloadProfilePage';
@@ -51,6 +52,7 @@ export function App() {
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/admin/users" element={<UsersManagementPage />} />
+          <Route path="/admin/llm-integrations" element={<LlmIntegrationsPage />} />
           <Route path="/patterns" element={<PatternLibraryPage />} />
           <Route path="/projects/new" element={<ProjectCreatePage />} />
           <Route path="/projects/:id/discovery" element={<DiscoveryPage />} />
