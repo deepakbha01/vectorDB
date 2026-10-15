@@ -652,6 +652,21 @@ export function buildManagementReport(project: Project, parts: ManagementReportP
     });
   }
 
+  // Absent on Final Recommendations saved before the roadmap existed.
+  const roadmap = parts.finalRecommendation?.roadmap;
+  if (roadmap?.items.length) {
+    sections.push({
+      heading: 'Next-generation roadmap',
+      paragraphs: [roadmap.note],
+      tables: [
+        {
+          headers: ['Item', 'Today', 'Next generation', 'Impact', 'Availability', 'Prerequisites'],
+          rows: roadmap.items.map((i) => [i.title, i.today, i.nextGeneration, i.impact, i.availability, i.prerequisites.join('; ')]),
+        },
+      ],
+    });
+  }
+
   sections.push({ heading: 'Management actions and decisions required', tables: [{ headers: ['#', 'Priority', 'Action', 'Reason'], rows: actionRows(project, parts, performance) }] });
 
   // Every table that shows a * cost gets the same explanation underneath it.

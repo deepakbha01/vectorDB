@@ -45,6 +45,11 @@ export interface FinalResult {
   adr: Array<{ number: number; title: string; lines: string[]; source: string | null; status: Presence }>;
   implementationPlan: Record<'build' | 'deploy' | 'benchmark' | 'secure' | 'operate' | 'scale', string[]>;
   gaps: string[];
+  /** Not-yet-available hardware that would change the design; absent on older results. Never part of the verdict. */
+  roadmap?: {
+    items: Array<{ title: string; today: string; nextGeneration: string; impact: string; availability: string; prerequisites: string[]; source: string }>;
+    note: string;
+  } | null;
 }
 
 export interface FinalRecommendation {

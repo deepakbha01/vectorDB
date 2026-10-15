@@ -217,3 +217,42 @@ describe('token evidence in the cost stage (Token Observability, phase 8)', () =
     expect(adr.lines).toContain('Token consumption: ~7,050 tokens / request, ~7.1B / month, ~$12,000 / month (estimate v2; live telemetry received)');
   });
 });
+
+describe('next-generation roadmap', () => {
+  const nextGeneration = {
+    inferenceVersion: 3,
+    today: '3 × NVIDIA H200 (141 GB) (FP8)',
+    option: '2 × NVIDIA Rubin, Vera Rubin NVL72 (288 GB per GPU) (FP4)',
+    precision: 'fp4',
+    meetsTargets: true,
+    comparison: '2 × Rubin at peak vs 3 × H200 today: $40,000 vs $19,418/month (106% more).',
+    availabilityNote: 'Ramping into production since mid-2026.',
+    rackSystem: { label: 'NVIDIA Vera Rubin NVL72', rackPowerKw: 230, rackPowerEstimated: true, cooling: 'liquid' as const, cpuLabel: 'NVIDIA Vera' },
+  };
+
+  it('has no roadmap without next-generation facts, and none on older inputs', () => {
+    expect(buildFinalRecommendation(inputs()).roadmap).toBeNull();
+    expect(buildFinalRecommendation(inputs({ roadmap: { nextGeneration: null, previewHostCpu: null } })).roadmap).toBeNull();
+  });
+
+  it('turns a next-generation GPU into a roadmap item with its prerequisites', () => {
+    const [item] = buildFinalRecommendation(inputs({ roadmap: { nextGeneration, previewHostCpu: null } })).roadmap!.items;
+    expect(item).toMatchObject({ title: 'Next-generation GPU: NVIDIA Vera Rubin NVL72', today: nextGeneration.today, nextGeneration: nextGeneration.option, impact: nextGeneration.comparison, source: 'inference' });
+    expect(item.prerequisites).toEqual([
+      'Direct-to-chip liquid cooling for on-premises racks (or cloud capacity from a provider that offers NVIDIA Vera Rubin NVL72)',
+      '~230 kW per rack (estimate - confirm with the OEM)',
+      'NVIDIA Vera hosts are Arm64: aarch64 builds of the serving runtime and its sidecars',
+      'FP4 (NVFP4) quantisation validated on the customer evaluation set',
+      'Re-run the Inference assessment with contracted prices once it is available (Inference v3 uses an estimate)',
+    ]);
+  });
+
+  it('adds a preview host CPU, and never changes the readiness verdict', () => {
+    const roadmap = { nextGeneration: { ...nextGeneration, meetsTargets: false }, previewHostCpu: { infrastructureVersion: 2, label: 'NVIDIA Vera', availabilityNote: 'Partner servers from H2 2026.' } };
+    const r = buildFinalRecommendation(inputs({ roadmap }));
+    expect(r.roadmap!.items.map((i) => i.title)).toEqual(['Next-generation GPU: NVIDIA Vera Rubin NVL72', 'Host CPU: NVIDIA Vera']);
+    expect(r.roadmap!.items[0].impact).toMatch(/it would not change the decision as sized\.$/);
+    expect(r.roadmap!.items[1]).toMatchObject({ availability: 'Partner servers from H2 2026.', source: 'infrastructure_design' });
+    expect(r.readiness).toEqual(buildFinalRecommendation(inputs()).readiness);
+  });
+});

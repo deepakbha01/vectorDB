@@ -12,6 +12,8 @@ export interface FinalInputs {
   decisions: DecisionRecord[];
   /** Token Observability enabled: the cost stage then also weighs token evidence. Off = unchanged behaviour. */
   tokenObservability?: boolean;
+  /** Next-generation hardware facts for the roadmap; absent = no roadmap. */
+  roadmap?: RoadmapFacts;
 }
 
 export interface GateStage {
@@ -88,4 +90,35 @@ export interface FinalResult {
   adr: AdrSection[];
   implementationPlan: Record<'build' | 'deploy' | 'benchmark' | 'secure' | 'operate' | 'scale', string[]>;
   gaps: string[];
+  /** Hardware not yet generally available that would change the design - never part of the verdict. Absent on results saved before it. */
+  roadmap?: { items: RoadmapItem[]; note: string } | null;
+}
+
+export interface RoadmapItem {
+  title: string;
+  /** What the design uses today. */
+  today: string;
+  nextGeneration: string;
+  /** What changes - GPUs, cost, latency. */
+  impact: string;
+  availability: string;
+  /** What has to be in place before it can be adopted. */
+  prerequisites: string[];
+  source: PhaseKey;
+}
+
+/** Next-generation facts from the latest Inference and Infrastructure records, gathered by the service. */
+export interface RoadmapFacts {
+  nextGeneration: {
+    inferenceVersion: number;
+    today: string;
+    option: string;
+    precision: string;
+    meetsTargets: boolean;
+    comparison: string;
+    availabilityNote: string;
+    rackSystem: { label: string; rackPowerKw: number; rackPowerEstimated: boolean; cooling: 'liquid' | 'air'; cpuLabel: string } | null;
+  } | null;
+  /** Set only when the chosen on-premises host CPU is not yet generally available. */
+  previewHostCpu: { infrastructureVersion: number; label: string; availabilityNote: string } | null;
 }
