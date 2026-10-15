@@ -307,6 +307,25 @@ The summary is not saved, and it never changes a result, a report or a later
 phase. Check any figure against the rule-based result before you reuse it.
 
 Generating a summary needs the admin or architect role, because each one is a
-paid LLM call. The server supports Azure OpenAI, OpenAI, Anthropic, and any
-OpenAI-compatible server such as Ollama or vLLM for on-premises use. Requests
-appear in the audit log.
+paid LLM call. Requests appear in the audit log.
+
+The server admin chooses the LLM with `LLM_PROVIDER`:
+
+| Provider | `LLM_PROVIDER` |
+|---|---|
+| OpenAI | `openai` |
+| Azure OpenAI | `azure-openai` (set `LLM_BASE_URL` to the resource) |
+| Anthropic (Claude) | `anthropic` |
+| Google Gemini | `gemini` |
+| Mistral | `mistral` |
+| Groq | `groq` |
+| DeepSeek | `deepseek` |
+| xAI (Grok) | `xai` |
+| OpenRouter | `openrouter` |
+| Together AI | `together` |
+| Ollama (local, no key) | `ollama` |
+| Any other OpenAI-style server: vLLM, LM Studio, LiteLLM, an internal gateway | `openai-compatible` (set `LLM_BASE_URL`) |
+| Any service with the Anthropic Messages API | `anthropic-compatible` (set `LLM_BASE_URL`) |
+
+Set `LLM_MODEL` to the provider's model name and `LLM_API_KEY` to its key, then
+restart the backend. See `backend/.env.example`.

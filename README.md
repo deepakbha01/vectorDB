@@ -406,8 +406,9 @@ instead of the server's `TARGET_*` settings, stored encrypted with
 AI summaries (behind `LLM_SUMMARY_ENABLED`, off by default) are an optional,
 on-demand step: the Vector DB Selection, Inference Assessment and Final
 Recommendation pages get a *Generate AI summary* button that sends the saved
-rule-based result to an LLM (Azure OpenAI, OpenAI, Anthropic or an
-OpenAI-compatible server such as Ollama) for a written narrative. The
+rule-based result to an LLM (OpenAI, Azure OpenAI, Anthropic, Gemini,
+Mistral, Groq, DeepSeek, xAI, OpenRouter, Together, Ollama, or any
+OpenAI- or Anthropic-compatible server) for a written narrative. The
 assessments themselves stay deterministic; the narrative is never saved and
 never changes a decision. See `USER_GUIDE.md` §13.
 

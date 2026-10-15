@@ -19,6 +19,14 @@ describe('readLlmSettings', () => {
     expect(readLlmSettings(configWith({ LLM_PROVIDER: 'azure-openai', LLM_MODEL: 'gpt-4o', LLM_API_KEY: 'k', LLM_BASE_URL: 'https://x.openai.azure.com/' }))?.baseUrl).toBe('https://x.openai.azure.com');
   });
 
+  it('needs a base URL for the generic compatible providers, and a key for hosted ones', () => {
+    expect(readLlmSettings(configWith({ LLM_PROVIDER: 'openai-compatible', LLM_MODEL: 'm' }))).toBeNull();
+    expect(readLlmSettings(configWith({ LLM_PROVIDER: 'openai-compatible', LLM_MODEL: 'm', LLM_BASE_URL: 'http://vllm:8000/v1' }))?.protocol).toBe('openai');
+    expect(readLlmSettings(configWith({ LLM_PROVIDER: 'anthropic-compatible', LLM_MODEL: 'm', LLM_API_KEY: 'k' }))).toBeNull();
+    expect(readLlmSettings(configWith({ LLM_PROVIDER: 'gemini', LLM_MODEL: 'gemini-2.5-flash' }))).toBeNull();
+    expect(readLlmSettings(configWith({ LLM_PROVIDER: 'toString', LLM_MODEL: 'm', LLM_API_KEY: 'k' }))).toBeNull();
+  });
+
   it('allows a keyless OpenAI-compatible local server and falls back to default limits', () => {
     const s = readLlmSettings(configWith({ LLM_PROVIDER: 'OpenAI', LLM_MODEL: 'llama3', LLM_BASE_URL: 'http://localhost:11434/v1', LLM_MAX_OUTPUT_TOKENS: 'lots' }));
     expect(s).toMatchObject({ provider: 'openai', apiKey: '', maxOutputTokens: 1200, timeoutMs: 60000 });
@@ -67,6 +75,38 @@ describe('LlmClientService', () => {
     expect(init.headers).toMatchObject({ 'x-api-key': 'secret', 'anthropic-version': '2023-06-01' });
     expect(JSON.parse(init.body)).toEqual({ model: 'claude-sonnet-5-5', max_tokens: 1200, system: 'sys', messages: [{ role: 'user', content: 'usr' }] });
     expect(out.text).toBe('Part one. Part two.');
+  });
+
+  it.each([
+    ['gemini', 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'],
+    ['mistral', 'https://api.mistral.ai/v1/chat/completions'],
+    ['groq', 'https://api.groq.com/openai/v1/chat/completions'],
+    ['deepseek', 'https://api.deepseek.com/v1/chat/completions'],
+    ['xai', 'https://api.x.ai/v1/chat/completions'],
+    ['openrouter', 'https://openrouter.ai/api/v1/chat/completions'],
+    ['together', 'https://api.together.xyz/v1/chat/completions'],
+  ])('calls %s on its OpenAI-compatible endpoint with a bearer key', async (provider, url) => {
+    fetchMock.mockResolvedValue(okJson({ choices: [{ message: { content: 'ok' } }] }));
+    const out = await new LlmClientService(configWith({ LLM_PROVIDER: provider, LLM_MODEL: 'm', LLM_API_KEY: 'secret' })).complete('s', 'u');
+    const [calledUrl, init] = fetchMock.mock.calls[0];
+    expect(calledUrl).toBe(url);
+    expect(init.headers.Authorization).toBe('Bearer secret');
+    expect(JSON.parse(init.body)).toMatchObject({ model: 'm', max_tokens: 1200 });
+    expect(out.provider).toBe(provider);
+  });
+
+  it('runs Ollama locally without a key', async () => {
+    fetchMock.mockResolvedValue(okJson({ choices: [{ message: { content: 'ok' } }] }));
+    await new LlmClientService(configWith({ LLM_PROVIDER: 'ollama', LLM_MODEL: 'llama3.1' })).complete('s', 'u');
+    expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:11434/v1/chat/completions');
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBeUndefined();
+  });
+
+  it('sends anthropic-compatible providers the Messages API at their own URL', async () => {
+    fetchMock.mockResolvedValue(okJson({ content: [{ type: 'text', text: 'ok' }] }));
+    await new LlmClientService(configWith({ LLM_PROVIDER: 'anthropic-compatible', LLM_MODEL: 'm', LLM_API_KEY: 'k', LLM_BASE_URL: 'https://gateway.example/anthropic' })).complete('s', 'u');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://gateway.example/anthropic/v1/messages');
+    expect(fetchMock.mock.calls[0][1].headers['x-api-key']).toBe('k');
   });
 
   it('reports provider errors without the key', async () => {

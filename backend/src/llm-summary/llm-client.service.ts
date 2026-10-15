@@ -1,11 +1,44 @@
 import { BadGatewayException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-export type LlmProvider = 'azure-openai' | 'openai' | 'anthropic';
-const PROVIDERS: readonly LlmProvider[] = ['azure-openai', 'openai', 'anthropic'];
+type Protocol = 'openai' | 'azure-openai' | 'anthropic';
+
+interface ProviderPreset {
+  /** Which wire format the provider speaks. */
+  protocol: Protocol;
+  /** Used when LLM_BASE_URL is empty; '' means LLM_BASE_URL is required. */
+  defaultBaseUrl: string;
+  /** Local servers usually run without a key. */
+  keyOptional?: boolean;
+}
+
+/**
+ * Supported LLM_PROVIDER values. Most hosted providers expose an
+ * OpenAI-compatible chat-completions API, so adding one is a new row here.
+ */
+export const LLM_PROVIDERS = {
+  openai: { protocol: 'openai', defaultBaseUrl: 'https://api.openai.com/v1' },
+  'azure-openai': { protocol: 'azure-openai', defaultBaseUrl: '' },
+  anthropic: { protocol: 'anthropic', defaultBaseUrl: 'https://api.anthropic.com' },
+  gemini: { protocol: 'openai', defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
+  mistral: { protocol: 'openai', defaultBaseUrl: 'https://api.mistral.ai/v1' },
+  groq: { protocol: 'openai', defaultBaseUrl: 'https://api.groq.com/openai/v1' },
+  deepseek: { protocol: 'openai', defaultBaseUrl: 'https://api.deepseek.com/v1' },
+  xai: { protocol: 'openai', defaultBaseUrl: 'https://api.x.ai/v1' },
+  openrouter: { protocol: 'openai', defaultBaseUrl: 'https://openrouter.ai/api/v1' },
+  together: { protocol: 'openai', defaultBaseUrl: 'https://api.together.xyz/v1' },
+  ollama: { protocol: 'openai', defaultBaseUrl: 'http://localhost:11434/v1', keyOptional: true },
+  /** Any other OpenAI-compatible server (vLLM, LM Studio, LiteLLM, an internal gateway). */
+  'openai-compatible': { protocol: 'openai', defaultBaseUrl: '', keyOptional: true },
+  /** Any service that speaks the Anthropic Messages API at its own URL. */
+  'anthropic-compatible': { protocol: 'anthropic', defaultBaseUrl: '' },
+} satisfies Record<string, ProviderPreset>;
+
+export type LlmProvider = keyof typeof LLM_PROVIDERS;
 
 export interface LlmSettings {
   provider: LlmProvider;
+  protocol: Protocol;
   /** Model name; for Azure OpenAI this is the deployment name. */
   model: string;
   apiKey: string;
@@ -24,12 +57,6 @@ export interface LlmCompletion {
   usage: { inputTokens: number; outputTokens: number } | null;
 }
 
-const DEFAULT_BASE_URL: Record<LlmProvider, string> = {
-  'azure-openai': '',
-  openai: 'https://api.openai.com/v1',
-  anthropic: 'https://api.anthropic.com',
-};
-
 const positiveInt = (raw: string | undefined, fallback: number) => {
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? n : fallback;
@@ -37,21 +64,23 @@ const positiveInt = (raw: string | undefined, fallback: number) => {
 
 /**
  * Reads the LLM_* settings, or returns null when they are incomplete. A key is
- * optional only for an OpenAI-compatible server at a custom LLM_BASE_URL
- * (Ollama, vLLM, LM Studio on the local network).
+ * optional only for local servers (ollama, openai-compatible) and for openai
+ * pointed at a custom LLM_BASE_URL, which predates the openai-compatible preset.
  */
 export function readLlmSettings(config: ConfigService): LlmSettings | null {
   const get = (k: string) => String(config.get<string>(k) ?? '').trim();
-  const provider = get('LLM_PROVIDER').toLowerCase() as LlmProvider;
-  if (!PROVIDERS.includes(provider)) return null;
+  const provider = get('LLM_PROVIDER').toLowerCase();
+  if (!Object.prototype.hasOwnProperty.call(LLM_PROVIDERS, provider)) return null;
+  const preset: ProviderPreset = LLM_PROVIDERS[provider as LlmProvider];
   const model = get('LLM_MODEL');
   const apiKey = get('LLM_API_KEY');
   const customBaseUrl = get('LLM_BASE_URL').replace(/\/+$/, '');
-  const baseUrl = customBaseUrl || DEFAULT_BASE_URL[provider];
+  const baseUrl = customBaseUrl || preset.defaultBaseUrl;
   if (!model || !baseUrl) return null;
-  if (!apiKey && !(provider === 'openai' && customBaseUrl)) return null;
+  if (!apiKey && !preset.keyOptional && !(provider === 'openai' && customBaseUrl)) return null;
   return {
-    provider,
+    provider: provider as LlmProvider,
+    protocol: preset.protocol,
     model,
     apiKey,
     baseUrl,
@@ -91,13 +120,13 @@ export class LlmClientService {
       this.logger.warn(`${s.provider} returned ${response.status}: ${detail}`);
       throw new BadGatewayException(`The LLM provider (${s.provider}) returned ${response.status}: ${detail}`);
     }
-    const parsed = s.provider === 'anthropic' ? parseAnthropic(payload) : parseOpenAi(payload);
+    const parsed = s.protocol === 'anthropic' ? parseAnthropic(payload) : parseOpenAi(payload);
     if (!parsed.text) throw new BadGatewayException(`The LLM provider (${s.provider}) returned an empty answer.`);
     return { ...parsed, provider: s.provider, model: s.model };
   }
 
   private buildRequest(s: LlmSettings, system: string, user: string): { url: string; headers: Record<string, string>; body: Record<string, unknown> } {
-    if (s.provider === 'anthropic') {
+    if (s.protocol === 'anthropic') {
       return {
         url: `${s.baseUrl}/v1/messages`,
         headers: { 'x-api-key': s.apiKey, 'anthropic-version': '2023-06-01' },
@@ -108,15 +137,15 @@ export class LlmClientService {
       { role: 'system', content: system },
       { role: 'user', content: user },
     ];
-    if (s.provider === 'azure-openai') {
+    if (s.protocol === 'azure-openai') {
       return {
         url: `${s.baseUrl}/openai/deployments/${encodeURIComponent(s.model)}/chat/completions?api-version=${encodeURIComponent(s.apiVersion)}`,
         headers: { 'api-key': s.apiKey },
         body: { messages, max_completion_tokens: s.maxOutputTokens },
       };
     }
-    // OpenAI itself takes max_completion_tokens; OpenAI-compatible local servers still expect max_tokens.
-    const isOpenAi = s.baseUrl === DEFAULT_BASE_URL.openai;
+    // OpenAI itself takes max_completion_tokens; the OpenAI-compatible providers still expect max_tokens.
+    const isOpenAi = s.baseUrl === LLM_PROVIDERS.openai.defaultBaseUrl;
     return {
       url: `${s.baseUrl}/chat/completions`,
       headers: s.apiKey ? { Authorization: `Bearer ${s.apiKey}` } : {},
