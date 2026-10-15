@@ -8,7 +8,7 @@
 # on-premises procurement lead time) before committing. Tiers are relative
 # 1-5 planning ratings (5 = most / easiest).
 
-rulesVersion: infrastructure-2026.10-2
+rulesVersion: infrastructure-2026.10-3
 
 targets:
   on_premises:
@@ -103,6 +103,31 @@ scoringWeights:
   coLocation: 0.20
 # Data control counts more for restricted data (weight multiplier, re-normalised).
 restrictedDataControlMultiplier: 2
+
+# Host CPU for the on-premises CPU nodes (vector database, application,
+# gateway, agent tools). x86 is the default. Grace and Vera are Arm64: every
+# image on those nodes must ship an arm64 build. Rack-scale GPU systems
+# (config/inference.yaml systems) bring their own Grace / Vera host CPUs
+# whatever is chosen here. Cloud CPU families are the provider's choice and
+# are not modelled.
+hostCpus:
+  x86:
+    label: x86-64 (Intel Xeon / AMD EPYC)
+    arch: x86_64
+    availability: ga
+  grace:
+    label: NVIDIA Grace (72 Arm Neoverse V2 cores, LPDDR5X)
+    arch: arm64
+    availability: ga
+  vera:
+    label: NVIDIA Vera (88 Olympus Arm cores, up to 1.5 TB LPDDR5X at 1.2 TB/s)
+    arch: arm64
+    availability: preview
+    availabilityNote: In full production; first systems with early customers, partner servers (Dell, HPE, Lenovo, Supermicro) from the second half of 2026 - confirm delivery dates.
+
+# Vector databases with official arm64 (aarch64) Linux builds or images.
+# Platforms not listed need their arm64 support confirmed.
+arm64VectorPlatforms: [postgres_pgvector, oracle, milvus, qdrant, weaviate, chroma, elasticsearch, redis, lancedb]
 
 # Sizing assumptions for components the upstream phases do not size.
 assumptions:

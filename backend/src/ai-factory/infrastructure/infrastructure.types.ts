@@ -28,6 +28,9 @@ export interface InfrastructureCatalogue {
   scoringWeights: Record<'elasticity' | 'operationalSimplicity' | 'dataControl' | 'availability' | 'coLocation', number>;
   restrictedDataControlMultiplier: number;
   assumptions: { applicationNodes: number; applicationVcpusPerNode: number; modelVersionsKept: number; warmStandbyRtoMinutes: number };
+  /** Host CPUs for on-premises CPU nodes (absent in older / test catalogues - then x86 is assumed and nothing is checked). */
+  hostCpus?: Record<HostCpuId, HostCpuSpec>;
+  arm64VectorPlatforms?: string[];
   /** Wave 13 on-premises reference stacks (absent in older / test catalogues - then no stack is recommended). */
   onPremStacks?: Record<string, OnPremStackSpec>;
   estateStorageVendors?: Record<string, string>;
@@ -35,6 +38,15 @@ export interface InfrastructureCatalogue {
   stackScoringWeights?: Record<StackCriterion, number>;
   trainingThroughputMultiplier?: number;
   snapshotReserve?: number;
+}
+
+export type HostCpuId = 'x86' | 'grace' | 'vera';
+
+export interface HostCpuSpec {
+  label: string;
+  arch: 'x86_64' | 'arm64';
+  availability: 'ga' | 'preview';
+  availabilityNote?: string;
 }
 
 export type StorageTier = 'block' | 'file' | 'object' | 'parallel';
@@ -114,6 +126,8 @@ export interface InfraContext {
   estate?: OnPremEstate;
   /** On-premises data-centre limits for rack-scale systems; absent on older contexts. */
   facility?: { liquidCooling: boolean | null; maxRackPowerKw: number | null };
+  /** Host CPU for on-premises CPU nodes; absent on older contexts (= x86). */
+  hostCpu?: HostCpuId;
 }
 
 /** A rack-scale system (e.g. GB300 NVL72) as Infrastructure Design needs it. */

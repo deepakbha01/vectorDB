@@ -1,4 +1,4 @@
-import { ComponentNeed, InfraContext, InfrastructureCatalogue, InfrastructureResult, Placement, PlacementCandidate, PlatformKind, TargetId } from './infrastructure.types';
+import { ComponentNeed, HostCpuSpec, InfraContext, InfrastructureCatalogue, InfrastructureResult, Placement, PlacementCandidate, PlatformKind, TargetId } from './infrastructure.types';
 import { ScoreContribution, scoreBreakdown } from '../eligibility/score-breakdown';
 import { recommendOnPremStack } from './onprem-stack.engine';
 
@@ -6,6 +6,11 @@ const round = (n: number) => Math.round(n * 1000) / 1000;
 const gb = (n: number) => `${Math.round(n * 10) / 10} GB`;
 const TIE_EPSILON = 0.001;
 const PLATFORM_LABEL: Record<PlatformKind, string> = { kubernetes: 'Kubernetes', vm: 'VMs', managed: 'managed service', saas: 'vendor SaaS', in_app: 'embedded in the application' };
+
+/** The host CPU for on-premises CPU nodes; null when the catalogue has none (older / test catalogues). */
+export function hostCpuOf(ctx: InfraContext, cat: InfrastructureCatalogue): HostCpuSpec | null {
+  return cat.hostCpus?.[ctx.hostCpu ?? 'x86'] ?? null;
+}
 
 /** Candidate (target × platform) pairs a component could use, before eligibility. */
 export function candidatePairs(need: ComponentNeed, cat: InfrastructureCatalogue): Array<{ target: TargetId; platform: PlatformKind; label: string }> {
@@ -71,6 +76,21 @@ export function checkPlacement(need: ComponentNeed, target: TargetId, platform: 
     } else {
       passed.push(`The data centre delivers ${f.maxRackPowerKw} kW per rack, enough for ${rack.label} (${draw}).`);
     }
+  }
+  // On-premises CPU nodes run on the chosen host CPU: an Arm64 host needs arm64 builds of everything on it.
+  const host = onPrem && need.id !== 'inference' && platform !== 'saas' && platform !== 'managed' ? hostCpuOf(ctx, cat) : null;
+  if (host) {
+    const name = host.label.split(' (')[0];
+    if (host.arch === 'arm64') {
+      if (need.id === 'vector_database') {
+        const db = ctx.vector?.platform;
+        if (db && (cat.arm64VectorPlatforms ?? []).includes(db)) passed.push(`${db} ships arm64 builds for ${name}.`);
+        else conditions.push(`Confirm ${db ?? 'the vector database'} has a supported arm64 build for ${name}.`);
+      } else {
+        conditions.push(`Every application, gateway and agent-tool image needs an arm64 build for ${name} - check third-party dependencies.`);
+      }
+    }
+    if (host.availability === 'preview') conditions.push(`${name}: ${host.availabilityNote ?? 'not yet generally available.'}`);
   }
   if (onPrem && ctx.availabilityTargetPercent >= ctx.haThreshold && !ctx.multipleOnPremSites) {
     conditions.push(`Availability ${ctx.availabilityTargetPercent}% needs at least two independent failure domains (sites or data halls) on-premises.`);
@@ -164,11 +184,19 @@ export function designInfrastructure(ctx: InfraContext, cat: InfrastructureCatal
     sections.compute.unshift(
       `Inference rack-scale system: ${rack.racks} × ${rack.label} rack(s) - ${rack.gpusPerRack} GPUs + ${rack.cpusPerRack} ${rack.cpuLabel} CPUs per rack; ${total} GPUs needed at peak${spare > 0 ? `, ${spare} spare for growth or failover` : ''}`,
       `Facility: ~${rack.rackPowerKw} kW per rack (~${rack.racks * rack.rackPowerKw} kW in total)${rack.rackPowerEstimated ? ' - estimate, confirm with the OEM' : ''}; ${rack.cooling === 'liquid' ? 'direct-to-chip liquid cooling with a coolant distribution unit and facility water' : 'air cooled'}`,
+      `Inference hosts: the rack's own ${rack.cpuLabel} CPUs (Arm64) - the serving runtime and its sidecars must be aarch64 builds`,
     );
     sizing.unshift(
       { label: 'Racks (on-premises)', value: `${rack.racks} × ${rack.label}`, evidenceType: 'estimated' },
       { label: 'Rack power', value: `~${rack.rackPowerKw} kW per rack`, evidenceType: rack.rackPowerEstimated ? 'assumption' : 'vendor_listed' },
     );
+  }
+  // The host CPU only matters for CPU nodes that land on-premises.
+  const host = hostCpuOf(ctx, cat);
+  const cpuOnPrem = placements.some((p) => p.component !== 'inference' && p.chosen?.target === 'on_premises' && p.chosen.platform !== 'saas' && p.chosen.platform !== 'managed');
+  if (host && cpuOnPrem) {
+    sections.compute.push(`Host CPU for on-premises CPU nodes (vector database, application, agent tools): ${host.label}${host.arch === 'arm64' ? ' - Arm64, every image needs an arm64 build' : ''}`);
+    sizing.push({ label: 'Host CPU (on-premises)', value: host.label, evidenceType: 'vendor_listed' });
   }
   const onPremStack = recommendOnPremStack(ctx, cat, placements);
   // The stack only shapes the chosen design when something actually lands on-premises; otherwise it stays a what-if.
