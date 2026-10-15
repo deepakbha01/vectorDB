@@ -75,7 +75,7 @@ describe('InferenceService', () => {
 
     it.each([
       ['unknown model', { modelId: 'gpt-x' }],
-      ['unknown precision', { precision: 'fp4' }],
+      ['unknown precision', { precision: 'fp2' }],
       ['unknown API tier', { managedApiTierId: 'premium' }],
       ['unknown GPU', { allowedGpuIds: ['tpu-v5'] }],
       ['tokens above max context', { avgInputTokens: 8000, avgOutputTokens: 500, maxContextTokens: 8192 }],
