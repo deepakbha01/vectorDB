@@ -187,7 +187,7 @@ export class LlmConnectionsService {
   async test(id: string): Promise<{ ok: true; provider: LlmProvider; model: string; latencyMs: number; reply: string }> {
     const { settings } = await this.resolve(id);
     const start = Date.now();
-    const out = await this.llm.complete('You are a connectivity check. Answer in at most five words.', 'Reply with: connection OK', { ...settings, maxOutputTokens: 64 });
+    const out = await this.llm.complete('You are a connectivity check. Answer in at most five words.', 'Reply with: connection OK', { ...settings, maxOutputTokens: Math.min(settings.maxOutputTokens, 1024) });
     return { ok: true, provider: out.provider, model: out.model, latencyMs: Date.now() - start, reply: out.text.slice(0, 200) };
   }
 

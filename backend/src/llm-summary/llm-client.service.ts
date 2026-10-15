@@ -76,6 +76,9 @@ export interface LlmCompletion {
   usage: { inputTokens: number; outputTokens: number } | null;
 }
 
+/** Rate-limited or overloaded - worth a retry. 529 is Anthropic's "overloaded". */
+const BUSY_STATUSES = new Set([429, 503, 529]);
+
 const positiveInt = (raw: string | undefined, fallback: number) => {
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? n : fallback;
@@ -110,7 +113,7 @@ export function buildLlmSettings(input: LlmSettingsInput, limits: { maxOutputTok
 /** Output-token and timeout limits; server-wide, also for saved integrations. */
 export function readLlmLimits(config: ConfigService) {
   const get = (k: string) => String(config.get<string>(k) ?? '').trim();
-  return { maxOutputTokens: positiveInt(get('LLM_MAX_OUTPUT_TOKENS'), 1200), timeoutMs: positiveInt(get('LLM_TIMEOUT_MS'), 60000) };
+  return { maxOutputTokens: positiveInt(get('LLM_MAX_OUTPUT_TOKENS'), 4096), timeoutMs: positiveInt(get('LLM_TIMEOUT_MS'), 120000) };
 }
 
 /** The server-default LLM from the LLM_* settings, or null when they are incomplete. */
@@ -131,6 +134,9 @@ export function readLlmSettings(config: ConfigService): LlmSettings | null {
 export class LlmClientService {
   private readonly logger = new Logger(LlmClientService.name);
 
+  /** Waits before each retry of a busy provider (429, 503, 529); all within one timeout. */
+  retryDelaysMs = [2000, 5000];
+
   constructor(private readonly config: ConfigService) {}
 
   /** Uses `settings` (a saved integration) when given, else the server's LLM_* settings. */
@@ -138,23 +144,36 @@ export class LlmClientService {
     const s = settings ?? readLlmSettings(this.config);
     if (!s) throw new ServiceUnavailableException('No LLM is configured on this server (see LLM_PROVIDER, LLM_MODEL and LLM_API_KEY).');
     const { url, headers, body } = this.buildRequest(s, system, user);
+    const deadline = Date.now() + s.timeoutMs;
 
     let response: Response;
-    try {
-      response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(s.timeoutMs) });
-    } catch (error) {
-      const reason = (error as Error).name === 'TimeoutError' ? `no answer within ${s.timeoutMs} ms` : (error as Error).message;
-      this.logger.warn(`${s.provider} call failed: ${reason}`);
-      throw new BadGatewayException(`The LLM provider (${s.provider}) could not be reached: ${reason}.`);
+    let payload: Record<string, unknown> | null;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())) });
+      } catch (error) {
+        const reason = (error as Error).name === 'TimeoutError' ? `no answer within ${s.timeoutMs} ms` : (error as Error).message;
+        this.logger.warn(`${s.provider} call failed: ${reason}`);
+        throw new BadGatewayException(`The LLM provider (${s.provider}) could not be reached: ${reason}.`);
+      }
+      payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+      const wait = this.retryDelaysMs[attempt];
+      if (response.ok || !BUSY_STATUSES.has(response.status) || wait === undefined || Date.now() + wait >= deadline) break;
+      this.logger.warn(`${s.provider} is busy (${response.status}); retrying in ${wait} ms`);
+      await new Promise((r) => setTimeout(r, wait));
     }
-    const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     if (!response.ok) {
       const detail = providerError(payload) ?? response.statusText;
       this.logger.warn(`${s.provider} returned ${response.status}: ${detail}`);
-      throw new BadGatewayException(`The LLM provider (${s.provider}) returned ${response.status}: ${detail}`);
+      const retried = BUSY_STATUSES.has(response.status) ? ' (retried; the provider is still busy - try again in a minute or pick another integration)' : '';
+      throw new BadGatewayException(`The LLM provider (${s.provider}) returned ${response.status}: ${detail}${retried}`);
     }
     const parsed = s.protocol === 'anthropic' ? parseAnthropic(payload) : parseOpenAi(payload);
-    if (!parsed.text) throw new BadGatewayException(`The LLM provider (${s.provider}) returned an empty answer.`);
+    if (!parsed.text) {
+      // Thinking models can spend the whole output budget on reasoning and return no text.
+      const hint = parsed.truncated ? ` It stopped at the ${s.maxOutputTokens}-token output limit, likely spent on reasoning - raise LLM_MAX_OUTPUT_TOKENS or pick a non-thinking model.` : '';
+      throw new BadGatewayException(`The LLM provider (${s.provider}) returned an empty answer.${hint}`);
+    }
     return { ...parsed, provider: s.provider, model: s.model };
   }
 
@@ -214,6 +233,9 @@ function parseAnthropic(payload: Record<string, any> | null): Parsed {
 }
 
 function providerError(payload: Record<string, any> | null): string | null {
-  const message = payload?.error?.message ?? payload?.message;
-  return typeof message === 'string' ? message.slice(0, 300) : null;
+  // Gemini's OpenAI-compatible endpoint wraps its error in a one-element array.
+  const body = Array.isArray(payload) ? payload[0] : payload;
+  const message = body?.error?.message ?? body?.message;
+  const status = typeof body?.error?.status === 'string' ? ` (${body.error.status})` : '';
+  return typeof message === 'string' ? `${message.slice(0, 300)}${status}` : null;
 }

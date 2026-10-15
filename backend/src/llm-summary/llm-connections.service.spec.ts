@@ -123,6 +123,6 @@ describe('LlmConnectionsService', () => {
     const c = await service.create({ name: 'Groq', provider: 'groq', model: 'llama', apiKey: 'k' }, admin);
     llm.complete.mockResolvedValue({ text: 'connection OK', provider: 'groq', model: 'llama', truncated: false, usage: null });
     expect(await service.test(c.id)).toMatchObject({ ok: true, provider: 'groq', reply: 'connection OK' });
-    expect(llm.complete.mock.calls[0][2]).toMatchObject({ apiKey: 'k', maxOutputTokens: 64 });
+    expect(llm.complete.mock.calls[0][2]).toMatchObject({ apiKey: 'k', maxOutputTokens: 1024 });
   });
 });

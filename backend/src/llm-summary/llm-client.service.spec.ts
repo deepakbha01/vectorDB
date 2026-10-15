@@ -29,7 +29,7 @@ describe('readLlmSettings', () => {
 
   it('allows a keyless OpenAI-compatible local server and falls back to default limits', () => {
     const s = readLlmSettings(configWith({ LLM_PROVIDER: 'OpenAI', LLM_MODEL: 'llama3', LLM_BASE_URL: 'http://localhost:11434/v1', LLM_MAX_OUTPUT_TOKENS: 'lots' }));
-    expect(s).toMatchObject({ provider: 'openai', apiKey: '', maxOutputTokens: 1200, timeoutMs: 60000 });
+    expect(s).toMatchObject({ provider: 'openai', apiKey: '', maxOutputTokens: 4096, timeoutMs: 120000 });
   });
 });
 
@@ -52,7 +52,7 @@ describe('LlmClientService', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('https://x.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-10-21');
     expect(init.headers['api-key']).toBe('secret');
-    expect(JSON.parse(init.body)).toEqual({ messages: [{ role: 'system', content: 'sys' }, { role: 'user', content: 'usr' }], max_completion_tokens: 1200 });
+    expect(JSON.parse(init.body)).toEqual({ messages: [{ role: 'system', content: 'sys' }, { role: 'user', content: 'usr' }], max_completion_tokens: 4096 });
     expect(out).toEqual({ text: 'Summary', truncated: false, usage: { inputTokens: 10, outputTokens: 5 }, provider: 'azure-openai', model: 'gpt-4o' });
   });
 
@@ -62,7 +62,7 @@ describe('LlmClientService', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('http://localhost:11434/v1/chat/completions');
     expect(init.headers.Authorization).toBeUndefined();
-    expect(JSON.parse(init.body).max_tokens).toBe(1200);
+    expect(JSON.parse(init.body).max_tokens).toBe(4096);
     expect(out.truncated).toBe(true);
     expect(out.usage).toBeNull();
   });
@@ -73,7 +73,7 @@ describe('LlmClientService', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('https://api.anthropic.com/v1/messages');
     expect(init.headers).toMatchObject({ 'x-api-key': 'secret', 'anthropic-version': '2023-06-01' });
-    expect(JSON.parse(init.body)).toEqual({ model: 'claude-sonnet-5-5', max_tokens: 1200, system: 'sys', messages: [{ role: 'user', content: 'usr' }] });
+    expect(JSON.parse(init.body)).toEqual({ model: 'claude-sonnet-5-5', max_tokens: 4096, system: 'sys', messages: [{ role: 'user', content: 'usr' }] });
     expect(out.text).toBe('Part one. Part two.');
   });
 
@@ -91,7 +91,7 @@ describe('LlmClientService', () => {
     const [calledUrl, init] = fetchMock.mock.calls[0];
     expect(calledUrl).toBe(url);
     expect(init.headers.Authorization).toBe('Bearer secret');
-    expect(JSON.parse(init.body)).toMatchObject({ model: 'm', max_tokens: 1200 });
+    expect(JSON.parse(init.body)).toMatchObject({ model: 'm', max_tokens: 4096 });
     expect(out.provider).toBe(provider);
   });
 
@@ -116,6 +116,36 @@ describe('LlmClientService', () => {
     expect(err).toBeInstanceOf(BadGatewayException);
     expect(err.message).toBe('The LLM provider (openai) returned 401: Invalid API key');
     expect(err.message).not.toContain('secret');
+  });
+
+  const busy = (status: number, body: unknown) => ({ ok: false, status, statusText: 'Service Unavailable', json: async () => body }) as unknown as Response;
+  const gemini = () => {
+    const client = new LlmClientService(configWith({ LLM_PROVIDER: 'gemini', LLM_MODEL: 'gemini-3.5-flash', LLM_API_KEY: 'k' }));
+    client.retryDelaysMs = [1, 1];
+    return client;
+  };
+
+  it('reads the message from Gemini errors, which come wrapped in an array', async () => {
+    fetchMock.mockResolvedValue(busy(400, [{ error: { code: 400, message: 'API key not valid.', status: 'INVALID_ARGUMENT' } }]));
+    await expect(gemini().complete('s', 'u')).rejects.toThrow('returned 400: API key not valid. (INVALID_ARGUMENT)');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a busy provider and succeeds when it recovers', async () => {
+    fetchMock.mockResolvedValueOnce(busy(503, [{ error: { message: 'high demand', status: 'UNAVAILABLE' } }])).mockResolvedValueOnce(okJson({ choices: [{ message: { content: 'ok' } }] }));
+    expect((await gemini().complete('s', 'u')).text).toBe('ok');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after the retries and says the provider is still busy', async () => {
+    fetchMock.mockResolvedValue(busy(429, { error: { message: 'rate limited' } }));
+    await expect(gemini().complete('s', 'u')).rejects.toThrow('rate limited (retried; the provider is still busy');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('explains an empty answer cut off at the token limit', async () => {
+    fetchMock.mockResolvedValue(okJson({ choices: [{ message: { content: null }, finish_reason: 'length' }] }));
+    await expect(gemini().complete('s', 'u')).rejects.toThrow('stopped at the 4096-token output limit');
   });
 
   it('treats an empty answer as an error', async () => {
