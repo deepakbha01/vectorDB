@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsBoolean, IsIn, IsOptional } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsNumber, IsOptional, Max, Min } from 'class-validator';
 
 /** Keys of estateStorageVendors / estateHypervisors in config/infrastructure-targets.yaml. */
 export const ESTATE_STORAGE_VENDORS = ['netapp', 'nutanix', 'dell_emc', 'vast_data', 'ddn', 'other'];
@@ -21,6 +21,18 @@ export class CreateInfrastructureDesignDto {
   @IsOptional()
   @IsBoolean()
   multipleOnPremSites?: boolean;
+
+  @ApiProperty({ required: false, description: 'The on-premises data centre has direct-to-chip liquid cooling (needed by rack-scale systems such as GB300 NVL72)' })
+  @IsOptional()
+  @IsBoolean()
+  liquidCooling?: boolean;
+
+  @ApiProperty({ required: false, description: 'Most power the data centre can deliver to one rack (kW)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(2000)
+  maxRackPowerKw?: number;
 
   @ApiProperty({ required: false, isArray: true, enum: ESTATE_STORAGE_VENDORS, description: 'Storage vendors already run on-premises (reuse scores higher)' })
   @IsOptional()

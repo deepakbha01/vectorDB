@@ -2,7 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as yaml from 'js-yaml';
-import { GpuSpec, ManagedApiTier, ModelSpec, PrecisionSpec } from './inference.types';
+import { GpuSpec, ManagedApiTier, ModelSpec, PrecisionSpec, RackSystemSpec } from './inference.types';
 
 /**
  * Loads the Inference Assessment catalogue (config/inference.yaml).
@@ -34,6 +34,15 @@ export class InferenceConfigService implements OnModuleInit {
 
   getGpus(): GpuSpec[] {
     return this.catalogue.gpus ?? [];
+  }
+
+  getSystems(): RackSystemSpec[] {
+    return this.catalogue.systems ?? [];
+  }
+
+  /** The rack-scale system a GPU is only sold in, if any. */
+  systemForGpu(gpuId: string): RackSystemSpec | null {
+    return this.getSystems().find((s) => s.gpuId === gpuId) ?? null;
   }
 
   getModels(): ModelSpec[] {
@@ -73,6 +82,7 @@ export class InferenceConfigService implements OnModuleInit {
     return {
       rulesVersion: this.getRulesVersion(),
       gpus: this.getGpus(),
+      systems: this.getSystems(),
       models: this.getModels(),
       precisions: this.getPrecisions(),
       autoPrecisions: this.getAutoPrecisions(),

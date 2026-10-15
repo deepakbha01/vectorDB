@@ -10,6 +10,7 @@ import { DataPipelineDesign } from '../../data-pipeline/data-pipeline-design.ent
 import { ArchitectureDecisionRecord } from '../../vector-db-selection/architecture-decision-record.entity';
 import { InferenceAssessment } from '../../inference/inference-assessment.entity';
 import { InferenceConfigService } from '../../inference/inference-config.service';
+import { RackSystemSpec } from '../../inference/inference.types';
 import { ChunkingStrategy } from '../../chunking/enums/chunking-strategy.enum';
 import { VectorPlatform } from '../../projects/enums/platform.enum';
 import { AiFactoryConfigService } from '../ai-factory-config.service';
@@ -42,6 +43,8 @@ export interface FinopsCatalogues {
   infrastructure: InfrastructureCatalogue;
   inferencePricing: { selfHostedOverheadPercent: number; platformFixedMonthlyUsd: number };
   gpuListHourly: (gpuId: string) => number | null;
+  /** Optional so callers written before rack-scale systems still type-check. */
+  rackSystemFor?: (gpuId: string) => RackSystemSpec | null;
   managedServingIds: string[];
   charsPerToken: number;
 }
@@ -61,6 +64,8 @@ export function resolveFinopsContext(x: FinopsInputs, c: FinopsCatalogues): Fino
     const rec = inf.result.recommendedGpuOption;
     const managedByDesign = !!x.architecture?.result.recommended && c.managedServingIds.includes(x.architecture.result.recommended.id);
     const mode = managedByDesign || !rec || inf.result.decision === 'managed_api' ? 'managed_api' : 'self_hosted';
+    const sys = rec && c.rackSystemFor ? c.rackSystemFor(rec.gpuId) : null;
+    const sysHourly = sys && rec ? c.gpuListHourly(rec.gpuId) : null;
     inference = {
       mode,
       gpuId: rec?.gpuId ?? null,
@@ -75,6 +80,10 @@ export function resolveFinopsContext(x: FinopsInputs, c: FinopsCatalogues): Fino
       tokensPerMonth: inf.result.demand.tokensPerMonth,
       weightsGb: rec?.footprint.weightsGb ?? 0,
       source: `Inference assessment v${inf.version}${managedByDesign ? ` (managed serving per Inference Architecture v${x.architecture!.version})` : ''}`,
+      rackSystem:
+        sys && rec && sysHourly !== null
+          ? { label: sys.label, gpusPerRack: sys.gpusPerRack, racks: Math.ceil(rec.totalGpusAtPeak / sys.gpusPerRack), gpuHourlyListUsd: sysHourly }
+          : null,
     };
   }
 
@@ -187,6 +196,7 @@ export class FinopsAssessmentService {
         infrastructure: this.cfg.getInfrastructureCatalogue(),
         inferencePricing: { selfHostedOverheadPercent: pricing.selfHostedOverheadPercent, platformFixedMonthlyUsd: pricing.platformFixedMonthlyUsd },
         gpuListHourly: (id) => this.inferenceConfig.getGpus().find((g) => g.id === id)?.hourlyUsd ?? null,
+        rackSystemFor: (id) => this.inferenceConfig.systemForGpu(id),
         managedServingIds: this.cfg.getServingCatalogue().servingOptions.filter((o) => o.gpuVendors.includes('provider')).map((o) => o.id),
         charsPerToken: this.cfg.getEmbeddingEligibilityRules().charsPerToken,
       },

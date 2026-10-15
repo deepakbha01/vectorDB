@@ -54,6 +54,24 @@ export function checkPlacement(need: ComponentNeed, target: TargetId, platform: 
     else if (ctx.hasKubernetes === null) conditions.push('On-premises Kubernetes availability not stated.');
   }
   if (onPrem && need.gpuId && ctx.hasGpu === false) conditions.push(`No GPUs on-premises today - ${need.gpuLabel ?? 'GPU'} procurement lead time applies.`);
+  // A rack-scale system arrives as whole racks: the data centre must cool and power them.
+  const rack = onPrem && need.id === 'inference' && need.gpuId && platform !== 'managed' ? ctx.inference?.rackSystem ?? null : null;
+  if (rack) {
+    const f = ctx.facility;
+    if (rack.cooling === 'liquid') {
+      if (f?.liquidCooling === false) failures.push(`${rack.label} is liquid cooled only and the data centre has no direct-to-chip liquid cooling - it cannot be installed without a facility build-out.`);
+      else if (f?.liquidCooling) passed.push(`The data centre has the direct-to-chip liquid cooling ${rack.label} needs.`);
+      else conditions.push(`${rack.label} needs direct-to-chip liquid cooling - confirm the data centre has it.`);
+    }
+    const draw = `~${rack.rackPowerKw} kW per rack${rack.rackPowerEstimated ? ' (estimate)' : ''}`;
+    if (f?.maxRackPowerKw === null || f?.maxRackPowerKw === undefined) {
+      conditions.push(`${rack.label} draws ${draw} - confirm the data centre can deliver it to each of the ${rack.racks} rack(s).`);
+    } else if (f.maxRackPowerKw < rack.rackPowerKw) {
+      conditions.push(`${rack.label} draws ${draw}, above the ${f.maxRackPowerKw} kW per rack the data centre delivers - power distribution must be upgraded.`);
+    } else {
+      passed.push(`The data centre delivers ${f.maxRackPowerKw} kW per rack, enough for ${rack.label} (${draw}).`);
+    }
+  }
   if (onPrem && ctx.availabilityTargetPercent >= ctx.haThreshold && !ctx.multipleOnPremSites) {
     conditions.push(`Availability ${ctx.availabilityTargetPercent}% needs at least two independent failure domains (sites or data halls) on-premises.`);
   }
@@ -138,6 +156,20 @@ export function designInfrastructure(ctx: InfraContext, cat: InfrastructureCatal
 
   const sections = buildSections(ctx, cat, placements, chosenTargets);
   const sizing = buildSizing(ctx, cat);
+  // Whole racks only matter where the customer buys them: inference placed on-premises.
+  const rack = inferencePlacement?.chosen?.target === 'on_premises' && inferencePlacement.chosen.platform !== 'managed' ? ctx.inference?.rackSystem ?? null : null;
+  if (rack && ctx.inference?.totalGpusAtPeak) {
+    const total = ctx.inference.totalGpusAtPeak;
+    const spare = rack.racks * rack.gpusPerRack - total;
+    sections.compute.unshift(
+      `Inference rack-scale system: ${rack.racks} × ${rack.label} rack(s) - ${rack.gpusPerRack} GPUs + ${rack.cpusPerRack} ${rack.cpuLabel} CPUs per rack; ${total} GPUs needed at peak${spare > 0 ? `, ${spare} spare for growth or failover` : ''}`,
+      `Facility: ~${rack.rackPowerKw} kW per rack (~${rack.racks * rack.rackPowerKw} kW in total)${rack.rackPowerEstimated ? ' - estimate, confirm with the OEM' : ''}; ${rack.cooling === 'liquid' ? 'direct-to-chip liquid cooling with a coolant distribution unit and facility water' : 'air cooled'}`,
+    );
+    sizing.unshift(
+      { label: 'Racks (on-premises)', value: `${rack.racks} × ${rack.label}`, evidenceType: 'estimated' },
+      { label: 'Rack power', value: `~${rack.rackPowerKw} kW per rack`, evidenceType: rack.rackPowerEstimated ? 'assumption' : 'vendor_listed' },
+    );
+  }
   const onPremStack = recommendOnPremStack(ctx, cat, placements);
   // The stack only shapes the chosen design when something actually lands on-premises; otherwise it stays a what-if.
   const stack = onPremStack?.appliesTo === 'chosen' && onPremStack.chosen ? onPremStack : null;

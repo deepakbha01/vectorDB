@@ -196,3 +196,49 @@ describe('why each placement got its eligibility and score', () => {
     }
   });
 });
+
+describe('rack-scale systems on-premises', () => {
+  const rackSystem = { label: 'NVIDIA GB300 NVL72', gpusPerRack: 72, racks: 1, cpuLabel: 'NVIDIA Grace', cpusPerRack: 36, rackPowerKw: 142, rackPowerEstimated: false, cooling: 'liquid' as const };
+  const gb300: ComponentNeed = { ...gpuInference, gpuId: 'gb300-288', gpuLabel: 'NVIDIA GB300 NVL72 (288 GB per GPU)' };
+  const rackCtx = (facility: InfraContext['facility']) =>
+    ctx({ allowedTargets: ['on_premises'], components: [gb300, vectorK8s, app], inference: { ...ctx().inference!, gpuLabel: gb300.gpuLabel, totalGpusAtPeak: 8, rackSystem }, facility });
+
+  it('rules on-premises out when the data centre has no liquid cooling', () => {
+    const r = checkPlacement(gb300, 'on_premises', 'kubernetes', rackCtx({ liquidCooling: false, maxRackPowerKw: 200 }), cat);
+    expect(r.eligibility).toBe('not_eligible');
+    expect(r.failures.join(' ')).toMatch(/liquid cooled only/);
+  });
+
+  it('asks to confirm cooling and power when they are not stated, and flags a power shortfall', () => {
+    const unknown = checkPlacement(gb300, 'on_premises', 'kubernetes', rackCtx({ liquidCooling: null, maxRackPowerKw: null }), cat);
+    expect(unknown.conditions).toEqual(expect.arrayContaining([expect.stringMatching(/confirm the data centre has it/), expect.stringMatching(/~142 kW per rack - confirm/)]));
+    const short = checkPlacement(gb300, 'on_premises', 'kubernetes', rackCtx({ liquidCooling: true, maxRackPowerKw: 40 }), cat);
+    expect(short.conditions.join(' ')).toMatch(/above the 40 kW per rack the data centre delivers/);
+    expect(short.passed.join(' ')).toMatch(/liquid cooling NVIDIA GB300 NVL72 needs/);
+  });
+
+  it('designs whole racks with their facility needs when the data centre is ready', () => {
+    const r = designInfrastructure(rackCtx({ liquidCooling: true, maxRackPowerKw: 150 }), cat);
+    expect(r.placements.find((p) => p.component === 'inference')?.chosen?.target).toBe('on_premises');
+    expect(r.sections.compute[0]).toMatch(/^Inference rack-scale system: 1 × NVIDIA GB300 NVL72 rack\(s\) - 72 GPUs \+ 36 NVIDIA Grace CPUs per rack; 8 GPUs needed at peak, 64 spare/);
+    expect(r.sections.compute[1]).toMatch(/~142 kW per rack .*direct-to-chip liquid cooling/);
+    expect(r.sizing[0]).toEqual({ label: 'Racks (on-premises)', value: '1 × NVIDIA GB300 NVL72', evidenceType: 'estimated' });
+  });
+
+  it('leaves facility checks out of cloud placements and non-rack GPUs', () => {
+    const facilityRule = /liquid|kW per rack/;
+    const cloud = checkPlacement(gb300, 'azure', 'kubernetes', { ...rackCtx({ liquidCooling: false, maxRackPowerKw: 10 }), allowedTargets: ['on_premises', 'azure'] }, cat);
+    expect([...cloud.failures, ...cloud.conditions].join(' ')).not.toMatch(facilityRule);
+    const h200 = checkPlacement(gpuInference, 'on_premises', 'kubernetes', ctx({ facility: { liquidCooling: false, maxRackPowerKw: 10 } }), cat);
+    expect([...h200.failures, ...h200.conditions].join(' ')).not.toMatch(facilityRule);
+  });
+
+  it('derives the rack count from the catalogue when resolving the context', () => {
+    const rec = { gpuId: 'gb300-288', gpuLabel: 'GB300', totalGpusAtPeak: 80, tensorParallel: 1, minReplicas: 2, replicasAtAverage: 40, replicasAtPeak: 80, footprint: { weightsGb: 16 } };
+    const sys = { id: 'gb300-nvl72', label: 'NVIDIA GB300 NVL72', gpuId: 'gb300-288', gpusPerRack: 72, cpuLabel: 'NVIDIA Grace', cpusPerRack: 36, rackPowerKw: 142, cooling: 'liquid' as const, cloudUnitGpus: 4 };
+    const x: any = { project: { platform: 'qdrant' }, profile: null, discovery: null, architecture: null, adr: null, capacity: null, inference: { version: 1, inputsUsed: { opsCapability: 'dedicated_team', availabilityTargetPercent: 99.5 }, result: { decision: 'self_hosted', recommendedGpuOption: rec } } };
+    const { context } = resolveInfraContext({ liquidCooling: true, maxRackPowerKw: 150 }, x, { options: [] }, () => 288, 99.9, (id) => (id === 'gb300-288' ? sys : null));
+    expect(context.inference?.rackSystem).toMatchObject({ racks: 2, rackPowerKw: 142 });
+    expect(context.facility).toEqual({ liquidCooling: true, maxRackPowerKw: 150 });
+  });
+});

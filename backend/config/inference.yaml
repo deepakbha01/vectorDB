@@ -6,7 +6,7 @@
 # model architecture against the model's config.json, and API prices against
 # the provider's current price sheet before quoting.
 
-rulesVersion: inference-2026.10-2
+rulesVersion: inference-2026.10-3
 
 # ---------------------------------------------------------------------------
 # GPU catalogue - per-GPU figures. fp16Tflops / fp8Tflops / fp4Tflops are DENSE
@@ -124,6 +124,47 @@ gpus:
     interconnect: nvlink
     availability: preview
     availabilityNote: Ramping into production since mid-2026; first cloud capacity at specialist providers, broad hyperscaler and on-premises availability not yet confirmed. No public price - the cost shown is an estimate.
+
+# ---------------------------------------------------------------------------
+# Rack-scale systems: GPUs sold only as part of a whole rack (72 GPUs in one
+# NVLink domain, with their Grace / Vera CPUs). The engine still sizes per GPU
+# (gpuId), then:
+#  - cloud: bills GPUs in whole instances of cloudUnitGpus (2 superchips = 4 GPUs);
+#  - on-premises: Infrastructure Design counts whole racks and checks power and
+#    liquid cooling; Cost Recommendation prices whole racks.
+# rackPowerKw is a planning figure for facility checks: NVIDIA reference
+# figures for GB200 (~120 kW) and GB300 (up to 142 kW); Vera Rubin is an
+# ESTIMATE (secondary sources report 190-230 kW) - confirm with the OEM.
+# ---------------------------------------------------------------------------
+systems:
+  - id: gb200-nvl72
+    label: NVIDIA GB200 NVL72
+    gpuId: gb200-186
+    gpusPerRack: 72
+    cpuLabel: NVIDIA Grace
+    cpusPerRack: 36
+    rackPowerKw: 120
+    cooling: liquid
+    cloudUnitGpus: 4
+  - id: gb300-nvl72
+    label: NVIDIA GB300 NVL72
+    gpuId: gb300-288
+    gpusPerRack: 72
+    cpuLabel: NVIDIA Grace
+    cpusPerRack: 36
+    rackPowerKw: 142
+    cooling: liquid
+    cloudUnitGpus: 4
+  - id: vera-rubin-nvl72
+    label: NVIDIA Vera Rubin NVL72
+    gpuId: rubin-288
+    gpusPerRack: 72
+    cpuLabel: NVIDIA Vera
+    cpusPerRack: 36
+    rackPowerKw: 230
+    rackPowerEstimated: true
+    cooling: liquid
+    cloudUnitGpus: 4
 
 # ---------------------------------------------------------------------------
 # Reference open-weight models. paramsB drives weight memory; activeParamsB

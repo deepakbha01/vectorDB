@@ -17,7 +17,8 @@ import { AiInferenceArchitecture } from '../inference-architecture/inference-arc
 import { AiInfrastructureDesign } from './infrastructure.entity';
 import { designInfrastructure } from './infrastructure.engine';
 import { CreateInfrastructureDesignDto } from './create-infrastructure-design.dto';
-import { ComponentNeed, FineTuningNeed, InfraContext, InfrastructureResult, PlatformKind, ServingFacts, TargetId } from './infrastructure.types';
+import { ComponentNeed, FineTuningNeed, InfraContext, InfrastructureResult, PlatformKind, RackSystemFacts, ServingFacts, TargetId } from './infrastructure.types';
+import { RackSystemSpec } from '../../inference/inference.types';
 import { AiModelSelection } from '../model-selection/model-selection.entity';
 
 export type InfraSource = { source: 'user' | 'workload_profile' | 'discovery' | 'inference' | 'inference_architecture' | 'vector_db_selection' | 'capacity' | 'model_selection' | 'default'; detail: string };
@@ -49,7 +50,14 @@ export interface InfraInputs {
 }
 
 /** Pure: builds the placement context from the latest records and says where each input came from. */
-export function resolveInfraContext(dto: CreateInfrastructureDesignDto, x: InfraInputs, serving: ServingFacts, gpuMemory: (id: string) => number | null, haThreshold: number) {
+export function resolveInfraContext(
+  dto: CreateInfrastructureDesignDto,
+  x: InfraInputs,
+  serving: ServingFacts,
+  gpuMemory: (id: string) => number | null,
+  haThreshold: number,
+  rackSystemFor: (gpuId: string) => RackSystemSpec | null = () => null,
+) {
   const sources: Record<string, InfraSource> = {};
   const pv = x.profile ? `Workload Profile v${x.profile.version}` : '';
   const dv = x.discovery ? `Discovery v${x.discovery.version}` : '';
@@ -80,6 +88,8 @@ export function resolveInfraContext(dto: CreateInfrastructureDesignDto, x: Infra
     'not stated',
   );
   const multipleOnPremSites = pick('multipleOnPremSites', dto.multipleOnPremSites, null, false, 'not stated - assumed a single on-premises site');
+  const liquidCooling = pick<boolean | null>('liquidCooling', dto.liquidCooling, null, null, 'not stated');
+  const maxRackPowerKw = pick<number | null>('maxRackPowerKw', dto.maxRackPowerKw, null, null, 'not stated');
   const opsCapability = pick(
     'opsCapability',
     undefined,
@@ -105,6 +115,21 @@ export function resolveInfraContext(dto: CreateInfrastructureDesignDto, x: Infra
   const components: ComponentNeed[] = [];
   let inferenceFacts: InfraContext['inference'] = null;
   const rec = x.inference?.result.recommendedGpuOption ?? null;
+  // From the catalogue, not the saved option, so assessments saved before rack systems existed get it too.
+  const sys = rec ? rackSystemFor(rec.gpuId) : null;
+  const rackSystem: RackSystemFacts | null =
+    sys && rec
+      ? {
+          label: sys.label,
+          gpusPerRack: sys.gpusPerRack,
+          racks: Math.ceil(rec.totalGpusAtPeak / sys.gpusPerRack),
+          cpuLabel: sys.cpuLabel,
+          cpusPerRack: sys.cpusPerRack,
+          rackPowerKw: sys.rackPowerKw,
+          rackPowerEstimated: !!sys.rackPowerEstimated,
+          cooling: sys.cooling,
+        }
+      : null;
   if (x.architecture?.result.recommended) {
     const option = serving.options.find((o) => o.id === x.architecture!.result.recommended!.id);
     const managed = !!option?.managed;
@@ -122,12 +147,13 @@ export function resolveInfraContext(dto: CreateInfrastructureDesignDto, x: Infra
       replicas: rec ? { min: rec.minReplicas, average: rec.replicasAtAverage, peak: rec.replicasAtPeak } : null,
       weightsGb: rec?.footprint.weightsGb ?? null,
       autoscaling: x.architecture.result.architecture?.autoscaling[0] ?? null,
+      rackSystem: needsGpu ? rackSystem : null,
     };
   } else if (x.inference) {
     const managed = x.inference.result.decision === 'managed_api';
     components.push({ id: 'inference', label: 'Inference serving', platforms: managed ? ['managed'] : ['kubernetes', 'vm'], gpuId: !managed && rec ? rec.gpuId : null, gpuLabel: !managed && rec ? rec.gpuLabel : null, detail: 'from the Inference assessment (no architecture yet)' });
     sources.inferencePlatform = { source: 'inference', detail: `Inference assessment v${x.inference.version} - design the Inference Architecture to fix the runtime platform` };
-    inferenceFacts = { servingOption: managed ? 'Managed API' : 'Self-hosted (runtime not chosen yet)', managed, gpuLabel: rec?.gpuLabel ?? null, gpuMemoryGb: rec ? gpuMemory(rec.gpuId) : null, totalGpusAtPeak: rec?.totalGpusAtPeak ?? null, tensorParallel: rec?.tensorParallel ?? 1, replicas: rec ? { min: rec.minReplicas, average: rec.replicasAtAverage, peak: rec.replicasAtPeak } : null, weightsGb: rec?.footprint.weightsGb ?? null, autoscaling: null };
+    inferenceFacts = { servingOption: managed ? 'Managed API' : 'Self-hosted (runtime not chosen yet)', managed, gpuLabel: rec?.gpuLabel ?? null, gpuMemoryGb: rec ? gpuMemory(rec.gpuId) : null, totalGpusAtPeak: rec?.totalGpusAtPeak ?? null, tensorParallel: rec?.tensorParallel ?? 1, replicas: rec ? { min: rec.minReplicas, average: rec.replicasAtAverage, peak: rec.replicasAtPeak } : null, weightsGb: rec?.footprint.weightsGb ?? null, autoscaling: null, rackSystem: managed ? null : rackSystem };
   }
 
   let vectorFacts: InfraContext['vector'] = null;
@@ -168,6 +194,7 @@ export function resolveInfraContext(dto: CreateInfrastructureDesignDto, x: Infra
     inference: inferenceFacts,
     securityControls: x.profile?.result.securityRequirements.controls ?? [],
     estate: { storageVendors: existingStorageVendors, hypervisor: existingHypervisor, fineTuning },
+    facility: { liquidCooling, maxRackPowerKw },
   };
   if (x.discovery) sources.availabilityAndDr = { source: 'discovery', detail: `${dv}: availability, RPO / RTO, multi-region` };
   return { context, sources };
@@ -212,7 +239,9 @@ export class InfrastructureDesignService {
     ]);
     const gpuMemory = (id: string) => this.inferenceConfig.getGpus().find((g) => g.id === id)?.memoryGb ?? null;
     const haThreshold = this.inferenceConfig.getSizing().haAvailabilityThreshold ?? 99.9;
-    return resolveInfraContext(dto, { project, profile, discovery, inference, architecture, adr, capacity, selection }, this.servingFacts(), gpuMemory, haThreshold);
+    return resolveInfraContext(dto, { project, profile, discovery, inference, architecture, adr, capacity, selection }, this.servingFacts(), gpuMemory, haThreshold, (id) =>
+      this.inferenceConfig.systemForGpu(id),
+    );
   }
 
   async getDefaults(projectId: string, requester: AuthenticatedUser): Promise<{ context: InfraContext; sources: Record<string, InfraSource>; preview: InfrastructureResult }> {
