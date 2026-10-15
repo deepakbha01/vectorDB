@@ -9,9 +9,11 @@ export interface FeatureFlags {
   dataExplorer: boolean;
   /** Azure AI Factory Builder - use case to Azure architecture and Bicep; independent of the AI Factory. */
   azureBuilder: boolean;
+  /** Optional LLM-written summaries of assessment results - off unless the server enables and configures an LLM. */
+  llmSummary: boolean;
 }
 
-const OFF: FeatureFlags = { aiFactory: false, tokenObservability: false, dataExplorer: false, azureBuilder: false };
+const OFF: FeatureFlags = { aiFactory: false, tokenObservability: false, dataExplorer: false, azureBuilder: false, llmSummary: false };
 let cached: Promise<FeatureFlags> | null = null;
 
 /** Fetched once per page load; any failure falls back to every flag off (the existing workflow). */

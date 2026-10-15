@@ -5,6 +5,7 @@ import { useFeatures } from '../api/features';
 import { FinalRecommendation, FinalResult, Readiness, StageStatus } from '../api/final';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
+import { LlmSummaryCard } from '../components/LlmSummaryCard';
 
 const READINESS: Record<Readiness, string> = { production_ready: 'var(--success)', ready_with_conditions: 'var(--warning)', further_assessment: 'var(--violet)', not_suitable: 'var(--danger)' };
 const STAGE: Record<StageStatus, { label: string; color: string }> = {
@@ -92,6 +93,7 @@ export function FinalRecommendationPage() {
               </span>
               {error && <div className="error-text">{error}</div>}
             </div>
+            {latest && <LlmSummaryCard key={latest.id} projectId={project.id} subject="final" />}
             {r && <FinalView r={r} />}
           </>
         )}

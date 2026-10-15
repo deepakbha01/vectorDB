@@ -403,6 +403,14 @@ platform (all but Actian). A project can also have its own target connection
 instead of the server's `TARGET_*` settings, stored encrypted with
 `CONNECTION_SECRET_KEY`. See `USER_GUIDE.md` §12.
 
+AI summaries (behind `LLM_SUMMARY_ENABLED`, off by default) are an optional,
+on-demand step: the Vector DB Selection, Inference Assessment and Final
+Recommendation pages get a *Generate AI summary* button that sends the saved
+rule-based result to an LLM (Azure OpenAI, OpenAI, Anthropic or an
+OpenAI-compatible server such as Ollama) for a written narrative. The
+assessments themselves stay deterministic; the narrative is never saved and
+never changes a decision. See `USER_GUIDE.md` §13.
+
 ## Architecture
 
 ```

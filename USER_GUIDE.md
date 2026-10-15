@@ -279,3 +279,34 @@ collection must be loaded in Milvus first; the explorer does not load it.
 - **Admin**: everything, including `Execute Deployment`.
 
 Ask an existing admin to change your role (see `RUNBOOK.md`).
+
+## 13. AI summaries (optional)
+
+Every assessment in eVectorize is rule-based: the same inputs always give the
+same result, and each figure traces back to a rule or a config value. No LLM
+takes part in any decision.
+
+A server can also offer **AI summaries**. When enabled (`LLM_SUMMARY_ENABLED`
+plus the `LLM_*` settings in `backend/.env.example`), an **AI summary** card
+appears on three result pages:
+
+- **Vector DB Selection**, under the decision record
+- **Inference Assessment**, under the recommendation
+- **Final Recommendation**, once a version is saved
+
+Pick *For executives* or *For architects* and press **Generate AI summary**.
+Nothing is sent until you press it, so a team that does not want AI summaries
+can ignore the card. The LLM gets the saved result (not the form you are
+editing) and writes four short sections: Recommendation, Why, Risks and
+conditions, Next steps. It is told to use only facts in the record and never to
+change the decision. The card shows which provider and model wrote the summary,
+which saved version it came from, and how many tokens it used. **Copy text**
+copies the summary with its disclaimer.
+
+The summary is not saved, and it never changes a result, a report or a later
+phase. Check any figure against the rule-based result before you reuse it.
+
+Generating a summary needs the admin or architect role, because each one is a
+paid LLM call. The server supports Azure OpenAI, OpenAI, Anthropic, and any
+OpenAI-compatible server such as Ollama or vLLM for on-premises use. Requests
+appear in the audit log.
