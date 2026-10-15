@@ -163,7 +163,7 @@ function VectorStorePanel({ spec }: { spec: ArchitectureSpec }) {
         </tbody>
       </table>
       <p style={{ fontSize: 12, color: 'var(--muted)', margin: '8px 0 0' }}>
-        The vector database chosen in the Evectorize track (Phase 4) does not apply here: the Azure RAG pattern uses Azure AI Search as its vector store.
+        The vector database chosen in the eVectorize track (Phase 4) does not apply here: the Azure RAG pattern uses Azure AI Search as its vector store.
       </p>
     </div>
   );

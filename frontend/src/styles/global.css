@@ -480,7 +480,7 @@ form.stacked textarea {
   gap: 20px;
 }
 
-/* Evectorize wordmark (top bar of every page; larger above the sign-in card). */
+/* eVectorize wordmark (top bar of every page; larger above the sign-in card). */
 .brand-mark {
   font-weight: 800;
   font-size: 16px;
@@ -540,7 +540,7 @@ a.brand-mark:hover {
 }
 
 /*
- * Evectorize watermark on the front pages: fixed across the viewport, faint,
+ * eVectorize watermark on the front pages: fixed across the viewport, faint,
  * above the content so cards do not hide it, and never in the way - no
  * pointer events, no selection, hidden from assistive technology.
  */

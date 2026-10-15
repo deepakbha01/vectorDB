@@ -1,4 +1,4 @@
-# Evectorize
+# eVectorize
 
 Vector Database Assessment & Optimization Platform.
 

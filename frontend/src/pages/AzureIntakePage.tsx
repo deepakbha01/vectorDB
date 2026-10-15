@@ -98,7 +98,7 @@ export function AzureIntakePage() {
       setSources(pre.sources);
       setStep(0);
     } catch (err) {
-      setError(extractErrorMessage(err, 'Could not read the Evectorize project.'));
+      setError(extractErrorMessage(err, 'Could not read the eVectorize project.'));
     }
   };
 
@@ -246,7 +246,7 @@ export function AzureIntakePage() {
                     {i + 1}. {s}
                   </button>
                 ))}
-                <button type="button" className="status-pill" style={{ cursor: 'pointer', marginLeft: 'auto' }} onClick={onPrefill}>Prefill from Evectorize</button>
+                <button type="button" className="status-pill" style={{ cursor: 'pointer', marginLeft: 'auto' }} onClick={onPrefill}>Prefill from eVectorize</button>
               </div>
               {sources && Object.keys(sources).length > 0 && (
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>

@@ -1,6 +1,6 @@
 import { IntakeAnswers, TargetEnvironment } from './use-case-spec';
 
-/** The parts of an Evectorize Discovery assessment the intake can reuse. */
+/** The parts of an eVectorize Discovery assessment the intake can reuse. */
 export interface DiscoveryForPrefill {
   environment?: string;
   documentCount?: number;
@@ -24,7 +24,7 @@ const ENV: Record<string, TargetEnvironment> = { development: 'dev', staging: 't
 
 /**
  * Seeds the intake wizard from what the project already knows - its name and
- * business use case, the Phase 0 connection and the Evectorize Discovery
+ * business use case, the Phase 0 connection and the eVectorize Discovery
  * assessment - so nothing is asked twice. Every value stays editable; anything
  * not known is left blank for the classifier to report as missing.
  */
