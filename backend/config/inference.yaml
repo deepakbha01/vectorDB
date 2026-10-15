@@ -6,7 +6,7 @@
 # model architecture against the model's config.json, and API prices against
 # the provider's current price sheet before quoting.
 
-rulesVersion: inference-2026.09-1
+rulesVersion: inference-2026.10-1
 
 # ---------------------------------------------------------------------------
 # GPU catalogue - per-GPU figures. fp16Tflops / fp8Tflops are DENSE tensor
@@ -24,13 +24,6 @@ gpus:
     fp8Tflops: 242
     hourlyUsd: 0.80
     interconnect: pcie
-  - id: a10g
-    label: NVIDIA A10G (24 GB)
-    memoryGb: 24
-    bandwidthGbps: 600
-    fp16Tflops: 70
-    hourlyUsd: 1.01
-    interconnect: pcie
   - id: l40s
     label: NVIDIA L40S (48 GB)
     memoryGb: 48
@@ -39,20 +32,16 @@ gpus:
     fp8Tflops: 733
     hourlyUsd: 1.90
     interconnect: pcie
-  - id: a100-40
-    label: NVIDIA A100 (40 GB)
-    memoryGb: 40
-    bandwidthGbps: 1555
-    fp16Tflops: 312
-    hourlyUsd: 3.00
-    interconnect: nvlink
-  - id: a100-80
-    label: NVIDIA A100 (80 GB)
-    memoryGb: 80
-    bandwidthGbps: 2039
-    fp16Tflops: 312
-    hourlyUsd: 3.70
-    interconnect: nvlink
+  # Blackwell PCIe card, no NVLink. NVIDIA lists 1 PFLOPS FP16 / 2 PFLOPS FP8 with
+  # sparsity; dense is half. Price: AWS g7e.48xlarge on-demand ÷ 8.
+  - id: rtx-pro-6000-96
+    label: NVIDIA RTX PRO 6000 Blackwell Server (96 GB)
+    memoryGb: 96
+    bandwidthGbps: 1597
+    fp16Tflops: 500
+    fp8Tflops: 1000
+    hourlyUsd: 4.14
+    interconnect: pcie
   - id: h100-80
     label: NVIDIA H100 SXM (80 GB)
     memoryGb: 80
@@ -68,6 +57,49 @@ gpus:
     fp16Tflops: 989
     fp8Tflops: 1979
     hourlyUsd: 8.00
+    interconnect: nvlink
+  # Blackwell (HGX, 8 GPUs per node). Dense = half NVIDIA's sparse HGX figures
+  # (36 PFLOPS FP16 / 72 PFLOPS FP8 per 8 GPUs). FP4 is not modelled yet.
+  # Price: AWS p6-b200.48xlarge on-demand ÷ 8.
+  - id: b200-180
+    label: NVIDIA B200 SXM (180 GB)
+    memoryGb: 180
+    bandwidthGbps: 8000
+    fp16Tflops: 2250
+    fp8Tflops: 4500
+    hourlyUsd: 14.24
+    interconnect: nvlink
+  # Blackwell Ultra (HGX). Same FP16/FP8 as B200; more memory and FP4.
+  # Price: AWS p6-b300.48xlarge on-demand ÷ 8.
+  - id: b300-288
+    label: NVIDIA B300 Blackwell Ultra SXM (288 GB)
+    memoryGb: 288
+    bandwidthGbps: 8000
+    fp16Tflops: 2250
+    fp8Tflops: 4500
+    hourlyUsd: 17.80
+    interconnect: nvlink
+  # Grace Blackwell rack (72 GPUs in one NVLink domain). Per GPU: NVL72 totals ÷ 72,
+  # dense = half the sparse figures. Hyperscalers sell it by reservation or quote, so the
+  # price is an ESTIMATE on the same basis as the rest: AWS B200 on-demand × the GB200 / B200
+  # ratio of a public on-demand list (CoreWeave $10.50 / $8.60 per GPU-hour = 1.22).
+  - id: gb200-186
+    label: NVIDIA GB200 NVL72 (186 GB per GPU)
+    memoryGb: 186
+    bandwidthGbps: 8000
+    fp16Tflops: 2500
+    fp8Tflops: 5000
+    hourlyUsd: 17.40
+    interconnect: nvlink
+  # Grace Blackwell Ultra rack. No public on-demand price: ESTIMATE = GB200 × 1.25
+  # (the AWS B300 / B200 on-demand ratio). Replace with the contracted rate.
+  - id: gb300-288
+    label: NVIDIA GB300 NVL72 (288 GB per GPU)
+    memoryGb: 288
+    bandwidthGbps: 8000
+    fp16Tflops: 2500
+    fp8Tflops: 5000
+    hourlyUsd: 21.75
     interconnect: nvlink
 
 # ---------------------------------------------------------------------------

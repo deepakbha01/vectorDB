@@ -98,10 +98,20 @@ describe('InferenceEngineService', () => {
     });
 
     it('only evaluates FP8 on GPUs with FP8 tensor cores', () => {
-      const input = baseInput(cfg, { allowedGpuIds: ['a100-80', 'h100-80'] });
-      const opts = engine.selfHostedOptions(input, engine.demand(input));
-      expect(opts.some((o) => o.gpuId === 'a100-80' && o.precision === 'fp8')).toBe(false);
+      // Every catalogue GPU has FP8 today, so add one without it (an Ampere-class card).
+      const withNoFp8 = new InferenceConfigService({} as ConfigService);
+      withNoFp8.setCatalogue({ ...catalogue, gpus: [...catalogue.gpus, { id: 'no-fp8', label: 'No FP8 (80 GB)', memoryGb: 80, bandwidthGbps: 2039, fp16Tflops: 312, hourlyUsd: 3.7, interconnect: 'nvlink' }] });
+      const e = new InferenceEngineService(withNoFp8);
+      const input = baseInput(withNoFp8, { allowedGpuIds: ['no-fp8', 'h100-80'] });
+      const opts = e.selfHostedOptions(input, e.demand(input));
+      expect(opts.some((o) => o.gpuId === 'no-fp8' && o.precision === 'fp8')).toBe(false);
       expect(opts.some((o) => o.gpuId === 'h100-80' && o.precision === 'fp8')).toBe(true);
+    });
+
+    it('lists only current-generation GPUs (no end-of-life A10G / A100)', () => {
+      const ids = cfg.getGpus().map((g) => g.id);
+      expect(ids).toEqual(expect.arrayContaining(['l4', 'l40s', 'rtx-pro-6000-96', 'h100-80', 'h200-141', 'b200-180', 'b300-288', 'gb200-186', 'gb300-288']));
+      expect(ids.filter((id) => id.startsWith('a10'))).toEqual([]);
     });
 
     it('keeps the batch within KV memory and the TPOT budget, and TPOT within target when met', () => {

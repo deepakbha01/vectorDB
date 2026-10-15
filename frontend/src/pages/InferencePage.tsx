@@ -67,6 +67,16 @@ export function InferencePage() {
       .catch(() => setAssessment(null));
   }, [id]);
 
+  // A GPU retired from the catalogue since the last run would make the next submit fail; drop it from the filter.
+  useEffect(() => {
+    if (!catalogue) return;
+    const known = new Set(catalogue.gpus.map((g) => g.id));
+    const retired = (form.allowedGpuIds ?? []).filter((g) => !known.has(g));
+    if (!retired.length) return;
+    setForm((f) => ({ ...f, allowedGpuIds: (f.allowedGpuIds ?? []).filter((g) => known.has(g)) }));
+    setNotice(`Removed GPU(s) no longer in the catalogue from the GPU filter: ${retired.join(', ')}.`);
+  }, [catalogue, form.allowedGpuIds]);
+
   const set = <K extends keyof CreateInferenceAssessmentInput>(key: K, value: CreateInferenceAssessmentInput[K]) => setForm((f) => ({ ...f, [key]: value }));
 
   const applyDefaults = () => {
