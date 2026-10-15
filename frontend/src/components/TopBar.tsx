@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { useFeatures } from '../api/features';
 import { ThemeToggle } from '../theme';
 import { BrandMark, usePageTitle } from './Brand';
 
@@ -10,6 +11,7 @@ import { BrandMark, usePageTitle } from './Brand';
  */
 export function TopBar({ title, eyebrow }: { title: string; eyebrow?: string }) {
   const { user, logout } = useAuth();
+  const features = useFeatures();
   usePageTitle(eyebrow ? `${eyebrow} - ${title}` : title);
   const initial = user?.email?.charAt(0).toUpperCase() ?? '?';
   return (
@@ -20,6 +22,7 @@ export function TopBar({ title, eyebrow }: { title: string; eyebrow?: string }) 
           <nav className="top-bar-nav" aria-label="Main">
             <NavLink to="/dashboard">Dashboard</NavLink>
             {user?.role === 'admin' && <NavLink to="/admin/users">Manage Users</NavLink>}
+            {user?.role === 'admin' && features.llmSummary && <NavLink to="/admin/llm-integrations">LLM integrations</NavLink>}
           </nav>
           <span className="top-bar-divider" aria-hidden="true" />
           <span className="top-bar-user" title={user?.email}>

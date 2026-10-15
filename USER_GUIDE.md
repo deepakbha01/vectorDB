@@ -286,15 +286,16 @@ Every assessment in eVectorize is rule-based: the same inputs always give the
 same result, and each figure traces back to a rule or a config value. No LLM
 takes part in any decision.
 
-A server can also offer **AI summaries**. When enabled (`LLM_SUMMARY_ENABLED`
-plus the `LLM_*` settings in `backend/.env.example`), an **AI summary** card
-appears on three result pages:
+A server can also offer **AI summaries**. When enabled (`LLM_SUMMARY_ENABLED=true`
+in `backend/.env`), an **AI summary** card appears on:
 
 - **Vector DB Selection**, under the decision record
 - **Inference Assessment**, under the recommendation
 - **Final Recommendation**, once a version is saved
+- **Reports**, where you also choose which of the three results to summarise
 
-Pick *For executives* or *For architects* and press **Generate AI summary**.
+Pick the LLM to use (the default integration is pre-selected), then *For
+executives* or *For architects*, and press **Generate AI summary**.
 Nothing is sent until you press it, so a team that does not want AI summaries
 can ignore the card. The LLM gets the saved result (not the form you are
 editing) and writes four short sections: Recommendation, Why, Risks and
@@ -309,7 +310,17 @@ phase. Check any figure against the rule-based result before you reuse it.
 Generating a summary needs the admin or architect role, because each one is a
 paid LLM call. Requests appear in the audit log.
 
-The server admin chooses the LLM with `LLM_PROVIDER`:
+**LLM integrations.** Admins add the LLMs under **LLM integrations** in the top
+bar: a name, the provider, the model, the API key and, where needed, a base
+URL. Add as many as you need, for example Claude for one team and a local Ollama
+model for another. Mark one as the default; **Test** sends a one-line prompt to
+check the key works. Keys are stored encrypted with `CONNECTION_SECRET_KEY` and
+are never shown again: leave the key blank when editing to keep it. Architects
+can pick an integration on the summary card but cannot add or change one.
+
+An LLM can also be set in `backend/.env` instead. It then appears in the list
+as *Server default (.env)* and is read-only in the app. Its provider is set
+with `LLM_PROVIDER`; the provider names are the same in the app and in `.env`:
 
 | Provider | `LLM_PROVIDER` |
 |---|---|
@@ -327,5 +338,5 @@ The server admin chooses the LLM with `LLM_PROVIDER`:
 | Any other OpenAI-style server: vLLM, LM Studio, LiteLLM, an internal gateway | `openai-compatible` (set `LLM_BASE_URL`) |
 | Any service with the Anthropic Messages API | `anthropic-compatible` (set `LLM_BASE_URL`) |
 
-Set `LLM_MODEL` to the provider's model name and `LLM_API_KEY` to its key, then
-restart the backend. See `backend/.env.example`.
+For the `.env` route, set `LLM_MODEL` to the provider's model name and
+`LLM_API_KEY` to its key, then restart the backend. See `backend/.env.example`.

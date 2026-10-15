@@ -1,7 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useFeatures } from '../api/features';
 import { extractErrorMessage } from '../api/client';
-import { generateLlmSummary, LlmSummary, LlmSummaryAudience, LlmSummarySubject } from '../api/llmSummary';
+import { useAuth } from '../auth/AuthContext';
+import {
+  generateLlmSummary,
+  listLlmConnections,
+  LLM_SUMMARY_SUBJECT_LABELS,
+  LlmConnection,
+  LlmSummary,
+  LlmSummaryAudience,
+  LlmSummarySubject,
+} from '../api/llmSummary';
 
 const SECTION_TITLE = /^(Recommendation|Why|Risks and conditions|Next steps):\s*(.*)$/;
 
@@ -34,17 +44,39 @@ function SummaryText({ text }: { text: string }) {
 }
 
 /**
- * Optional AI-written narrative of the saved rule-based result. Shown only
- * when the server has LLM summaries enabled, and only runs when asked - teams
- * that don't want it simply never press the button.
+ * Optional AI-written narrative of a saved rule-based result. Shown only when
+ * the server has LLM summaries enabled, and only runs when asked - teams that
+ * don't want it simply never press the button. Without `subject` the card
+ * offers a choice of result (used on the Reports page).
  */
-export function LlmSummaryCard({ projectId, subject }: { projectId: string; subject: LlmSummarySubject }) {
+export function LlmSummaryCard({ projectId, subject: fixedSubject }: { projectId: string; subject?: LlmSummarySubject }) {
   const features = useFeatures();
+  const { user } = useAuth();
+  const canGenerate = user?.role === 'admin' || user?.role === 'architect';
+  const [subject, setSubject] = useState<LlmSummarySubject>(fixedSubject ?? 'vector-db-selection');
   const [audience, setAudience] = useState<LlmSummaryAudience>('executive');
+  const [connections, setConnections] = useState<LlmConnection[] | null>(null);
+  const [connectionId, setConnectionId] = useState('');
   const [summary, setSummary] = useState<LlmSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!features.llmSummary || !canGenerate) return;
+    let active = true;
+    listLlmConnections()
+      .then((list) => {
+        if (!active) return;
+        const usable = list.filter((c) => c.ready);
+        setConnections(usable);
+        setConnectionId((usable.find((c) => c.isDefault) ?? usable[0])?.id ?? '');
+      })
+      .catch((err) => active && setError(extractErrorMessage(err, 'Could not load the LLM integrations.')));
+    return () => {
+      active = false;
+    };
+  }, [features.llmSummary, canGenerate]);
 
   if (!features.llmSummary) return null;
 
@@ -53,7 +85,7 @@ export function LlmSummaryCard({ projectId, subject }: { projectId: string; subj
     setError(null);
     setCopied(false);
     try {
-      setSummary(await generateLlmSummary(projectId, subject, audience));
+      setSummary(await generateLlmSummary(projectId, subject, audience, connectionId || undefined));
     } catch (err) {
       setError(extractErrorMessage(err, 'Could not generate the AI summary.'));
     } finally {
@@ -71,8 +103,10 @@ export function LlmSummaryCard({ projectId, subject }: { projectId: string; subj
     }
   };
 
+  const none = connections !== null && connections.length === 0;
+
   return (
-    <div className="card" style={{ marginBottom: 16, borderLeft: '4px solid var(--border)' }} aria-label="AI summary">
+    <div className="card" style={{ marginBottom: 16, borderLeft: '4px solid var(--primary-text)' }} aria-label="AI summary">
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         <div>
           <div className="card-title" style={{ marginBottom: 2 }}>AI summary <span className="status-pill">optional</span></div>
@@ -80,16 +114,39 @@ export function LlmSummaryCard({ projectId, subject }: { projectId: string; subj
             An LLM writes a narrative from the saved rule-based result. It does not change the result.
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <select value={audience} onChange={(e) => setAudience(e.target.value as LlmSummaryAudience)} disabled={loading} aria-label="Summary audience">
-            <option value="executive">For executives</option>
-            <option value="technical">For architects</option>
-          </select>
-          <button className="primary-btn" type="button" onClick={generate} disabled={loading}>
-            {loading ? 'Writing...' : summary ? 'Regenerate' : 'Generate AI summary'}
-          </button>
-        </div>
+        {canGenerate && !none && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {!fixedSubject && (
+              <select value={subject} onChange={(e) => { setSubject(e.target.value as LlmSummarySubject); setSummary(null); }} disabled={loading} aria-label="Result to summarise">
+                {(Object.keys(LLM_SUMMARY_SUBJECT_LABELS) as LlmSummarySubject[])
+                  .filter((s) => s !== 'final' || features.aiFactory)
+                  .map((s) => <option key={s} value={s}>{LLM_SUMMARY_SUBJECT_LABELS[s]}</option>)}
+              </select>
+            )}
+            {connections && connections.length > 0 && (
+              <select value={connectionId} onChange={(e) => setConnectionId(e.target.value)} disabled={loading} aria-label="LLM to use">
+                {connections.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name} · {c.providerLabel} · {c.model}</option>
+                ))}
+              </select>
+            )}
+            <select value={audience} onChange={(e) => setAudience(e.target.value as LlmSummaryAudience)} disabled={loading} aria-label="Summary audience">
+              <option value="executive">For executives</option>
+              <option value="technical">For architects</option>
+            </select>
+            <button className="primary-btn" type="button" onClick={generate} disabled={loading || connections === null}>
+              {loading ? 'Writing...' : summary ? 'Regenerate' : 'Generate AI summary'}
+            </button>
+          </div>
+        )}
       </div>
+      {!canGenerate && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>Admins and architects can generate AI summaries.</div>}
+      {canGenerate && none && (
+        <div style={{ fontSize: 13, marginTop: 8 }}>
+          No LLM integration is set up yet.{' '}
+          {user?.role === 'admin' ? <Link to="/admin/llm-integrations">Add one under LLM integrations</Link> : 'Ask an admin to add one under LLM integrations.'}
+        </div>
+      )}
       {error && <div className="error-text" style={{ marginTop: 8 }}>{error}</div>}
       {summary && (
         <div style={{ marginTop: 12 }}>
@@ -97,7 +154,7 @@ export function LlmSummaryCard({ projectId, subject }: { projectId: string; subj
           {summary.truncated && <div style={{ fontSize: 12, color: 'var(--warning)' }}>The answer hit the output limit and may be cut short.</div>}
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
             <span>
-              {summary.provider} · {summary.model} · {new Date(summary.generatedAt).toLocaleString()}
+              {summary.connection.name} · {summary.model} · {new Date(summary.generatedAt).toLocaleString()}
               {summary.source.version !== null && ` · from v${summary.source.version}`}
               {summary.usage && ` · ${summary.usage.inputTokens + summary.usage.outputTokens} tokens`}
             </span>

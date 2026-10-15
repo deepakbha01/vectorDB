@@ -13,7 +13,7 @@ import { LLM_SUMMARY_SUBJECTS, LlmSummarySubject } from './llm-summary.prompt';
 
 /**
  * Optional AI-written narrative of a stored assessment. Runs only when someone
- * asks for it; hidden unless LLM_SUMMARY_ENABLED is on and an LLM is configured.
+ * asks for it; hidden unless LLM_SUMMARY_ENABLED is on.
  */
 @ApiTags('llm-summary')
 @ApiBearerAuth()
@@ -34,6 +34,6 @@ export class LlmSummaryController {
     if (!(LLM_SUMMARY_SUBJECTS as readonly string[]).includes(subject)) {
       throw new BadRequestException(`Unknown summary subject '${subject}'. Supported: ${LLM_SUMMARY_SUBJECTS.join(', ')}.`);
     }
-    return this.service.summarize(projectId, subject as LlmSummarySubject, dto.audience ?? 'executive', user);
+    return this.service.summarize(projectId, subject as LlmSummarySubject, dto.audience ?? 'executive', user, dto.connectionId);
   }
 }

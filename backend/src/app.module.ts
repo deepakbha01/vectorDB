@@ -73,6 +73,7 @@ import { AzureDeployment } from './azure-builder/azure-deployment.entity';
 import { AzureOperateCheck } from './azure-builder/azure-operate-check.entity';
 import { AzureBuilderModule } from './azure-builder/azure-builder.module';
 import { LlmSummaryModule } from './llm-summary/llm-summary.module';
+import { LlmConnection } from './llm-summary/llm-connection.entity';
 import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entity';
 
 @Module({
@@ -131,6 +132,7 @@ import { AiTokenAlert } from './ai-factory/token-observability/token-alert.entit
           AzureDeployment,
           AzureOperateCheck,
           AiTokenAlert,
+          LlmConnection,
         ],
         // Sprint 1 uses schema sync for velocity. Replace with TypeORM migrations
         // before any non-development deployment (see development rule #12).
