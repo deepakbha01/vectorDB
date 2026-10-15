@@ -1,6 +1,6 @@
 import { Fragment, FormEvent, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { apiClient, CreateIndexDesignInput, extractErrorMessage, IndexDesign, Project, UpdateFrequency } from '../api/client';
+import { apiClient, CreateIndexDesignInput, extractErrorMessage, IndexDesign, IndexParameterBounds, Project, UpdateFrequency } from '../api/client';
 import { PhaseNav } from '../components/PhaseNav';
 import { TopBar } from '../components/TopBar';
 
@@ -23,22 +23,36 @@ export function IndexDesignPage() {
   const [submitting, setSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(true);
   const [expandedOption, setExpandedOption] = useState<string | null>(null);
+  const [bounds, setBounds] = useState<IndexParameterBounds | null>(null);
+  /** Architect-set tuning values (blank = engine's), kept as typed. */
+  const [tuning, setTuning] = useState<Record<string, string>>({});
+  const [rationale, setRationale] = useState('');
 
   useEffect(() => {
     if (!id) return;
     apiClient.get<Project>(`/projects/${id}`).then((res) => setProject(res.data));
+    apiClient.get<IndexParameterBounds>(`/projects/${id}/index-design/parameter-bounds`).then((res) => setBounds(res.data)).catch(() => setBounds(null));
     apiClient
       .get<IndexDesign>(`/projects/${id}/index-design/designs/latest`)
       .then((res) => {
         setDesign(res.data);
         const { vectorCount, dimension, availableMemoryGb, qps, recallTarget, targetP95LatencyMs, topK } = res.data.inputsUsed;
         setForm({ updateFrequency: res.data.updateFrequency, vectorCount, dimension, availableMemoryGb, qps, recallTarget, targetP95LatencyMs, topK });
+        // A revision keeps the previous overrides and reason until the architect clears them.
+        setTuning(Object.fromEntries((res.data.parameterOverrides ?? []).map((o) => [o.name, String(o.value)])));
+        setRationale(res.data.overrideRationale ?? '');
         setShowForm(false);
       })
       .catch(() => {
         // No design yet.
       });
   }, [id]);
+
+  // Tuning parameters of the currently recommended index type, with their catalogue bounds.
+  const tuningBounds = design && bounds ? bounds[design.decision] : null;
+  /** What the engine recommended for a parameter (the saved value unless it was overridden). */
+  const engineValue = (name: string) =>
+    design?.parameterOverrides?.find((o) => o.name === name)?.engineValue ?? design?.configuration.find((c) => c.name === name)?.value;
 
   const overrideField = (key: keyof CreateIndexDesignInput, value: string) => {
     setForm({ ...form, [key]: value === '' ? undefined : Number(value) });
@@ -50,7 +64,11 @@ export function IndexDesignPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const { data } = await apiClient.post<IndexDesign>(`/projects/${id}/index-design/designs`, form);
+      const parameterOverrides = Object.entries(tuning)
+        .filter(([, v]) => v !== '' && v !== undefined)
+        .map(([name, v]) => ({ name, value: Number(v) }));
+      const payload: CreateIndexDesignInput = parameterOverrides.length ? { ...form, parameterOverrides, overrideRationale: rationale } : form;
+      const { data } = await apiClient.post<IndexDesign>(`/projects/${id}/index-design/designs`, payload);
       setDesign(data);
       setShowForm(false);
       const { data: refreshedProject } = await apiClient.get<Project>(`/projects/${id}`);
@@ -94,14 +112,26 @@ export function IndexDesignPage() {
             </div>
 
             <div className="card-grid" style={{ marginBottom: 16 }}>
-              {design.configuration.map((c) => (
-                <div className="card" key={c.name}>
-                  <div className="metric-label">{c.name}</div>
-                  <div className="metric-value">{c.value}</div>
-                  <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>{c.description}</p>
-                </div>
-              ))}
+              {design.configuration.map((c) => {
+                const o = design.parameterOverrides?.find((x) => x.name === c.name);
+                return (
+                  <div className="card" key={c.name}>
+                    <div className="metric-label">
+                      {c.name} {o && <span className="status-pill">overridden</span>}
+                    </div>
+                    <div className="metric-value">{c.value}</div>
+                    {o && <div style={{ fontSize: 12, color: 'var(--muted)' }}>Engine recommended {o.engineValue}</div>}
+                    <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>{c.description}</p>
+                  </div>
+                );
+              })}
             </div>
+            {design.overrideRationale && (
+              <div className="card" style={{ marginBottom: 16, borderLeft: '4px solid var(--warning)' }}>
+                <div className="metric-label">Why the tuning parameters were overridden</div>
+                <p style={{ fontSize: 13, margin: '4px 0 0' }}>{design.overrideRationale}</p>
+              </div>
+            )}
 
             <div className="card-grid" style={{ marginBottom: 16 }}>
               <div className="card">
@@ -312,6 +342,37 @@ export function IndexDesignPage() {
                   <label>Top-K</label>
                   <input type="number" value={form.topK ?? ''} onChange={(e) => overrideField('topK', e.target.value)} />
                 </div>
+              </fieldset>
+            )}
+
+            {design && tuningBounds && (
+              <fieldset style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 14 }}>
+                <legend>Tuning parameters (advanced)</legend>
+                <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 0 }}>
+                  Leave blank to use the engine&apos;s value. Set a value only on evidence - for example an Optimization benchmark - and say why; the
+                  engine&apos;s value and your reason are recorded. Applies if the run still recommends {design.label}.
+                </p>
+                {Object.entries(tuningBounds).map(([name, b]) => (
+                  <div key={name}>
+                    <label>
+                      {name} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>({b.min}-{b.max})</span>
+                    </label>
+                    <input
+                      type="number"
+                      min={b.min}
+                      max={b.max}
+                      placeholder={`Engine: ${engineValue(name) ?? b.default}`}
+                      value={tuning[name] ?? ''}
+                      onChange={(e) => setTuning({ ...tuning, [name]: e.target.value })}
+                    />
+                  </div>
+                ))}
+                {Object.values(tuning).some((v) => v !== '' && v !== undefined) && (
+                  <div>
+                    <label>Reason for the override (recorded)</label>
+                    <textarea rows={3} value={rationale} onChange={(e) => setRationale(e.target.value)} placeholder="e.g. Benchmark v2: recall 0.778 at M=24; 0.986 at M=48 / efConstruction=400 / efSearch=400" />
+                  </div>
+                )}
               </fieldset>
             )}
 

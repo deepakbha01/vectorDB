@@ -26,6 +26,12 @@ export class IndexDesignController {
     return this.indexDesignService.submitDesign(projectId, user, dto);
   }
 
+  /** Tuning parameters per index type with bounds and defaults, for the override form. */
+  @Get('parameter-bounds')
+  parameterBounds() {
+    return this.indexDesignService.getParameterBounds();
+  }
+
   @Get('designs')
   history(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.indexDesignService.getHistory(projectId, user);

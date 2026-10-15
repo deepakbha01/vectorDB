@@ -14,6 +14,14 @@ import { Phase2Handoff } from '../data-pipeline/data-pipeline-design.types';
 /** The Phase 2->3 handoff plus the one genuinely Phase-3-time input (updateFrequency) - what actually gets fed to the engine and persisted. */
 export type IndexDesignInputs = Phase2Handoff & { updateFrequency: UpdateFrequency };
 
+export interface ParameterOverride {
+  name: string;
+  /** What the engine recommended. */
+  engineValue: number;
+  /** What the architect set - the value in `configuration`. */
+  value: number;
+}
+
 /**
  * Phase 3 deliverable: the Indexing Strategy Guide produced by the Index
  * Recommendation Engine. Versioned per project like the other phase
@@ -70,6 +78,13 @@ export class IndexDesign {
 
   @Column({ type: 'jsonb' })
   inputsUsed: IndexDesignInputs;
+
+  /** Tuning parameters the architect set instead of the engine, with the engine's value kept for audit. Null = none. */
+  @Column({ type: 'jsonb', nullable: true })
+  parameterOverrides: ParameterOverride[] | null;
+
+  @Column({ type: 'text', nullable: true })
+  overrideRationale: string | null;
 
   @CreateDateColumn()
   createdAt: Date;
