@@ -15,6 +15,10 @@ export interface CreateInfrastructureDesignInput {
   hasKubernetes?: boolean;
   hasGpu?: boolean;
   multipleOnPremSites?: boolean;
+  /** Data centre has direct-to-chip liquid cooling (rack-scale systems need it). */
+  liquidCooling?: boolean;
+  /** Most power one rack can draw, kW. */
+  maxRackPowerKw?: number;
   existingStorageVendors?: string[];
   existingHypervisor?: string;
   fineTuning?: FineTuningNeed;
@@ -99,6 +103,9 @@ export interface InfraContext {
   opsCapability: string;
   components: Array<{ id: ComponentId; label: string; platforms: PlatformKind[]; gpuLabel: string | null; detail: string }>;
   estate?: { storageVendors: string[]; hypervisor: string | null; fineTuning: FineTuningNeed };
+  /** Set when the recommended GPU is only sold as a rack-scale system; absent on older contexts. */
+  inference?: { rackSystem?: { label: string; gpusPerRack: number; racks: number; cpuLabel: string; cpusPerRack: number; rackPowerKw: number; rackPowerEstimated: boolean; cooling: 'liquid' | 'air' } | null } | null;
+  facility?: { liquidCooling: boolean | null; maxRackPowerKw: number | null };
 }
 
 export type InfraSources = Record<string, { source: string; detail: string }>;

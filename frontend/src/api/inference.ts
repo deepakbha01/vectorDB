@@ -52,6 +52,8 @@ export interface ManagedApiTier {
 export interface InferenceCatalogue {
   rulesVersion: string;
   gpus: GpuSpec[];
+  /** Rack-scale systems whose GPU is only sold as part of them (absent from older servers). */
+  systems?: Array<{ id: string; label: string; gpuId: string; gpusPerRack: number; rackPowerKw: number; cooling: 'liquid' | 'air'; cloudUnitGpus: number }>;
   models: ModelSpec[];
   precisions: PrecisionSpec[];
   autoPrecisions: string[];

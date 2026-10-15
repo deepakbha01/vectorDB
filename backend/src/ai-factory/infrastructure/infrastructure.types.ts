@@ -106,10 +106,27 @@ export interface InfraContext {
     replicas: { min: number; average: number; peak: number } | null;
     weightsGb: number | null;
     autoscaling: string | null;
+    /** Set when the GPU is only sold as a rack-scale system; absent on older contexts. */
+    rackSystem?: RackSystemFacts | null;
   } | null;
   securityControls: string[];
   /** Absent on contexts saved before Wave 13. */
   estate?: OnPremEstate;
+  /** On-premises data-centre limits for rack-scale systems; absent on older contexts. */
+  facility?: { liquidCooling: boolean | null; maxRackPowerKw: number | null };
+}
+
+/** A rack-scale system (e.g. GB300 NVL72) as Infrastructure Design needs it. */
+export interface RackSystemFacts {
+  label: string;
+  gpusPerRack: number;
+  /** Whole racks for the GPUs at peak. */
+  racks: number;
+  cpuLabel: string;
+  cpusPerRack: number;
+  rackPowerKw: number;
+  rackPowerEstimated: boolean;
+  cooling: 'liquid' | 'air';
 }
 
 /** What placement needs to know about each serving option (from config/serving.yaml). */

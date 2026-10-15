@@ -37,8 +37,15 @@ export function priceAssignment(a: Assignment, ctx: FinopsContext, cat: FinopsCa
       notFeasible.push(`${inf.gpuLabel ?? inf.gpuId} is not offered on ${TARGET_LABELS[a.inference]} - re-size for a GPU it offers.`);
     } else {
       const r = rate(a.inference);
-      const gpu = inf.gpuMonthlyListUsd * r.gpuFactor;
-      add({ category: 'inference', resource: 'gpu', item: `GPUs - ${inf.gpusAtPeak ?? '?'} × ${inf.gpuLabel ?? 'GPU'} at peak`, monthlyUsd: gpu, evidenceType: 'estimated', basis: `${inf.source} list-price GPU spend × ${r.gpuFactor} (${rateNote(a.inference)})` });
+      // On-premises a rack-scale system is bought as whole racks, which run (and are paid for) 24x7 - no autoscaling saving.
+      const rack = a.inference === 'on_premises' ? inf.rackSystem ?? null : null;
+      const rackGpus = rack ? rack.racks * rack.gpusPerRack : 0;
+      const gpu = rack ? rackGpus * rack.gpuHourlyListUsd * h * r.gpuFactor : inf.gpuMonthlyListUsd * r.gpuFactor;
+      add(
+        rack
+          ? { category: 'inference', resource: 'gpu', item: `GPUs - ${rack.racks} × ${rack.label} rack(s) (${rackGpus} GPUs, ${inf.gpusAtPeak ?? '?'} needed at peak)`, monthlyUsd: gpu, evidenceType: 'estimated', basis: `Whole racks owned 24x7: ${rackGpus} GPUs × $${rack.gpuHourlyListUsd}/h list × ${h} h × ${r.gpuFactor} (${rateNote(a.inference)})` }
+          : { category: 'inference', resource: 'gpu', item: `GPUs - ${inf.gpusAtPeak ?? '?'} × ${inf.gpuLabel ?? 'GPU'} at peak`, monthlyUsd: gpu, evidenceType: 'estimated', basis: `${inf.source} list-price GPU spend × ${r.gpuFactor} (${rateNote(a.inference)})` },
+      );
       // The overhead covers serving storage (including model weights), networking, load balancing and observability - not priced again below.
       add({ category: 'inference', resource: 'other', item: `Serving overhead - ${inf.overheadPercent}% of GPU spend`, monthlyUsd: (gpu * inf.overheadPercent) / 100, evidenceType: 'assumption', basis: 'Storage incl. model weights, networking, load balancing, observability (config/inference.yaml)' });
       add({ category: 'inference', resource: 'people', item: 'Platform engineering for self-hosted serving', monthlyUsd: inf.platformFixedMonthlyUsd, evidenceType: 'assumption', basis: 'Fixed monthly cost (config/inference.yaml)' });

@@ -223,9 +223,11 @@ export function InferencePage() {
                     <div className="checkbox-grid">
                       {gpus.map((g) => {
                         const checked = form.allowedGpuIds?.includes(g.id) ?? false;
+                        const sys = catalogue.systems?.find((s) => s.gpuId === g.id);
+                        const rack = sys ? `\nSold only as ${sys.label}: ${sys.cloudUnitGpus}-GPU cloud instances, or whole racks of ${sys.gpusPerRack} GPUs (~${sys.rackPowerKw} kW, ${sys.cooling} cooled) on-premises.` : '';
                         return (
                           <label key={g.id} className={`checkbox-chip${checked ? ' checked' : ''}`}
-                            title={`${g.bandwidthGbps} GB/s · ${g.interconnect ?? ''} · $${g.hourlyUsd}/h on-demand${g.fp4Tflops ? ' · FP4' : ''}${g.availabilityNote ? `\n${g.availabilityNote}` : ''}`}>
+                            title={`${g.bandwidthGbps} GB/s · ${g.interconnect ?? ''} · $${g.hourlyUsd}/h on-demand${g.fp4Tflops ? ' · FP4' : ''}${rack}${g.availabilityNote ? `\n${g.availabilityNote}` : ''}`}>
                             <input type="checkbox" checked={checked}
                               onChange={(e) => set('allowedGpuIds', e.target.checked ? [...(form.allowedGpuIds ?? []), g.id] : (form.allowedGpuIds ?? []).filter((x) => x !== g.id))} />
                             {g.label}{group === 'preview' && <span className="status-pill" style={{ marginLeft: 6 }}>preview</span>}

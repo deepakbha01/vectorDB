@@ -49,6 +49,8 @@ export interface FinopsContext {
     tokensPerMonth: number;
     weightsGb: number;
     source: string;
+    /** Set when the GPU is only sold as a rack-scale system - on-premises it is bought in whole racks. Absent on older contexts. */
+    rackSystem?: { label: string; gpusPerRack: number; racks: number; gpuHourlyListUsd: number } | null;
   } | null;
   vector: {
     platform: string;

@@ -203,3 +203,16 @@ describe('resolveFinopsContext', () => {
     expect(() => resolveFinopsContext(inputs({ inference: null, adr: null }), catalogues)).toThrow(BadRequestException);
   });
 });
+
+describe('rack-scale systems', () => {
+  it('prices whole racks running 24x7 on-premises, and per GPU in the cloud', () => {
+    const rackInference = { ...ctx().inference!, gpuId: 'gb300-288', gpuLabel: 'NVIDIA GB300 NVL72', gpusAtPeak: 8, rackSystem: { label: 'NVIDIA GB300 NVL72', gpusPerRack: 72, racks: 1, gpuHourlyListUsd: 21.75 } };
+    const onPrem = priceAssignment(everywhere('on_premises'), ctx({ inference: rackInference, gpuAvailability: { ...ctx().gpuAvailability, on_premises: ['gb300-288'] } }), cat);
+    const gpu = line(onPrem.lines, 'GPUs - 1 × NVIDIA GB300 NVL72 rack(s)');
+    expect(gpu.item).toBe('GPUs - 1 × NVIDIA GB300 NVL72 rack(s) (72 GPUs, 8 needed at peak)');
+    expect(gpu.monthlyUsd).toBeCloseTo(72 * 21.75 * cat.hoursPerMonth * cat.targets.on_premises.gpuFactor, 2);
+
+    const azure = priceAssignment(everywhere('azure'), ctx({ inference: rackInference, gpuAvailability: { ...ctx().gpuAvailability, azure: ['gb300-288'] } }), cat);
+    expect(line(azure.lines, 'GPUs - 8 × NVIDIA GB300 NVL72 at peak').monthlyUsd).toBeCloseTo(rackInference.gpuMonthlyListUsd * cat.targets.azure.gpuFactor, 2);
+  });
+});

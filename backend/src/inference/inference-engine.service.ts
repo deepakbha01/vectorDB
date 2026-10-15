@@ -157,6 +157,13 @@ export class InferenceEngineService {
       notes: [],
     };
     this.priceOption(opt, input, demand);
+    if (opt.rackSystem) {
+      const rs = opt.rackSystem;
+      opt.notes.push(
+        `Sold only as ${rs.label}: in the cloud, billed in ${this.cfg.systemForGpu(opt.gpuId)!.cloudUnitGpus}-GPU instances (${rs.cloudGpusAtPeak} GPUs at peak); ` +
+          `on-premises, ${rs.racksOnPrem} whole rack(s) of ${rs.gpusPerRack} GPUs, ~${rs.rackPowerKw} kW each, ${rs.cooling} cooled.`,
+      );
+    }
     if (!opt.meetsTpot) opt.notes.push(`A single request already needs ${fx(tpotMs)} ms per token - above the ${input.tpotTargetMs} ms TPOT target even unbatched.`);
     if (!opt.meetsTtft) opt.notes.push(`Estimated TTFT ${fx(ttftMs, 0)} ms exceeds the ${input.ttftTargetMs} ms target - prompt of ${input.avgInputTokens} tokens is prefill-bound on this GPU.`);
     if (maxBatchByMemory < s.maxBatchPerReplica && batchSize === maxBatchByMemory) opt.notes.push(`Batch limited by KV-cache memory (${fx(kvCapacityGb)} GB free after weights).`);
@@ -169,14 +176,29 @@ export class InferenceEngineService {
   /** (Re)prices an option for a demand level - replicas scale with demand, per-replica capacity does not. */
   private priceOption(opt: GpuOption, input: InferenceEngineInput, demand: DemandProfile) {
     const p = this.cfg.getPricing();
+    const sys = this.cfg.systemForGpu(opt.gpuId);
+    // A rack-scale GPU is rented in whole cloud instances (e.g. 4 GPUs), so part-instances are paid in full.
+    const billed = (gpus: number) => (sys ? Math.ceil(gpus / sys.cloudUnitGpus) * sys.cloudUnitGpus : gpus);
     const replicasFor = (rps: number) => Math.max(opt.minReplicas, Math.ceil(rps / opt.replicaCapacityRps));
     opt.replicasAtPeak = replicasFor(demand.peakRps);
     opt.replicasAtAverage = replicasFor(demand.avgRps);
     opt.totalGpusAtPeak = opt.replicasAtPeak * opt.tensorParallel;
-    const gpuMonth = opt.tensorParallel * opt.gpuHourlyUsd * p.hoursPerMonth;
-    opt.monthlyGpuCostPeakUsd = opt.replicasAtPeak * gpuMonth;
-    const blendedReplicas = opt.replicasAtAverage * (1 - p.peakHoursFraction) + opt.replicasAtPeak * p.peakHoursFraction;
-    opt.monthlyGpuCostAutoscaledUsd = blendedReplicas * gpuMonth;
+    const perGpuMonth = opt.gpuHourlyUsd * p.hoursPerMonth;
+    const peakGpus = billed(opt.totalGpusAtPeak);
+    opt.monthlyGpuCostPeakUsd = peakGpus * perGpuMonth;
+    const averageGpus = billed(opt.replicasAtAverage * opt.tensorParallel);
+    opt.monthlyGpuCostAutoscaledUsd = (averageGpus * (1 - p.peakHoursFraction) + peakGpus * p.peakHoursFraction) * perGpuMonth;
+    opt.rackSystem = sys
+      ? {
+          systemId: sys.id,
+          label: sys.label,
+          gpusPerRack: sys.gpusPerRack,
+          racksOnPrem: Math.ceil(opt.totalGpusAtPeak / sys.gpusPerRack),
+          cloudGpusAtPeak: peakGpus,
+          rackPowerKw: sys.rackPowerKw,
+          cooling: sys.cooling,
+        }
+      : null;
     const gpuCost = input.autoscaling ? opt.monthlyGpuCostAutoscaledUsd : opt.monthlyGpuCostPeakUsd;
     opt.monthlyTotalUsd = gpuCost * (1 + p.selfHostedOverheadPercent / 100) + p.platformFixedMonthlyUsd;
     opt.costPerMillionTokensUsd = demand.tokensPerMonth > 0 ? opt.monthlyTotalUsd / (demand.tokensPerMonth / 1e6) : 0;
@@ -291,7 +313,8 @@ export class InferenceEngineService {
     const best = this.cheapestMeeting(preview) ?? preview[0];
     if (!best) return null;
     const gpu = this.cfg.getGpus().find((g) => g.id === best.gpuId);
-    const nx = `${best.totalGpusAtPeak} × ${best.gpuLabel} (${best.precision.toUpperCase()})`;
+    const billedAs = best.rackSystem && best.rackSystem.cloudGpusAtPeak > best.totalGpusAtPeak ? `, billed as ${best.rackSystem.cloudGpusAtPeak} in whole cloud instances` : '';
+    const nx = `${best.totalGpusAtPeak} × ${best.gpuLabel} (${best.precision.toUpperCase()}${billedAs})`;
     let comparison: string;
     if (!(best.meetsTtft && best.meetsTpot)) {
       comparison = `${nx} would not meet the latency targets either.`;

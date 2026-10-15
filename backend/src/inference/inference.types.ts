@@ -54,6 +54,36 @@ export interface GpuSpec {
 
 export type GpuAvailability = 'ga' | 'preview';
 
+/** A rack-scale platform (e.g. GB300 NVL72) whose GPU is only sold as part of it. */
+export interface RackSystemSpec {
+  id: string;
+  label: string;
+  /** The per-GPU catalogue entry the engine sizes with. */
+  gpuId: string;
+  gpusPerRack: number;
+  cpuLabel: string;
+  cpusPerRack: number;
+  rackPowerKw: number;
+  /** True when the power figure is not from the vendor's own documentation. */
+  rackPowerEstimated?: boolean;
+  cooling: 'liquid' | 'air';
+  /** GPUs per cloud instance - cloud capacity is billed in these whole units. */
+  cloudUnitGpus: number;
+}
+
+/** How a GPU option maps onto its rack-scale system. */
+export interface RackSystemUse {
+  systemId: string;
+  label: string;
+  gpusPerRack: number;
+  /** Whole racks needed on-premises for the GPUs at peak. */
+  racksOnPrem: number;
+  /** GPUs billed in the cloud at peak, rounded up to whole instances. */
+  cloudGpusAtPeak: number;
+  rackPowerKw: number;
+  cooling: 'liquid' | 'air';
+}
+
 export interface ModelSpec {
   id: string;
   label: string;
@@ -134,6 +164,8 @@ export interface GpuOption {
   gpuId: string;
   gpuLabel: string;
   gpuAvailability: GpuAvailability;
+  /** Set when the GPU is only sold in a rack-scale system; absent on older assessments. */
+  rackSystem?: RackSystemUse | null;
   precision: string;
   tensorParallel: number;
   footprint: ModelFootprint;

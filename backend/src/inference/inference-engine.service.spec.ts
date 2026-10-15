@@ -166,6 +166,30 @@ describe('InferenceEngineService', () => {
     });
   });
 
+  describe('rack-scale systems', () => {
+    it('maps each NVL72 GPU to its system, and nothing else', () => {
+      expect(cfg.getSystems().map((s) => s.gpuId).sort()).toEqual(['gb200-186', 'gb300-288', 'rubin-288']);
+      for (const s of cfg.getSystems()) expect(cfg.getGpus().some((g) => g.id === s.gpuId)).toBe(true);
+      expect(cfg.systemForGpu('h100-80')).toBeNull();
+    });
+
+    it('bills a rack-scale GPU in whole cloud instances and counts whole racks for on-premises', () => {
+      const input = baseInput(cfg, { allowedGpuIds: ['gb300-288'], precision: 'fp8', autoscaling: false });
+      const [o] = engine.selfHostedOptions(input, engine.demand(input));
+      const unit = cfg.systemForGpu('gb300-288')!.cloudUnitGpus;
+      expect(o.rackSystem).toMatchObject({ systemId: 'gb300-nvl72', racksOnPrem: Math.ceil(o.totalGpusAtPeak / 72), cloudGpusAtPeak: Math.ceil(o.totalGpusAtPeak / unit) * unit });
+      expect(o.monthlyGpuCostPeakUsd).toBeCloseTo(o.rackSystem!.cloudGpusAtPeak * o.gpuHourlyUsd * cfg.getPricing().hoursPerMonth, 6);
+      expect(o.notes[0]).toMatch(/^Sold only as NVIDIA GB300 NVL72: in the cloud, billed in 4-GPU instances/);
+    });
+
+    it('leaves GPUs sold on their own billed per GPU', () => {
+      const input = baseInput(cfg, { allowedGpuIds: ['h100-80'], precision: 'fp8', autoscaling: false });
+      const [o] = engine.selfHostedOptions(input, engine.demand(input));
+      expect(o.rackSystem).toBeNull();
+      expect(o.monthlyGpuCostPeakUsd).toBeCloseTo(o.totalGpusAtPeak * o.gpuHourlyUsd * cfg.getPricing().hoursPerMonth, 6);
+    });
+  });
+
   describe('GPU options (continued)', () => {
 
     it('keeps the batch within KV memory and the TPOT budget, and TPOT within target when met', () => {

@@ -90,8 +90,8 @@ export function InfrastructureDesignPage() {
   };
 
   if (!project) return <div className="main-content">Loading...</div>;
-  const boolField = (k: 'hasKubernetes' | 'hasGpu' | 'multipleOnPremSites', label: string) => {
-    const d = defaults?.context[k];
+  const boolField = (k: 'hasKubernetes' | 'hasGpu' | 'multipleOnPremSites' | 'liquidCooling', label: string) => {
+    const d = k === 'liquidCooling' ? defaults?.context.facility?.liquidCooling : defaults?.context[k];
     const s = defaults?.sources[k];
     return (
       <div className="field" key={k}>
@@ -202,6 +202,29 @@ export function InfrastructureDesignPage() {
                         </select>
                       </div>
                     </div>
+                    {c.inference?.rackSystem && (
+                      <>
+                        <p className="discovery-section-sub" style={{ marginTop: 12 }}>
+                          The recommended GPU is sold only as <strong>{c.inference.rackSystem.label}</strong> racks: {c.inference.rackSystem.racks} rack(s) of{' '}
+                          {c.inference.rackSystem.gpusPerRack} GPUs, ~{c.inference.rackSystem.rackPowerKw} kW each{c.inference.rackSystem.rackPowerEstimated ? ' (estimate)' : ''},{' '}
+                          {c.inference.rackSystem.cooling} cooled. Without liquid cooling it cannot go on-premises; a lower power limit means a power upgrade.
+                        </p>
+                        <div className="field-grid">
+                          {boolField('liquidCooling', 'Direct-to-chip liquid cooling in the data centre')}
+                          <div className="field">
+                            <label>Power per rack the data centre delivers (kW)</label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={2000}
+                              placeholder="Default: not stated"
+                              value={form.maxRackPowerKw ?? ''}
+                              onChange={(e) => setForm((f) => ({ ...f, maxRackPowerKw: e.target.value === '' ? undefined : Number(e.target.value) }))}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </section>
                 )}
                 {error && <div className="error-text">{error}</div>}
