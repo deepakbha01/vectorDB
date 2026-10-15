@@ -111,8 +111,11 @@ describe('BenchmarkService', () => {
     expect(report.variantResults).toHaveLength(2); // [50, 100] - baseline (100) already included
     expect(report.variantResults.every((v: any) => v.avgRecall === 1)).toBe(true);
     expect(report.variantResults.find((v: any) => v.isBaseline).searchParamValue).toBe(100);
-    // Each variant: one pass one-at-a-time (latency, recall) + one load pass with parallel clients (throughput).
-    expect(adapter.search).toHaveBeenCalledTimes(2 * 2 * benchmarkDefaults.queryCount);
+    // Each variant: an untimed warm-up (here all 5 queries, under the 10 cap) + one pass one-at-a-time
+    // (latency, recall) + one load pass with parallel clients (throughput).
+    expect(adapter.search).toHaveBeenCalledTimes(2 * 3 * benchmarkDefaults.queryCount);
+    // An index that takes the parameter at query time is built once.
+    expect(adapter.createVectorIndex).toHaveBeenCalledTimes(1);
     for (const v of report.variantResults) {
       expect(v.concurrency).toBe(4);
       expect(v.sustainedQps).toBeGreaterThan(0);
@@ -186,6 +189,35 @@ describe('BenchmarkService', () => {
     // so the recommendation should be well-formed and present among the tested variants.
     expect(report.variantResults.map((v: any) => v.searchParamValue)).toContain(report.recommendedVariant.searchParamValue);
     expect(report.recommendedVariant.avgRecall).toBeGreaterThanOrEqual(indexDesign.inputsUsed.recallTarget);
+  });
+
+  it('builds a fresh index per value when the database fixes the search parameter at build time (Chroma)', async () => {
+    const base = makeAdapter();
+    const stored: string[] = [];
+    // Clears its store on drop, like a real collection, so each rebuild starts empty.
+    const adapter: any = {
+      ...base,
+      searchParamsFixedAtBuild: () => true,
+      upsert: jest.fn().mockImplementation((c, records) => (stored.push(...records.map((r: any) => r.id)), base.upsert(c, records))),
+    };
+    adapterFactory.getAdapter.mockReturnValue(adapter);
+
+    const report: any = await service.runBenchmark('project-1', requester, {});
+
+    const efSearchBuilt = adapter.createVectorIndex.mock.calls.map((c: any[]) => c[2].find((p: any) => p.name === 'efSearch').value);
+    expect(efSearchBuilt).toEqual([50, 100]); // one build per tested value, in order
+    expect(adapter.createVectorIndex.mock.calls[0][2].find((p: any) => p.name === 'M').value).toBe(16); // build parameters kept
+    expect(stored).toHaveLength(2 * benchmarkDefaults.sampleSize); // the corpus loaded into each build
+    expect(adapter.dropSchema).toHaveBeenCalledTimes(2); // between the builds, and the final clean-up
+    expect(report.variantResults.map((v: any) => v.searchParamValue)).toEqual([50, 100]);
+  });
+
+  it('suggests raising M / efConstruction, not switching to HNSW, when an HNSW index misses recall', async () => {
+    const adapter = makeAdapter();
+    adapter.search.mockResolvedValue([]);
+    adapterFactory.getAdapter.mockReturnValue(adapter);
+    const report: any = await service.runBenchmark('project-1', requester, {});
+    expect(report.bottlenecks.join(' ')).toMatch(/raise M \/ efConstruction in Index Design/);
   });
 
   it('persists version 1 and marks the optimization phase completed', async () => {

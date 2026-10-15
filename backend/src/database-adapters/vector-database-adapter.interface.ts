@@ -93,4 +93,12 @@ export interface VectorDatabaseAdapter {
    * nothing about the tuned index's latency, recall or throughput.
    */
   searchMode?(): Promise<SearchMode>;
+
+  /**
+   * True when the search-time parameter (e.g. efSearch) only takes effect when the
+   * index is built, so changing it on a live collection does nothing (Chroma:
+   * ef_search is fixed at collection creation). Benchmarks then build a fresh
+   * index per value instead of reporting the same search under several labels.
+   */
+  searchParamsFixedAtBuild?(): boolean;
 }

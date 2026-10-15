@@ -55,7 +55,9 @@ export function OptimizationPage() {
           <p style={{ fontSize: 13, color: 'var(--muted)' }}>
             Runs a synthetic benchmark against your Phase 3 index configuration - a corpus of random vectors at your
             embedding dimension is provisioned in an ephemeral collection, queried across several search-parameter
-            values, measured, and cleaned up automatically.
+            values, measured, and cleaned up automatically. Random vectors are the worst case for recall; real
+            embeddings usually score higher. Where the database fixes the search parameter at build time (Chroma),
+            each value gets its own freshly built collection, so the run takes longer.
           </p>
           <div>
             <label>Sample size (optional)</label>
@@ -72,6 +74,20 @@ export function OptimizationPage() {
               value={form.queryCount ?? ''}
               onChange={(e) => setForm({ ...form, queryCount: e.target.value ? Number(e.target.value) : undefined })}
             />
+          </div>
+          <div>
+            <label>Parallel clients for the throughput test (optional, 1-32)</label>
+            <input
+              type="number"
+              min={1}
+              max={32}
+              placeholder="Default: 4"
+              value={form.concurrency ?? ''}
+              onChange={(e) => setForm({ ...form, concurrency: e.target.value ? Number(e.target.value) : undefined })}
+            />
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
+              Throughput (QPS) is capped by the number of clients: set it near the concurrent searches you expect at peak (e.g. 16) to test the database, not the test client.
+            </div>
           </div>
           {error && <div className="error-text">{error}</div>}
           <button className="primary-btn" type="submit" disabled={running}>
