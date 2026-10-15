@@ -4,6 +4,8 @@ import { IsArray, IsBoolean, IsIn, IsNumber, IsOptional, Max, Min } from 'class-
 /** Keys of estateStorageVendors / estateHypervisors in config/infrastructure-targets.yaml. */
 export const ESTATE_STORAGE_VENDORS = ['netapp', 'nutanix', 'dell_emc', 'vast_data', 'ddn', 'other'];
 export const ESTATE_HYPERVISORS = ['vmware', 'nutanix_ahv', 'hyper_v', 'none'];
+/** Keys of hostCpus in config/infrastructure-targets.yaml. */
+export const HOST_CPUS = ['x86', 'grace', 'vera'];
 
 /** Everything optional: blanks come from the Workload Profile, Discovery and the inference records. */
 export class CreateInfrastructureDesignDto {
@@ -33,6 +35,11 @@ export class CreateInfrastructureDesignDto {
   @Min(1)
   @Max(2000)
   maxRackPowerKw?: number;
+
+  @ApiProperty({ required: false, enum: HOST_CPUS, description: 'Host CPU for on-premises CPU nodes (vector database, application, agent tools); default x86' })
+  @IsOptional()
+  @IsIn(HOST_CPUS)
+  hostCpu?: 'x86' | 'grace' | 'vera';
 
   @ApiProperty({ required: false, isArray: true, enum: ESTATE_STORAGE_VENDORS, description: 'Storage vendors already run on-premises (reuse scores higher)' })
   @IsOptional()

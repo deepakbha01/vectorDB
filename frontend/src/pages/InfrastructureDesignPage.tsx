@@ -8,6 +8,8 @@ import {
   ESTATE_HYPERVISORS,
   ESTATE_STORAGE_VENDORS,
   FineTuningNeed,
+  HOST_CPUS,
+  HostCpuId,
   InfrastructureDefaults,
   InfrastructureDesign,
   InfrastructureResult,
@@ -200,6 +202,18 @@ export function InfrastructureDesignPage() {
                             </option>
                           ))}
                         </select>
+                      </div>
+                      <div className="field">
+                        <label>Host CPU for CPU nodes (vector DB, application)</label>
+                        <select value={form.hostCpu ?? ''} onChange={(e) => setForm((f) => ({ ...f, hostCpu: (e.target.value || undefined) as HostCpuId | undefined }))}>
+                          <option value="">{`Default: ${HOST_CPUS[c.hostCpu ?? 'x86']}`}</option>
+                          {Object.entries(HOST_CPUS).map(([k, label]) => (
+                            <option key={k} value={k}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>Arm64 hosts need arm64 builds of every image; rack-scale GPU systems bring their own Grace / Vera hosts.</div>
                       </div>
                     </div>
                     {c.inference?.rackSystem && (

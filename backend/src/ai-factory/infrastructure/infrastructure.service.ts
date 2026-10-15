@@ -17,7 +17,7 @@ import { AiInferenceArchitecture } from '../inference-architecture/inference-arc
 import { AiInfrastructureDesign } from './infrastructure.entity';
 import { designInfrastructure } from './infrastructure.engine';
 import { CreateInfrastructureDesignDto } from './create-infrastructure-design.dto';
-import { ComponentNeed, FineTuningNeed, InfraContext, InfrastructureResult, PlatformKind, RackSystemFacts, ServingFacts, TargetId } from './infrastructure.types';
+import { ComponentNeed, FineTuningNeed, HostCpuId, InfraContext, InfrastructureResult, PlatformKind, RackSystemFacts, ServingFacts, TargetId } from './infrastructure.types';
 import { RackSystemSpec } from '../../inference/inference.types';
 import { AiModelSelection } from '../model-selection/model-selection.entity';
 
@@ -90,6 +90,7 @@ export function resolveInfraContext(
   const multipleOnPremSites = pick('multipleOnPremSites', dto.multipleOnPremSites, null, false, 'not stated - assumed a single on-premises site');
   const liquidCooling = pick<boolean | null>('liquidCooling', dto.liquidCooling, null, null, 'not stated');
   const maxRackPowerKw = pick<number | null>('maxRackPowerKw', dto.maxRackPowerKw, null, null, 'not stated');
+  const hostCpu = pick<HostCpuId>('hostCpu', dto.hostCpu, null, 'x86', 'not stated - x86 assumed');
   const opsCapability = pick(
     'opsCapability',
     undefined,
@@ -195,6 +196,7 @@ export function resolveInfraContext(
     securityControls: x.profile?.result.securityRequirements.controls ?? [],
     estate: { storageVendors: existingStorageVendors, hypervisor: existingHypervisor, fineTuning },
     facility: { liquidCooling, maxRackPowerKw },
+    hostCpu,
   };
   if (x.discovery) sources.availabilityAndDr = { source: 'discovery', detail: `${dv}: availability, RPO / RTO, multi-region` };
   return { context, sources };

@@ -10,6 +10,9 @@ export type FineTuningNeed = 'none' | 'adapter' | 'full';
 /** Mirrors estateStorageVendors / estateHypervisors in backend config/infrastructure-targets.yaml. */
 export const ESTATE_STORAGE_VENDORS: Record<string, string> = { netapp: 'NetApp', nutanix: 'Nutanix', dell_emc: 'Dell / EMC', vast_data: 'VAST Data', ddn: 'DDN', other: 'Other' };
 export const ESTATE_HYPERVISORS: Record<string, string> = { vmware: 'VMware vSphere', nutanix_ahv: 'Nutanix AHV', hyper_v: 'Microsoft Hyper-V', none: 'None / bare metal' };
+/** Mirrors hostCpus in backend config/infrastructure-targets.yaml. */
+export type HostCpuId = 'x86' | 'grace' | 'vera';
+export const HOST_CPUS: Record<HostCpuId, string> = { x86: 'x86-64 (Intel Xeon / AMD EPYC)', grace: 'NVIDIA Grace (Arm64)', vera: 'NVIDIA Vera (Arm64, preview)' };
 
 export interface CreateInfrastructureDesignInput {
   hasKubernetes?: boolean;
@@ -19,6 +22,8 @@ export interface CreateInfrastructureDesignInput {
   liquidCooling?: boolean;
   /** Most power one rack can draw, kW. */
   maxRackPowerKw?: number;
+  /** Host CPU for on-premises CPU nodes; default x86. */
+  hostCpu?: HostCpuId;
   existingStorageVendors?: string[];
   existingHypervisor?: string;
   fineTuning?: FineTuningNeed;
@@ -106,6 +111,7 @@ export interface InfraContext {
   /** Set when the recommended GPU is only sold as a rack-scale system; absent on older contexts. */
   inference?: { rackSystem?: { label: string; gpusPerRack: number; racks: number; cpuLabel: string; cpusPerRack: number; rackPowerKw: number; rackPowerEstimated: boolean; cooling: 'liquid' | 'air' } | null } | null;
   facility?: { liquidCooling: boolean | null; maxRackPowerKw: number | null };
+  hostCpu?: HostCpuId;
 }
 
 export type InfraSources = Record<string, { source: string; detail: string }>;

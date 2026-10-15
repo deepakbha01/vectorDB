@@ -242,3 +242,35 @@ describe('rack-scale systems on-premises', () => {
     expect(context.facility).toEqual({ liquidCooling: true, maxRackPowerKw: 150 });
   });
 });
+
+describe('host CPU for on-premises CPU nodes', () => {
+  const onPremOnly = (o: Partial<InfraContext> = {}) => ctx({ allowedTargets: ['on_premises'], ...o });
+  const all = (r: ReturnType<typeof checkPlacement>) => [...r.failures, ...r.conditions].join(' ');
+
+  it('lists x86, Grace and Vera, with only Vera in preview', () => {
+    expect(Object.keys(cat.hostCpus!).sort()).toEqual(['grace', 'vera', 'x86']);
+    expect(cat.hostCpus!.vera).toMatchObject({ arch: 'arm64', availability: 'preview' });
+    expect(cat.hostCpus!.x86.arch).toBe('x86_64');
+  });
+
+  it('adds no Arm conditions on x86 (the default) and names the host CPU in the design', () => {
+    expect(all(checkPlacement(app, 'on_premises', 'kubernetes', onPremOnly(), cat))).not.toMatch(/arm64/);
+    const r = designInfrastructure(onPremOnly(), cat);
+    expect(r.sections.compute.some((l) => l.startsWith('Host CPU for on-premises CPU nodes') && l.includes('x86-64'))).toBe(true);
+  });
+
+  it('on Grace, passes a vector database with arm64 builds and asks for arm64 application images', () => {
+    const c = onPremOnly({ hostCpu: 'grace' });
+    expect(checkPlacement(vectorK8s, 'on_premises', 'kubernetes', c, cat).passed).toContain('qdrant ships arm64 builds for NVIDIA Grace.');
+    expect(all(checkPlacement(app, 'on_premises', 'kubernetes', c, cat))).toMatch(/needs an arm64 build for NVIDIA Grace/);
+    const actian = onPremOnly({ hostCpu: 'grace', vector: { ...ctx().vector!, platform: 'actian' } });
+    expect(all(checkPlacement({ ...vectorK8s, saasId: 'actian' }, 'on_premises', 'kubernetes', actian, cat))).toMatch(/Confirm actian has a supported arm64 build/);
+  });
+
+  it('flags Vera as not yet generally available, and leaves cloud placements and inference alone', () => {
+    const c = ctx({ hostCpu: 'vera' });
+    expect(all(checkPlacement(app, 'on_premises', 'kubernetes', c, cat))).toMatch(/NVIDIA Vera: In full production/);
+    expect(all(checkPlacement(app, 'azure', 'kubernetes', c, cat))).not.toMatch(/arm64|Vera/);
+    expect(all(checkPlacement(gpuInference, 'on_premises', 'kubernetes', c, cat))).not.toMatch(/arm64|Vera/);
+  });
+});
