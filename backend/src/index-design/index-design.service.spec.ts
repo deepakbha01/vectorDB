@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import * as yaml from 'js-yaml';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException } from '@nestjs/common';
@@ -8,6 +11,10 @@ import { DataPipelineDesignService } from '../data-pipeline/data-pipeline-design
 import { IndexRecommendationEngineService } from '../index-recommendation-engine/index-recommendation-engine.service';
 import { UpdateFrequency } from '../index-recommendation-engine/enums/update-frequency.enum';
 import { IndexType } from '../index-recommendation-engine/enums/index-type.enum';
+import { PlatformConfigService } from '../common/config/platform-config.service';
+
+// The real index catalogue, so the override bounds are the shipped ones.
+const indexCatalog = (yaml.load(fs.readFileSync(path.join(__dirname, '../../config/indexes.yaml'), 'utf8')) as any).indexes;
 
 describe('IndexDesignService', () => {
   let service: IndexDesignService;
@@ -69,6 +76,7 @@ describe('IndexDesignService', () => {
         { provide: ProjectsService, useValue: projectsService },
         { provide: DataPipelineDesignService, useValue: dataPipelineDesignService },
         { provide: IndexRecommendationEngineService, useValue: engine },
+        { provide: PlatformConfigService, useValue: { getIndexCatalog: () => indexCatalog } },
       ],
     }).compile();
 
@@ -124,5 +132,58 @@ describe('IndexDesignService', () => {
     expect(projectsService.updatePhaseStatus).toHaveBeenCalled();
     expect(design.decision).toBe(IndexType.HNSW);
     expect(design.inputsUsed.metric).toBe('cosine');
+    expect(design.parameterOverrides).toBeNull();
+    expect(design.overrideRationale).toBeNull();
+  });
+
+  describe('tuning parameter overrides', () => {
+    const hnswConfig = [
+      { name: 'M', value: 24, description: 'm' },
+      { name: 'efConstruction', value: 200, description: 'efc' },
+      { name: 'efSearch', value: 180, description: 'efs' },
+    ];
+    const reason = 'Benchmark: recall 0.778 at M=24; 0.986 at M=48 / efC=400 / efSearch=400.';
+    beforeEach(() => engine.evaluate.mockReturnValue({ ...engineResult, configuration: hnswConfig, scalingConsiderations: ['engine note'] }));
+
+    it('replaces the engine values, keeps them for audit, and records the reason', async () => {
+      const design = await service.submitDesign('project-1', requester, {
+        updateFrequency: UpdateFrequency.LOW,
+        parameterOverrides: [{ name: 'M', value: 48 }, { name: 'efConstruction', value: 400 }, { name: 'efSearch', value: 400 }],
+        overrideRationale: `  ${reason}  `,
+      });
+      expect(design.configuration.map((c) => [c.name, c.value])).toEqual([['M', 48], ['efConstruction', 400], ['efSearch', 400]]);
+      expect(design.configuration[0].description).toBe('m');
+      expect(design.parameterOverrides).toEqual([
+        { name: 'M', engineValue: 24, value: 48 },
+        { name: 'efConstruction', engineValue: 200, value: 400 },
+        { name: 'efSearch', engineValue: 180, value: 400 },
+      ]);
+      expect(design.overrideRationale).toBe(reason);
+      expect(design.scalingConsiderations).toEqual(['engine note', expect.stringMatching(/overridden by the architect - .*re-run the Optimization benchmark/)]);
+    });
+
+    it('drops overrides equal to the engine value (no override recorded at all if none differ)', async () => {
+      const design = await service.submitDesign('project-1', requester, { updateFrequency: UpdateFrequency.LOW, parameterOverrides: [{ name: 'M', value: 24 }], overrideRationale: reason });
+      expect(design.parameterOverrides).toBeNull();
+      expect(design.overrideRationale).toBeNull();
+      expect(design.configuration).toEqual(hnswConfig);
+    });
+
+    it.each([
+      ['a parameter the recommended index does not have', [{ name: 'nprobe', value: 8 }], /'nprobe' is not a tuning parameter of the recommended hnsw index - use M, efConstruction, efSearch/],
+      ['a value outside the catalogue bounds', [{ name: 'M', value: 128 }], /M must be between 4 and 64 \(got 128\)/],
+      ['the same parameter twice', [{ name: 'M', value: 32 }, { name: 'M', value: 48 }], /'M' is overridden more than once/],
+    ])('rejects %s', async (_label, parameterOverrides, message) => {
+      await expect(service.submitDesign('project-1', requester, { updateFrequency: UpdateFrequency.LOW, parameterOverrides, overrideRationale: reason })).rejects.toThrow(message);
+      expect(designsRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('requires a reason for an override', async () => {
+      await expect(service.submitDesign('project-1', requester, { updateFrequency: UpdateFrequency.LOW, parameterOverrides: [{ name: 'M', value: 48 }], overrideRationale: ' short ' })).rejects.toThrow(/Give a reason/);
+    });
+
+    it('lists the bounds per index type from config/indexes.yaml', () => {
+      expect(service.getParameterBounds().hnsw.M).toMatchObject({ min: 4, max: 64, default: 16 });
+    });
   });
 });

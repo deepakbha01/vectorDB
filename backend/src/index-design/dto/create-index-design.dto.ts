@@ -1,6 +1,19 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsInt, IsNumber, IsOptional, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMaxSize, IsArray, IsEnum, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from 'class-validator';
 import { UpdateFrequency } from '../../index-recommendation-engine/enums/update-frequency.enum';
+
+/** One tuning parameter set by the architect instead of the engine. */
+export class ParameterOverrideDto {
+  @ApiProperty({ example: 'M' })
+  @IsString()
+  @MaxLength(40)
+  name: string;
+
+  @ApiProperty({ example: 48 })
+  @IsInt()
+  value: number;
+}
 
 /**
  * Phase 3 - Index Design intake. Vector count, dimension, QPS, recall target,
@@ -55,4 +68,23 @@ export class CreateIndexDesignDto {
   @IsInt()
   @Min(1)
   topK?: number;
+
+  @ApiProperty({
+    required: false,
+    type: [ParameterOverrideDto],
+    description: "Architect overrides of the recommended index's tuning parameters (e.g. HNSW M, efConstruction, efSearch), within config/indexes.yaml bounds.",
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => ParameterOverrideDto)
+  parameterOverrides?: ParameterOverrideDto[];
+
+  @ApiProperty({ required: false, description: 'Why the parameters were overridden - required with parameterOverrides, recorded for audit.' })
+  @ValidateIf((o: CreateIndexDesignDto) => (o.parameterOverrides?.length ?? 0) > 0)
+  @IsString()
+  @MinLength(10)
+  @MaxLength(1000)
+  overrideRationale?: string;
 }

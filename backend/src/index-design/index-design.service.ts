@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { IndexDesign, IndexDesignInputs } from './index-design.entity';
+import { IndexDesign, IndexDesignInputs, ParameterOverride } from './index-design.entity';
+import { PlatformConfigService } from '../common/config/platform-config.service';
+import { TuningParameter } from '../index-recommendation-engine/index-recommendation.types';
 import { CreateIndexDesignDto } from './dto/create-index-design.dto';
 import { ProjectsService } from '../projects/projects.service';
 import { DataPipelineDesignService } from '../data-pipeline/data-pipeline-design.service';
@@ -20,6 +22,7 @@ export class IndexDesignService {
     private readonly projectsService: ProjectsService,
     private readonly dataPipelineDesignService: DataPipelineDesignService,
     private readonly engine: IndexRecommendationEngineService,
+    private readonly platformConfig: PlatformConfigService,
   ) {}
 
   async submitDesign(projectId: string, requester: AuthenticatedUser, dto: CreateIndexDesignDto): Promise<IndexDesign> {
@@ -27,6 +30,7 @@ export class IndexDesignService {
 
     const input = await this.resolveInput(projectId, requester, dto);
     const result = this.engine.evaluate(input);
+    const { configuration, overrides } = this.applyOverrides(result.decision, result.configuration, dto);
 
     const previousCount = await this.designs.count({ where: { project: { id: projectId } } });
     const version = previousCount + 1;
@@ -40,9 +44,13 @@ export class IndexDesignService {
         decision: result.decision,
         label: result.label,
         rationale: result.rationale,
-        configuration: result.configuration,
+        configuration,
         impact: result.impact,
-        scalingConsiderations: result.scalingConsiderations,
+        scalingConsiderations: overrides
+          ? [...result.scalingConsiderations, 'Tuning parameters were overridden by the architect - memory, build time and recall above are the engine estimates for its own values; re-run the Optimization benchmark to measure the overridden ones.']
+          : result.scalingConsiderations,
+        parameterOverrides: overrides,
+        overrideRationale: overrides ? dto.overrideRationale!.trim() : null,
         options: result.options,
         alternatives: result.alternatives,
         criteriaWeights: result.criteriaWeights,
@@ -58,6 +66,49 @@ export class IndexDesignService {
     );
 
     return design;
+  }
+
+  /** Tuning parameters per index type with their bounds and defaults (config/indexes.yaml), for the override form. */
+  getParameterBounds(): Record<string, Record<string, { min: number; max: number; default: number; description: string }>> {
+    return Object.fromEntries(
+      this.platformConfig.getIndexCatalog().map((c) => [
+        c.id,
+        Object.fromEntries(Object.entries((c.parameters ?? {}) as Record<string, any>).map(([k, p]) => [k, { min: p.min, max: p.max, default: p.default, description: p.description }])),
+      ]),
+    );
+  }
+
+  /**
+   * Replaces the engine's tuning values with the architect's, each checked against the
+   * recommended index's parameters and bounds; the engine's value is kept for audit.
+   * Overrides equal to the engine's value are dropped.
+   */
+  private applyOverrides(indexType: string, configuration: TuningParameter[], dto: CreateIndexDesignDto): { configuration: TuningParameter[]; overrides: ParameterOverride[] | null } {
+    const requested = dto.parameterOverrides ?? [];
+    if (!requested.length) return { configuration, overrides: null };
+    const bounds = this.getParameterBounds()[indexType] ?? {};
+    const names = new Set<string>();
+    const overrides: ParameterOverride[] = [];
+    for (const o of requested) {
+      const current = configuration.find((c) => c.name === o.name);
+      const b = bounds[o.name];
+      if (!current || !b) {
+        throw new BadRequestException(`'${o.name}' is not a tuning parameter of the recommended ${indexType} index - use ${configuration.map((c) => c.name).join(', ')}.`);
+      }
+      if (names.has(o.name)) throw new BadRequestException(`'${o.name}' is overridden more than once.`);
+      names.add(o.name);
+      if (o.value < b.min || o.value > b.max) throw new BadRequestException(`${o.name} must be between ${b.min} and ${b.max} (got ${o.value}).`);
+      if (o.value !== current.value) overrides.push({ name: o.name, engineValue: current.value, value: o.value });
+    }
+    if (!overrides.length) return { configuration, overrides: null };
+    if ((dto.overrideRationale?.trim().length ?? 0) < 10) throw new BadRequestException('Give a reason (at least 10 characters) for overriding the tuning parameters - it is recorded for audit.');
+    return {
+      configuration: configuration.map((c) => {
+        const o = overrides.find((x) => x.name === c.name);
+        return o ? { ...c, value: o.value } : c;
+      }),
+      overrides,
+    };
   }
 
   async getLatest(projectId: string, requester: AuthenticatedUser): Promise<IndexDesign | null> {

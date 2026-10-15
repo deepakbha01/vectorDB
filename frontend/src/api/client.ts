@@ -685,7 +685,13 @@ export interface CreateIndexDesignInput {
   recallTarget?: number;
   targetP95LatencyMs?: number;
   topK?: number;
+  /** Architect overrides of the recommended index's tuning parameters (needs overrideRationale). */
+  parameterOverrides?: Array<{ name: string; value: number }>;
+  overrideRationale?: string;
 }
+
+/** Per index type: each tuning parameter's bounds and default (config/indexes.yaml). */
+export type IndexParameterBounds = Record<string, Record<string, { min: number; max: number; default: number; description: string }>>;
 
 export interface IndexCriteriaScores {
   recall: number;
@@ -754,6 +760,9 @@ export interface IndexDesign {
   alternatives: Array<{ indexType: IndexType; reason: string }>;
   updateFrequency: UpdateFrequency;
   inputsUsed: IndexDesignInputsUsed;
+  /** Absent on designs saved before overrides existed. */
+  parameterOverrides?: Array<{ name: string; engineValue: number; value: number }> | null;
+  overrideRationale?: string | null;
   createdAt: string;
 }
 
